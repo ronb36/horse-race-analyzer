@@ -107,6 +107,12 @@ function parseBrisnetFile(text) {
   return { title, track: first ? f(first, 1) : "", dateStr: dateRaw, races, byRace };
 }
 
+function titleCase(str) {
+  return String(str || "").toLowerCase()
+    .replace(/(^|[\s'’-])\S/g, (c) => c.toUpperCase())
+    .replace(/(['’])S(\s|$)/g, "$1s$2");
+}
+
 function brisnetHorses(rws) {
   const f = (row, n) => (row[n - 1] ?? "").trim();
   const fn = (row, n) => { const x = parseFloat(f(row, n)); return Number.isFinite(x) ? x : null; };
@@ -126,7 +132,7 @@ function brisnetHorses(rws) {
     if (!races) { races = fn(row, 97); w = fn(row, 98); p = fn(row, 99); sh = fn(row, 100); earn = fn(row, 101); }
     const ml = fn(row, 44);
     return {
-      name: f(row, 45) || "",
+      name: titleCase(f(row, 45)) || "",
       postPosition: t(fn(row, 4)),
       daysSinceLastRace: t(fn(row, 224)),
       racesThisYear: t(races), wins: t(w), places: t(p), shows: t(sh), earnings: t(earn),
@@ -297,6 +303,7 @@ function HorseRaceAnalyzer() {
   const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
   const [winnerMode, setWinnerMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [savedCards, setSavedCards] = useState(null);
   const [logMsg, setLogMsg] = useState("");
   const [supaUrl, setSupaUrlState] = useState(() => { try { return localStorage.getItem("hra_supa_url") || ""; } catch { return ""; } });
   const setSupaUrl = (v) => { setSupaUrlState(v); try { localStorage.setItem("hra_supa_url", v); } catch {} };
@@ -369,6 +376,71 @@ function HorseRaceAnalyzer() {
     throw new Error("Couldn't parse the reading. Raw response started: " + JSON.stringify(clean.slice(0, 160)));
   }
 
+  function supaHeaders() {
+    return { apikey: supaKey, Authorization: "Bearer " + supaKey, "Content-Type": "application/json" };
+  }
+
+  async function saveCard(meta, title, index, dataMap) {
+    if (!supaUrl || !supaKey || !meta.track || !meta.date) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?on_conflict=track,race_date", {
+        method: "POST",
+        headers: { ...supaHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify([{
+          title, track: meta.track, race_date: meta.date,
+          updated_at: new Date().toISOString(),
+          card: { raceIndex: index, raceData: dataMap, cardMeta: meta, cardTitle: title },
+        }]),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+    } catch (e) {
+      console.error("card save failed", e);
+      setError("Card auto-save to Supabase failed (data still works locally). " + (e.message || e));
+    }
+  }
+
+  async function fetchSavedCards() {
+    setError("");
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,title,track,race_date,updated_at&order=updated_at.desc&limit=25", {
+        headers: supaHeaders(),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      setSavedCards(await resp.json());
+    } catch (e) {
+      setError("Couldn't fetch saved cards. Check Supabase settings (⚙ SET). " + (e.message || e));
+    }
+  }
+
+  async function loadSavedCard(id) {
+    setError(""); setBusy(true); setLcdMsg("LOADING CARD...");
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?id=eq." + id + "&select=card", {
+        headers: supaHeaders(),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const rows = await resp.json();
+      const card = rows[0] && rows[0].card;
+      if (!card) throw new Error("Card not found.");
+      brisRef.current = null; fileBlocksRef.current = null;
+      setCardTitle(card.cardTitle || "");
+      setCardMeta(card.cardMeta || { track: "", date: "" });
+      setRaceIndex(card.raceIndex || []);
+      setRaceData(card.raceData || {});
+      setSavedCards(null);
+      const firstOk = (card.raceIndex || []).find((r) => r.ok && card.raceData && card.raceData[r.raceNumber]);
+      if (firstOk) {
+        const cached = card.raceData[firstOk.raceNumber];
+        setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
+        setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+        setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
+      } else { setStep("races"); setLcdMsg("SELECT RACE"); }
+    } catch (e) {
+      setError("Couldn't load that card. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally { setBusy(false); }
+  }
+
   function openBrisRace(r) {
     const info = {
       raceNumber: String(r.raceNumber),
@@ -391,14 +463,35 @@ function HorseRaceAnalyzer() {
     if (!parsedB.races.length) throw new Error("Parsed " + label + " but found no races in it.");
     brisRef.current = parsedB.byRace;
     fileBlocksRef.current = null;
-    setCardTitle(parsedB.title + " · Brisnet data");
-    setCardMeta({ track: parsedB.track, date: parsedB.dateStr });
-    setRaceData({}); setActiveRace(null);
+    const title = parsedB.title + " · Brisnet data";
+    const meta = { track: parsedB.track, date: parsedB.dateStr };
+    setCardTitle(title);
+    setCardMeta(meta);
     const list = parsedB.races.map((race) => ({ ...race, ...qualify(race) }));
     setRaceIndex(list);
-    const firstOk = list.find((r) => r.ok);
-    if (firstOk) openBrisRace(firstOk);
-    else { setStep("races"); setLcdMsg("SELECT RACE"); }
+    const dataMap = {};
+    for (const r of list) {
+      if (!r.ok) continue;
+      dataMap[r.raceNumber] = {
+        raceInfo: {
+          raceNumber: String(r.raceNumber),
+          distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
+          purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
+          surface: r.surface,
+        },
+        horses: brisnetHorses(parsedB.byRace.get(r.raceNumber)),
+      };
+    }
+    setRaceData(dataMap);
+    setActiveRace(null);
+    saveCard(meta, title, list, dataMap);
+    const firstOk = list.find((r) => r.ok && dataMap[r.raceNumber]);
+    if (firstOk) {
+      const cached = dataMap[firstOk.raceNumber];
+      setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
+      setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+      setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
+    } else { setStep("races"); setLcdMsg("SELECT RACE"); }
   }
 
   function switchTab(r) {
@@ -406,7 +499,9 @@ function HorseRaceAnalyzer() {
     // persist current race's edits before leaving it
     if (activeRace !== null) {
       const curInfo = raceInfo, curHorses = horses;
-      setRaceData((prev) => ({ ...prev, [activeRace]: { raceInfo: curInfo, horses: curHorses } }));
+      const merged = { ...raceData, [activeRace]: { raceInfo: curInfo, horses: curHorses } };
+      setRaceData(merged);
+      saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
     setError(""); setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
     const cached = raceData[r.raceNumber];
@@ -599,6 +694,9 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       if (!resp.ok) throw new Error("Supabase said HTTP " + resp.status + ": " + (await resp.text()).slice(0, 140));
       setWinnerMode(false);
       setLogMsg(`Logged race ${raceInfo.raceNumber}: ${winner.name} won — ${rows.length} rows saved.`);
+      const merged = { ...raceData, [activeRace]: { raceInfo, horses } };
+      setRaceData(merged);
+      saveCard(cardMeta, cardTitle, raceIndex, merged);
     } catch (e) {
       setLogMsg("");
       setError("Couldn't log the result. " + (e.message || e));
@@ -714,7 +812,21 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                   {busy ? "Scanning…" : "📄 Upload card"}
                 </Key>
                 <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
+                {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
               </div>
+              {savedCards && (
+                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 14, maxWidth: 480 }}>
+                  <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Saved cards</div>
+                  {savedCards.length === 0 && <div style={{ fontSize: 12, color: "#B9C8BB" }}>Nothing saved yet — upload a Brisnet card and it saves automatically.</div>}
+                  {savedCards.map((c) => (
+                    <button key={c.id} onClick={() => loadSavedCard(c.id)} disabled={busy}
+                      style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 10px", marginBottom: 5, borderRadius: 6, border: "1px solid rgba(0,0,0,0.35)", background: GREEN, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
+                      <b>{c.title || (c.track + " " + c.race_date)}</b>
+                      <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
@@ -839,45 +951,42 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 </h2>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "8px 0 12px", lineHeight: 1.5 }}>
-                Odds start from the morning line. Near post time, type the live board odds (e.g. 5-2), then hit
-                Re-analyze — the field re-sorts by value. Edge = model win% × payout − 1; positive means the board is
-                paying more than the machine thinks the horse is worth. Tap a horse for its score breakdown.
+                One line per horse: rank · name · odds (editable) · board%·model%·fair · edge · rating. Odds start from
+                the morning line; near post, type the live board odds and hit Re-analyze to re-sort by value. Tap a
+                horse's name for its score breakdown.
               </p>
 
               {displayed.map((r) => {
                 const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
                 const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
                 return (
-                  <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 8, overflow: "hidden", border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                    <button onClick={() => (winnerMode ? logWinner(r) : setExpanded(expanded === r.i ? null : r.i))}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px 6px", background: winnerMode ? "rgba(227,201,140,0.06)" : "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
-                      <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 8px", fontSize: 14, minWidth: 30, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                        {r.ratingRank}
-                      </span>
-                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>
-                        {r.name}{isBest ? " ★" : ""}
-                        {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · post {r.post}</span>}
-                      </span>
-                      <span style={{ flex: "0 0 70px", height: 8, background: "#0A1E17", borderRadius: 999, overflow: "hidden" }}>
-                        <span style={{ display: "block", height: "100%", width: `${topRating ? clamp((r.rating / topRating) * 100, 3, 100) : 0}%`, background: GOLD }} />
-                      </span>
-                      <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 10px", fontSize: 16, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                        {r.rating}
-                      </span>
-                    </button>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "2px 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
+                  <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 5, overflow: "hidden", border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: winnerMode ? "rgba(227,201,140,0.06)" : "none" }}>
+                      <button onClick={() => (winnerMode ? logWinner(r) : setExpanded(expanded === r.i ? null : r.i))}
+                        style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 auto", minWidth: 0, background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                        <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 7px", fontSize: 13, minWidth: 26, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                          {r.ratingRank}
+                        </span>
+                        <span style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {r.name}{isBest ? " ★" : ""}
+                          {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 11 }}> p{r.post}</span>}
+                        </span>
+                      </button>
                       <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
-                        placeholder="5-2" aria-label={`Odds for ${r.name}`}
-                        style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 56, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                      <span>board <b style={{ fontVariantNumeric: "tabular-nums" }}>{r.pBoard !== null ? (r.pBoard * 100).toFixed(0) + "%" : "—"}</b></span>
-                      <span>model <b style={{ fontVariantNumeric: "tabular-nums" }}>{(r.pModel * 100).toFixed(0)}%</b></span>
-                      <span>fair <b style={{ fontVariantNumeric: "tabular-nums" }}>{r.fair !== null ? r.fair.toFixed(1) + "-1" : "—"}</b></span>
-                      <span style={{ fontWeight: 700, color: edgeColor, fontVariantNumeric: "tabular-nums" }}>
-                        edge {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
+                        placeholder="5-2" aria-label={`Odds for ${r.name}`} inputMode="decimal"
+                        style={{ background: LCD_BG, ...lcdFont, fontSize: 12, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "3px 4px", width: 42, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", flex: "0 0 auto" }} />
+                      <span style={{ fontSize: 11, color: "#B9C8BB", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", flex: "0 0 auto" }}>
+                        {r.pBoard !== null ? (r.pBoard * 100).toFixed(0) + "%" : "—"}·{(r.pModel * 100).toFixed(0)}%·{r.fair !== null ? r.fair.toFixed(1) : "—"}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: edgeColor, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", minWidth: 44, textAlign: "right", flex: "0 0 auto" }}>
+                        {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
+                      </span>
+                      <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 7px", fontSize: 14, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", flex: "0 0 auto" }}>
+                        {r.rating}
                       </span>
                     </div>
                     {expanded === r.i && (
-                      <div style={{ padding: "0 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
+                      <div style={{ padding: "0 12px 9px 46px", fontSize: 12, color: "#CFDCCF" }}>
                         {Object.entries(r.components).map(([k, v]) => (
                           <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                             <span>{COMPONENT_LABELS[k]}</span>
