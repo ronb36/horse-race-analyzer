@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.0.0 · July 2026**
+**Version: 1.1.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -38,7 +38,7 @@ Each horse receives a rating that is the sum of seven components. A race is a **
 
 Ratings are converted to approximate win probabilities with a softmax: `p_i ∝ exp(rating_i / 8)`, normalized across the field. The temperature (8) is a chosen constant, not a fitted parameter — **model % is an approximation, not a calibrated probability**, until real results say otherwise (see §7).
 
-For each horse with odds `o` (decimal, x-to-1): board's implied win % = `1/(o+1)` (takeout not removed); fair odds = `(1−p)/p`; **edge** = `p × (o+1) − 1`, the expected profit per $1 if `p` were exact. Positive edge marks a candidate overlay; the largest positive edge gets the ★. The pari-mutuel takeout (~15–20%) means small positive edges are not true edges. Edges above roughly +40% more often indicate a data problem than a market gift — verify the horse's inputs first.
+Scratched horses are excluded and probabilities renormalize over the remaining field. Each horse also shows a **Top-3 (in-the-money) probability** computed with the Harville formulas from the win probabilities — this answers "will it hit the board" separately from "is it priced wrong." For each horse with odds `o` (decimal, x-to-1): board's implied win % = `1/(o+1)` (takeout not removed); fair odds = `(1−p)/p`; **value (edge)** = `p × (o+1) − 1`, the expected profit per $1 if `p` were exact. Projected finish order (PROJ) and value are deliberately separate lenses: value is a statement about price, not a prediction of finishing first. Positive edge marks a candidate overlay; the largest positive edge gets the ★. The pari-mutuel takeout (~15–20%) means small positive edges are not true edges. Edges above roughly +40% more often indicate a data problem than a market gift — verify the horse's inputs first.
 
 ## 5. Data sources
 
@@ -74,6 +74,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.1.0 (2026-07-25)** — Results view redesigned as a labeled grid (Proj / Odds / Fair / Win / Top-3 / Value / Rating); Harville top-3 probabilities; in-app scratch mode with probability renormalization; removed manual-entry and edit-entries paths from the primary flow. Ratings unchanged from 1.0.0.
 - **1.0.0 (2026-07-25)** — First versioned release. Quirin-inspired 7-component model (v1 weights, §3); Brisnet single-file parser with in-browser ZIP; DRF PDF vision fallback (temp 0); race tabs with 1979 eligibility filtering; one-line rows; overlay grid with editable odds and value sort; Supabase persistence (hra_cards) and result logging (hra_race_log); ⚙ SET credentials drawer.
 
 ## 9. Disclaimers
