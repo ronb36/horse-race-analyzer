@@ -296,6 +296,7 @@ function HorseRaceAnalyzer() {
   const [activeRace, setActiveRace] = useState(null);
   const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
   const [winnerMode, setWinnerMode] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [logMsg, setLogMsg] = useState("");
   const [supaUrl, setSupaUrlState] = useState(() => { try { return localStorage.getItem("hra_supa_url") || ""; } catch { return ""; } });
   const setSupaUrl = (v) => { setSupaUrlState(v); try { localStorage.setItem("hra_supa_url", v); } catch {} };
@@ -329,7 +330,7 @@ function HorseRaceAnalyzer() {
   }
 
   async function askClaude(promptText) {
-    if (!apiKey) throw new Error("Enter your Anthropic API key first (get one at console.anthropic.com) — only needed for PDF/photo reading. Brisnet data files need no key.");
+    if (!apiKey) throw new Error("Enter your Anthropic API key first (tap the SET button, top right) — only needed for PDF/photo reading. Brisnet data files need no key.");
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -630,6 +631,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 HORSE RACE ANALYZER
               </div>
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · rebuilt {new Date().getFullYear()}</div>
+              <button onClick={() => setShowSettings((v) => !v)} aria-label="Settings"
+                style={{ marginTop: 6, background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
+                {showSettings ? "✕ CLOSE" : "⚙ SET"}
+              </button>
             </div>
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
@@ -637,6 +642,29 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
 
         {/* ===== Body ===== */}
         <div style={{ background: GREEN, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: "#EFE8D5" }}>
+
+          {showSettings && (
+            <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+              <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 10 }}>Settings — stored only in this browser</div>
+              <label style={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 420 }}>
+                <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (PDF/photo reading only)</span>
+                <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
+                  style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+              </label>
+              <div style={{ ...labelFont, color: "#D8CBA8", margin: "12px 0 6px" }}>Supabase results logging</div>
+              <div style={{ display: "grid", gap: 8, maxWidth: 420 }}>
+                <input value={supaUrl} onChange={(e) => setSupaUrl(e.target.value)} placeholder="https://xxxx.supabase.co"
+                  style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                <input type="password" value={supaKey} onChange={(e) => setSupaKey(e.target.value)} placeholder="Supabase anon key (not service_role)"
+                  style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+              </div>
+              <p style={{ fontSize: 10, color: "#B9C8BB", margin: "8px 0 10px", lineHeight: 1.5 }}>
+                After each race goes official, hit "Log result" and tap the winner — the full prediction snapshot is saved
+                to your hra_race_log table for future model tuning. The Anthropic key is only needed for PDF/photo reading.
+              </p>
+              <Key onClick={() => setShowSettings(false)}>Done</Key>
+            </div>
+          )}
 
           {raceIndex.length > 0 && step !== "start" && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
@@ -678,34 +706,14 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
               <p style={{ fontSize: 14, lineHeight: 1.55, margin: "0 0 16px" }}>
                 Best option: upload a Brisnet "Single Data File" (from brisnet.com — a few dollars per card). It parses
                 instantly, exactly, with no AI reading and no API key needed. Or upload a Daily Racing Form PDF or photos,
-                which the machine reads with AI vision (API key required). Either way it shows which races qualify under
+                which the machine reads with AI vision (API key required — tap ⚙ SET, top right). Either way it shows which races qualify under
                 the 1979 rules. Or punch the numbers in yourself.
               </p>
-              <div style={{ maxWidth: 420, marginBottom: 14 }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (only for PDF/photo reading — stored in this browser)</span>
-                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
-                    style={{ background: LCD_BG, ...lcdFont, fontSize: 14, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", width: "100%", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                </label>
-              </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>
                   {busy ? "Scanning…" : "📄 Upload card"}
                 </Key>
                 <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
-              </div>
-              <div style={{ maxWidth: 420, margin: "16px 0 0" }}>
-                <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 6 }}>Optional: Supabase results logging</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  <input value={supaUrl} onChange={(e) => setSupaUrl(e.target.value)} placeholder="https://xxxx.supabase.co"
-                    style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                  <input type="password" value={supaKey} onChange={(e) => setSupaKey(e.target.value)} placeholder="Supabase anon key"
-                    style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                </div>
-                <p style={{ fontSize: 10, color: "#B9C8BB", margin: "6px 0 0", lineHeight: 1.5 }}>
-                  With these set, a "Log result" button appears after analysis — tap the winner and the full prediction
-                  snapshot is saved to your hra_race_log table for future model tuning.
-                </p>
               </div>
               <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
