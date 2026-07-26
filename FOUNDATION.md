@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.4.0 · July 2026**
+**Version: 1.6.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -48,6 +48,10 @@ Scratched horses are excluded and probabilities renormalize over the remaining f
 
 **5.3 Manual entry.** The full 1979 experience.
 
+## 5.4 The race advisor (Claude in the machine)
+
+When a race opens — and again ~1.5 s after odds edits or scratches — the app sends the computed grid (name, post, rating, board odds, fair odds, edge, win/place/show %, run style + Quirin points) to Claude (claude-sonnet-4-6, temperature 0) with a strict contract: identify the best overlay (largest positive edge, explicitly not necessarily the top-rated horse); choose Win only if the win% supports it (~15%+), Place/Show when the value horse's board-hitting chances outrun a thin win%, and PASS when no edge clears ~+10%; base everything on the supplied numbers and never invent track condition or weather. The three-line reply feeds the LCD verdict and the race-read panel (race shape from the data, then the reasoning). It is an interpretation layer over the model's own numbers — it sees nothing the grid doesn't contain — and requires the Anthropic API key. Bet-type selection is a heuristic since place/show payoffs are pool-dependent.
+
 ## 6. Architecture & persistence
 
 Single-file static app (index.html) on GitHub Pages: React 18.3.1 (UMD), Babel standalone 7.26.4 (pinned — an unpinned Babel once broke the site), fflate 0.8.2. No build step, no server. Credentials (Anthropic API key, Supabase URL + anon key) live in browser localStorage behind the ⚙ SET drawer and are sent only to their respective services. The Claude-artifact variant (horse-race-analyzer.jsx) shares the same source minus keys/persistence.
@@ -74,6 +78,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.6.0 (2026-07-25)** — Automatic race advisor: Claude reads the computed grid on race open and after board changes, verdict on the LCD ("BET: X TO WIN" / "PASS THIS RACE") with a race-shape + reasoning panel under the race header (§5.4). Faceplate buttons arranged ⏏ CARD / ⚙ SET; column legend moved to the footer. Supersedes the manual Ask Claude button (1.5.0, unreleased). Ratings unchanged.
 - **1.4.0 (2026-07-25)** — Raw Brisnet file archived verbatim in hra_cards.raw_file (requires `alter table hra_cards add column raw_file text`). Expand screen enriched: trainer, jockey, run style + Quirin speed points, Prime Power, breeding, and full 10-race history table. Ratings unchanged.
 - **1.3.1 (2026-07-25)** — Value sort and Re-analyze button removed: rows stay in post order permanently, and all figures (value, win/place/show) recalculate live as odds are typed. Tab and Enter (Shift+Tab to go back) step focus straight down the odds column. Ratings unchanged.
 - **1.3.0 (2026-07-25)** — Rows in post-position order (program style) with the projected-finish rank column dropped; centered numeric columns; Fair rendered as plain text (only Odds is editable); Scratch toggle button restored (a prior removal patch had silently failed, leaving Edit entries/New card in place — both now gone); card eject (⏏ CARD) moved to the faceplate beside ⚙ SET. Ratings unchanged.

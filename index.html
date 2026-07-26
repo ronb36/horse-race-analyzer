@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.4.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.6.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -269,7 +269,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.6.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -325,6 +325,8 @@ function HorseRaceAnalyzer() {
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [savedCards, setSavedCards] = useState(null);
+  const [claudeRec, setClaudeRec] = useState(null);
+  const [claudeThinking, setClaudeThinking] = useState(false);
   const [logMsg, setLogMsg] = useState("");
   const [supaUrl, setSupaUrlState] = useState(() => { try { return localStorage.getItem("hra_supa_url") || ""; } catch { return ""; } });
   const setSupaUrl = (v) => { setSupaUrlState(v); try { localStorage.setItem("hra_supa_url", v); } catch {} };
@@ -335,6 +337,9 @@ function HorseRaceAnalyzer() {
   const brisRef = useRef(null);
   const oddsRefs = useRef([]);
   const rawFileRef = useRef(null);
+  const askTimerRef = useRef(null);
+  const askNowRef = useRef(null);
+  const askSeqRef = useRef(0);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -456,8 +461,9 @@ function HorseRaceAnalyzer() {
       if (firstOk) {
         const cached = card.raceData[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg("");
+        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
+        scheduleAsk(400);
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
     } catch (e) {
       setError("Couldn't load that card. " + (e.message || e));
@@ -477,9 +483,10 @@ function HorseRaceAnalyzer() {
     setHorses(hs);
     setActiveRace(r.raceNumber);
     setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg("");
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
     setStep("results");
     setLcdMsg("RACE " + r.raceNumber);
+    scheduleAsk(400);
   }
 
   function loadBrisnet(text, label) {
@@ -514,7 +521,7 @@ function HorseRaceAnalyzer() {
     if (firstOk) {
       const cached = dataMap[firstOk.raceNumber];
       setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-      setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg("");
+      setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
       setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
     } else { setStep("races"); setLcdMsg("SELECT RACE"); }
   }
@@ -528,7 +535,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg("");
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -667,6 +674,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
 
   function toggleScratch(i) {
     setHorses((prev) => prev.map((h, j) => (j === i ? { ...h, scratched: !h.scratched } : h)));
+    scheduleAsk(900);
   }
 
   function updateHorse(i, path, value) {
@@ -722,6 +730,64 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   let liveRank = 0;
   const withRank = overlay.map((r) => ({ ...r, ratingRank: r.scratched ? null : ++liveRank }));
 
+  function scheduleAsk(ms) {
+    if (askTimerRef.current) clearTimeout(askTimerRef.current);
+    askTimerRef.current = setTimeout(() => {
+      askTimerRef.current = null;
+      if (askNowRef.current) askNowRef.current();
+    }, ms);
+  }
+
+  async function askClaudeForBet() {
+    const seq = ++askSeqRef.current;
+    setClaudeThinking(true);
+    try {
+      const lines = overlay.filter((o) => !o.scratched).map((o) => {
+        const h = horses[o.i] || {};
+        const style = h.runStyle ? `, style ${h.runStyle}${h.quirinPts ? " " + h.quirinPts + "pts" : ""}` : "";
+        return `${o.name} (post ${o.post || "?"}): rating ${o.rating.toFixed(1)}, board odds ${o.odds !== null ? o.odds : "unknown"}, fair ${o.fair !== null ? o.fair.toFixed(1) : "?"}, edge ${o.edge !== null ? (o.edge > 0 ? "+" : "") + Math.round(o.edge * 100) + "%" : "?"}, win ${Math.round((o.pModel ?? 0) * 100)}%, place ${Math.round((o.pPlace ?? 0) * 100)}%, show ${Math.round((o.pShow ?? 0) * 100)}%${style}`;
+      }).join("\n");
+      const prompt = `You are the betting advisor inside a 1979 Horse Race Analyzer handheld. Interpret ONLY these computed numbers for Race ${raceInfo.raceNumber} (${raceInfo.distanceFurlongs}f ${raceInfo.surface}):
+${lines}
+
+Task: find the best OVERLAY — the horse whose board odds most overpay the model (largest positive edge). That is often NOT the top-rated horse. Then choose the bet type: WIN if its win% is at least ~15% and the edge is clearly positive; PLACE or SHOW if the value horse's win% is thin but its place/show chances are strong (place/show payoffs are pool-dependent, so this is a judgment call); PASS if no horse has an edge above roughly +10%.
+
+Base everything on the given numbers only — never invent track condition, weather, or facts not shown.
+
+Respond with EXACTLY three lines and nothing else:
+Line 1: LCD text, uppercase, max 34 characters: "BET: <HORSE> TO <WIN|PLACE|SHOW>" or "PASS THIS RACE"
+Line 2: one sentence (max 160 chars) describing this race's shape from the data: field size, distance/surface, where the early speed (E/EP styles, Quirin pts) and class sit.
+Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
+      if (!apiKey) { if (seq === askSeqRef.current) setClaudeThinking(false); return; }
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 200,
+          temperature: 0,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!resp.ok) throw new Error("API HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      const data = await resp.json();
+      const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+      const parts = text.split("\n").filter((x) => x.trim());
+      if (seq === askSeqRef.current) {
+        setClaudeRec({ lcd: (parts[0] || "NO READ").toUpperCase().slice(0, 36), context: (parts[1] || "").trim(), why: (parts[2] || "").trim() });
+      }
+    } catch (e) {
+      console.error("advisor", e);
+    } finally {
+      if (seq === askSeqRef.current) setClaudeThinking(false);
+    }
+  }
+
   async function logWinner(winner) {
     try {
       const rows = overlay.filter((o) => !o.scratched).map((o) => ({
@@ -756,6 +822,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
+  askNowRef.current = askClaudeForBet;
 
   return (
     <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
@@ -769,24 +836,26 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
                 ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {busy ? lcdMsg : step === "results" ? `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating.toFixed(1)}` : lcdMsg}
+              {busy ? lcdMsg : step === "results" ? (claudeRec ? claudeRec.lcd : claudeThinking ? "READING BOARD..." : `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating.toFixed(1)}`) : lcdMsg}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
                 HORSE RACE ANALYZER
               </div>
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · v{APP_VERSION}</div>
-              <button onClick={() => setShowSettings((v) => !v)} aria-label="Settings"
-                style={{ marginTop: 6, background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
-                {showSettings ? "✕ CLOSE" : "⚙ SET"}
-              </button>
-              {step !== "start" && (
-                <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
-                  aria-label="Load a different card"
-                  style={{ marginTop: 6, marginLeft: 6, background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
-                  ⏏ CARD
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 6 }}>
+                {step !== "start" && (
+                  <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
+                    aria-label="Load a different card"
+                    style={{ background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
+                    ⏏ CARD
+                  </button>
+                )}
+                <button onClick={() => setShowSettings((v) => !v)} aria-label="Settings"
+                  style={{ background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
+                  {showSettings ? "✕ CLOSE" : "⚙ SET"}
                 </button>
-              )}
+              </div>
             </div>
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
@@ -799,7 +868,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
             <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, marginBottom: 16 }}>
               <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 10 }}>Settings — stored only in this browser</div>
               <label style={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 420 }}>
-                <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (PDF/photo reading only)</span>
+                <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (PDF reading + the race advisor)</span>
                 <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
                   style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
               </label>
@@ -1003,14 +1072,22 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order
                 </h2>
               </div>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "8px 0 12px", lineHeight: 1.5 }}>
-                Rows are in post-position order, like the program. RTG = the legacy 1979-style rating (the projected
-                winner is the highest RTG). FAIR = the odds the machine would set. ODDS = the live board — the only
-                thing you type; retype as the board changes. VALUE = WIN% × (ODDS+1) − 1: how much the board over- or
-                underpays the machine's opinion. WIN / PLC / SHW = chance to finish 1st, top two, or top three. Value
-                is about price, not performance. Tap a horse's name for its score breakdown; use Scratch to remove
-                late scratches.
-              </p>
+              {(claudeRec || claudeThinking) && (
+                <div style={{ background: "rgba(227,201,140,0.08)", border: "1px solid rgba(227,201,140,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
+                  {!claudeRec && claudeThinking ? (
+                    <span style={{ color: "#B9C8BB" }}>🤖 Reading the board…</span>
+                  ) : (
+                    <span>
+                      {claudeRec.context && <span style={{ display: "block" }}>{claudeRec.context}</span>}
+                      {claudeRec.why && <span style={{ display: "block", marginTop: 4 }}>🤖 {claudeRec.why}{claudeThinking ? " …" : ""}</span>}
+                      <span style={{ display: "block", fontSize: 10, color: "#B9C8BB", marginTop: 5 }}>
+                        Claude's read of the machine's numbers — refreshes as the board changes. An interpretation, not betting advice.
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
+
 
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 500 }}>
@@ -1038,7 +1115,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                             {r.fair !== null ? r.fair.toFixed(1) : "—"}
                           </span>
                           {dim ? <span style={cell}>—</span> : (
-                            <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
+                            <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => { updateHorse(r.i, "mlOdds", e.target.value); scheduleAsk(1500); }}
                               ref={(el) => { oddsRefs.current[di] = el; }}
                               onKeyDown={(e) => {
                                 if (e.key !== "Enter" && e.key !== "Tab") return;
@@ -1126,6 +1203,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
+                Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
+                the machine would set. ODDS = the live board — the only thing you type. VALUE = WIN% × (ODDS+1) − 1.
+                WIN / PLC / SHW = chance to finish 1st, top two, or top three. Tap a horse's name for details; use
+                Scratch for late scratches.
+              </p>
+              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 8, lineHeight: 1.55 }}>
                 ★ = biggest positive edge. Numbered badges always show the machine's rating rank. Model % is an
                 approximation from the ratings, not a calibrated probability, and the track keeps 15–20% of the pool —
                 treat edges as signals to investigate, not sure things. In the words of the original manual: some
