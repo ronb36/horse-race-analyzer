@@ -201,6 +201,7 @@ function HorseRaceAnalyzer() {
   const [horses, setHorses] = useState([]);
   const [speedScale, setSpeedScale] = useState("beyer");
   const [expanded, setExpanded] = useState(null);
+  const [sortMode, setSortMode] = useState("rating"); // rating | edge
   const fileRef = useRef(null);
   const fileBlocksRef = useRef(null);
 
@@ -372,6 +373,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     return { ...r, pModel, pBoard, edge, fair };
   });
   const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
+  const withRank = overlay.map((r, idx) => ({ ...r, ratingRank: idx + 1 }));
+  const displayed = sortMode === "edge"
+    ? [...withRank].sort((a, b) => ((b.edge ?? -999) - (a.edge ?? -999)) || (b.rating - a.rating))
+    : withRank;
 
   return (
     <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
@@ -385,7 +390,11 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
                 ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {busy ? lcdMsg : step === "results" ? `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating}` : lcdMsg}
+              {busy ? lcdMsg : step === "results"
+                ? (sortMode === "edge" && bestEdge && bestEdge.edge > 0
+                    ? `BEST BET: ${bestEdge.name.toUpperCase().slice(0, 12)} +${Math.round(bestEdge.edge * 100)}%`
+                    : `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating}`)
+                : lcdMsg}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
@@ -536,7 +545,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
 
               <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                 <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
-                <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
+                <Key wide red onClick={() => { setStep("results"); setExpanded(null); setSortMode("rating"); }} disabled={!horses.length}>Analyze</Key>
                 <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
               </div>
             </div>
@@ -545,97 +554,75 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           {/* ---------- RESULTS ---------- */}
           {step === "results" && (
             <div>
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 12px" }}>
-                {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} ratings` : "Ratings"}
-              </h2>
-              {results.map((r, rank) => (
-                <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 8, overflow: "hidden" }}>
-                  <button onClick={() => setExpanded(expanded === r.i ? null : r.i)}
-                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
-                    <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 8px", fontSize: 14, minWidth: 30, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                      {rank + 1}
-                    </span>
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>
-                      {r.name}
-                      {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · post {r.post}</span>}
-                    </span>
-                    <span style={{ flex: "0 0 90px", height: 8, background: "#0A1E17", borderRadius: 999, overflow: "hidden" }}>
-                      <span style={{ display: "block", height: "100%", width: `${topRating ? clamp((r.rating / topRating) * 100, 3, 100) : 0}%`, background: GOLD }} />
-                    </span>
-                    <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 10px", fontSize: 16, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                      {r.rating}
-                    </span>
-                  </button>
-                  {expanded === r.i && (
-                    <div style={{ padding: "0 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
-                      {Object.entries(r.components).map(([k, v]) => (
-                        <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                          <span>{COMPONENT_LABELS[k]}</span>
-                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {/* ---------- OVERLAY GRID ---------- */}
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "20px 0 6px" }}>Overlay grid</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px", lineHeight: 1.5 }}>
-                Odds start from the morning line in the form. At the track, retype the live board odds and the grid updates.
-                Edge = model win% × payout − 1. Positive edge = the board is offering more than the machine thinks the horse is worth.
-              </p>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 430 }}>
-                  <thead>
-                    <tr style={{ ...labelFont, color: "#D8CBA8", textAlign: "left" }}>
-                      <th style={{ padding: "6px 6px" }}>Horse</th>
-                      <th style={{ padding: "6px 6px" }}>Odds</th>
-                      <th style={{ padding: "6px 6px" }}>Board %</th>
-                      <th style={{ padding: "6px 6px" }}>Model %</th>
-                      <th style={{ padding: "6px 6px" }}>Fair odds</th>
-                      <th style={{ padding: "6px 6px" }}>Edge</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overlay.map((r) => {
-                      const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
-                      const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
-                      return (
-                        <tr key={r.i} style={{ borderTop: "1px solid rgba(255,255,255,0.08)", background: isBest ? "rgba(227,201,140,0.10)" : "none" }}>
-                          <td style={{ padding: "7px 6px", fontWeight: 700 }}>
-                            {r.name}{isBest ? " ★" : ""}
-                          </td>
-                          <td style={{ padding: "7px 6px" }}>
-                            <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
-                              placeholder="5-2"
-                              style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 58, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                          </td>
-                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.pBoard !== null ? (r.pBoard * 100).toFixed(0) + "%" : "—"}</td>
-                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{(r.pModel * 100).toFixed(0)}%</td>
-                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.fair !== null ? r.fair.toFixed(1) + "-1" : "—"}</td>
-                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: edgeColor }}>
-                            {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — {sortMode === "edge" ? "sorted by value" : "sorted by rating"}
+                </h2>
               </div>
-              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 8, lineHeight: 1.5 }}>
-                ★ = biggest positive edge. Model % is an approximation from the ratings, not a calibrated probability, and the
-                track keeps 15–20% of the pool — treat edges as signals to investigate, not sure things.
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "8px 0 12px", lineHeight: 1.5 }}>
+                Odds start from the morning line. Near post time, type the live board odds (e.g. 5-2), then hit
+                Re-analyze — the field re-sorts by value. Edge = model win% × payout − 1; positive means the board is
+                paying more than the machine thinks the horse is worth. Tap a horse for its score breakdown.
               </p>
 
+              {displayed.map((r) => {
+                const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
+                const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
+                return (
+                  <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 8, overflow: "hidden", border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
+                    <button onClick={() => setExpanded(expanded === r.i ? null : r.i)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px 6px", background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
+                      <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 8px", fontSize: 14, minWidth: 30, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                        {r.ratingRank}
+                      </span>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>
+                        {r.name}{isBest ? " ★" : ""}
+                        {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · post {r.post}</span>}
+                      </span>
+                      <span style={{ flex: "0 0 70px", height: 8, background: "#0A1E17", borderRadius: 999, overflow: "hidden" }}>
+                        <span style={{ display: "block", height: "100%", width: `${topRating ? clamp((r.rating / topRating) * 100, 3, 100) : 0}%`, background: GOLD }} />
+                      </span>
+                      <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 10px", fontSize: 16, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                        {r.rating}
+                      </span>
+                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "2px 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
+                      <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
+                        placeholder="5-2" aria-label={`Odds for ${r.name}`}
+                        style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 56, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                      <span>board <b style={{ fontVariantNumeric: "tabular-nums" }}>{r.pBoard !== null ? (r.pBoard * 100).toFixed(0) + "%" : "—"}</b></span>
+                      <span>model <b style={{ fontVariantNumeric: "tabular-nums" }}>{(r.pModel * 100).toFixed(0)}%</b></span>
+                      <span>fair <b style={{ fontVariantNumeric: "tabular-nums" }}>{r.fair !== null ? r.fair.toFixed(1) + "-1" : "—"}</b></span>
+                      <span style={{ fontWeight: 700, color: edgeColor, fontVariantNumeric: "tabular-nums" }}>
+                        edge {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
+                      </span>
+                    </div>
+                    {expanded === r.i && (
+                      <div style={{ padding: "0 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
+                        {Object.entries(r.components).map(([k, v]) => (
+                          <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                            <span>{COMPONENT_LABELS[k]}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                <Key wide red onClick={() => { setSortMode("edge"); setExpanded(null); }}>Re-analyze · sort by value</Key>
+                {sortMode === "edge" && <Key onClick={() => setSortMode("rating")}>Sort by rating</Key>}
                 <Key onClick={() => setStep("review")}>Edit entries</Key>
                 {raceIndex.length > 0 && <Key onClick={() => { setStep("races"); setLcdMsg("SELECT RACE"); }}>Another race</Key>}
                 <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setLcdMsg("READY"); setError(""); }}>New card</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
-                In the words of the original manual: some unknowns just can't be predicted. This is a period-style analytical toy,
-                not betting advice — even the best horse can lose on any given day. Ratings use a Quirin-inspired formula
-                (early speed weighted heaviest), not the exact 1979 ROM.
+                ★ = biggest positive edge. Numbered badges always show the machine's rating rank. Model % is an
+                approximation from the ratings, not a calibrated probability, and the track keeps 15–20% of the pool —
+                treat edges as signals to investigate, not sure things. In the words of the original manual: some
+                unknowns just can't be predicted. This is a period-style analytical toy, not betting advice.
               </p>
             </div>
           )}
