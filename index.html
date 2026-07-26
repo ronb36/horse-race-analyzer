@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.5.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.5.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.5.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -475,6 +475,7 @@ function HorseRaceAnalyzer() {
   const [slipStamped, setSlipStamped] = useState(null);
   const [slipSerial, setSlipSerial] = useState("");
   const [raceBets, setRaceBets] = useState({}); // raceNo -> array of bet rows
+  const [loggedRaces, setLoggedRaces] = useState({});
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
   const [resultPayout, setResultPayout] = useState("");
@@ -1415,6 +1416,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         settledLocal.push({ ...b, settled: true, won, payout });
       }
       setRaceBets((prev) => ({ ...prev, [rn]: settledLocal }));
+      setLoggedRaces((prev) => ({ ...prev, [rn]: true }));
       if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
       setWinnerMode(false); setFinishPicks([]); setResultPayout("");
       setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
@@ -1461,6 +1463,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   }
   const raceExtras = getRaceExtras(num(raceInfo.raceNumber)) || { t: null, sel: null, watch: [] };
   const raceWatch = raceExtras.watch || [];
+  const raceDone = !!loggedRaces[num(raceInfo.raceNumber)] || (raceBets[num(raceInfo.raceNumber)] || []).some((b) => b.settled);
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
@@ -1631,7 +1634,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
                 {slipsView.filter((b) => !slipsDate || b.race_date === slipsDate).map((b) => (
-                  <div key={b.id} style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "10px 13px", width: 250, fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", transform: `rotate(${((b.id % 5) - 2) * 0.8}deg)`, opacity: b.settled ? 0.55 : 1, position: "relative" }}>
+                  <div key={b.id} style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "10px 13px", width: 250, fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", transform: `rotate(${((b.id % 5) - 2) * 0.8 + (b.settled ? 1.3 : 0)}deg)`, opacity: b.settled ? 0.5 : 1, clipPath: b.settled ? "polygon(0 0, 100% 0, 100% 93%, 95% 100%, 89% 94%, 83% 100%, 77% 94%, 71% 100%, 65% 94%, 59% 100%, 53% 94%, 47% 100%, 41% 94%, 35% 100%, 29% 94%, 23% 100%, 17% 94%, 11% 100%, 5% 94%, 0 100%)" : "none", position: "relative" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, letterSpacing: "0.08em" }}>
                       <span>{b.track} · R{b.race_no} · {ymdToDisplay(b.race_date)}</span>
                       <span style={{ color: "#A33327", fontWeight: 700 }}>GGF-{String(b.id).padStart(5, "0")}</span>
@@ -2132,7 +2135,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {betSlipOpen && (
-                <div style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "14px 16px", margin: "4px 0 12px", fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", maxWidth: 520 }}>
+                <div style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "14px 16px", margin: "4px 0 12px", fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", maxWidth: 520, transform: raceDone ? "rotate(1.4deg) translateY(2px)" : "none", opacity: raceDone ? 0.85 : 1, clipPath: raceDone ? "polygon(0 0, 100% 0, 100% 93%, 95% 100%, 89% 94%, 83% 100%, 77% 94%, 71% 100%, 65% 94%, 59% 100%, 53% 94%, 47% 100%, 41% 94%, 35% 100%, 29% 94%, 23% 100%, 17% 94%, 11% 100%, 5% 94%, 0 100%)" : "none" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, letterSpacing: "0.1em" }}>
                     <span>GOLDEN GATE STYLE PARI-MUTUEL</span>
                     <span style={{ color: "#A33327", fontWeight: 700 }}>{slipSerial}</span>
@@ -2161,7 +2164,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       ))}
                     </div>
                   )}
-                  {!slipStamped ? (
+                  {raceDone ? (
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", color: "#A33327", border: "2px solid #A33327", borderRadius: 3, padding: "6px 10px", transform: "rotate(-2deg)", display: "inline-block", marginBottom: 10 }}>
+                        RACE OFFICIAL — WINDOW CLOSED
+                      </div>
+                      <div>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Done</button>
+                      </div>
+                    </div>
+                  ) : !slipStamped ? (
                     <div>
                       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                         {["WIN", "PLACE", "SHOW"].map((t) => (

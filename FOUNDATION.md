@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.5.0 · July 2026**
+**Version: 2.5.2 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -92,6 +92,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.5.2 (2026-07-26)** [cosmetic] — Settled tickets tear: jagged bottom edge, extra tilt, faded — headed for the grandstand floor, in the per-race slip and the slips table.
+- **2.5.1 (2026-07-26)** [fix] — The betting window closes when a race settles: the slip shows RACE OFFICIAL — WINDOW CLOSED with no bet form (previously new tickets could still be punched on a finished race). Sim fingerprint verified ae7d1b405c989c31.
 - **2.5.0 (2026-07-26)** [cosmetic] — Track-day navigation: Race Day (renamed from Race Card/Today) is the primary home button and central panel; 📤 Uploads houses Entries and Cards (their Backs return to Uploads) as pre-race setup; Slips removed from home (the day lives on Race Day; per-race tickets via the race view's 🎫 Slips button, renamed from Bets); Back from a race opened via Race Day returns to Race Day with statuses refreshed. One day the Uploads hub may be replaced by a single file or an API.
 - **2.4.1 (2026-07-26)** [fix] — Odds fields replace their value on the first keystroke after focus (no more mid-string appends); Tab/Enter hand-off arms the next field the same way. Sim fingerprint verified ae7d1b405c989c31.
 - **2.4.0 (2026-07-26)** [feature] — Race Card status column: each eligible race shows Bet Placed (n) in gold while tickets are live, then Won +$/Lost −$ in green/red (or "Won · payout?" when a place/show payout awaits entry) once results are logged, or Race Run ✓ for logged races without bets. Slips gains date-filter chips (All + per date). Race Card date chips (since 1.16.0) noted as the historical lookback path across screens. Sim fingerprint verified ae7d1b405c989c31.
