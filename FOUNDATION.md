@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.4.0 · July 2026**
+**Version: 2.5.0 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -92,6 +92,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.5.0 (2026-07-26)** [cosmetic] — Track-day navigation: Race Day (renamed from Race Card/Today) is the primary home button and central panel; 📤 Uploads houses Entries and Cards (their Backs return to Uploads) as pre-race setup; Slips removed from home (the day lives on Race Day; per-race tickets via the race view's 🎫 Slips button, renamed from Bets); Back from a race opened via Race Day returns to Race Day with statuses refreshed. One day the Uploads hub may be replaced by a single file or an API.
+- **2.4.1 (2026-07-26)** [fix] — Odds fields replace their value on the first keystroke after focus (no more mid-string appends); Tab/Enter hand-off arms the next field the same way. Sim fingerprint verified ae7d1b405c989c31.
 - **2.4.0 (2026-07-26)** [feature] — Race Card status column: each eligible race shows Bet Placed (n) in gold while tickets are live, then Won +$/Lost −$ in green/red (or "Won · payout?" when a place/show payout awaits entry) once results are logged, or Race Run ✓ for logged races without bets. Slips gains date-filter chips (All + per date). Race Card date chips (since 1.16.0) noted as the historical lookback path across screens. Sim fingerprint verified ae7d1b405c989c31.
 - **2.3.0 (2026-07-26)** [feature] — The table: 🎫 Slips on the home row spreads every ticket face up as paper slips (GGF- serials, slight scatter), live tickets cancellable from the table, settled tickets greyed with WON/LOST stamps, with running totals (staked, returned, net on settled, winners awaiting payout entry). Sim fingerprint verified ae7d1b405c989c31.
 - **2.2.0 (2026-07-26)** [feature] — Ticket lifecycle: 🎟 Bets (with count) and Log Results are both always available on a race; the slip lists this race's tickets with a CANCEL stamp while unsettled (deletes the row — window rules: cancellation until the race, at the teller); once Log Results runs, tickets grey out permanently with WON/LOST · SETTLED stamps and cancellation is impossible. Races without bets can be logged (calibration doctrine restored). Sim fingerprint verified ae7d1b405c989c31.
