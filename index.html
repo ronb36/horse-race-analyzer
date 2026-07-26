@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.3</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -399,7 +399,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.14.2";
+const APP_VERSION = "1.14.3";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -462,6 +462,7 @@ function HorseRaceAnalyzer() {
   const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
   const [claudeRec, setClaudeRec] = useState(null);
   const [claudeThinking, setClaudeThinking] = useState(false);
+  const [claudeErr, setClaudeErr] = useState(null);
   const [logMsg, setLogMsg] = useState("");
   const [supaUrl, setSupaUrlState] = useState(() => { try { return localStorage.getItem("hra_supa_url") || ""; } catch { return ""; } });
   const setSupaUrl = (v) => { setSupaUrlState(v); try { localStorage.setItem("hra_supa_url", v); } catch {} };
@@ -605,7 +606,7 @@ function HorseRaceAnalyzer() {
       if (firstOk) {
         const cached = hydrated[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
+        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
         scheduleAsk(400);
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
@@ -627,7 +628,7 @@ function HorseRaceAnalyzer() {
     setHorses(hs);
     setActiveRace(r.raceNumber);
     setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
     setStep("results");
     setLcdMsg("RACE " + r.raceNumber);
     scheduleAsk(400);
@@ -666,7 +667,7 @@ function HorseRaceAnalyzer() {
     if (firstOk) {
       const cached = dataMap[firstOk.raceNumber];
       setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-      setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
+      setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
       setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
     } else { setStep("races"); setLcdMsg("SELECT RACE"); }
   }
@@ -680,7 +681,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -1131,7 +1132,7 @@ Respond with EXACTLY three lines and nothing else:
 Line 1: LCD text, uppercase, max 34 characters: "BET: <HORSE> TO <WIN|PLACE|SHOW>" or "PASS THIS RACE"
 Line 2: one sentence (max 160 chars) describing this race's shape from the data: field size, distance/surface, where the early speed (E/EP styles, Quirin pts) and class sit.
 Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
-      if (!apiKey) { if (seq === askSeqRef.current) setClaudeThinking(false); return; }
+      if (!apiKey) { if (seq === askSeqRef.current) { setClaudeThinking(false); setClaudeErr("Add your Anthropic API key (⚙ SET) to enable the race advisor."); } return; }
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -1153,9 +1154,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       const parts = text.split("\n").filter((x) => x.trim());
       if (seq === askSeqRef.current) {
         setClaudeRec({ lcd: (parts[0] || "NO READ").toUpperCase().slice(0, 36), context: (parts[1] || "").trim(), why: (parts[2] || "").trim() });
+        setClaudeErr(null);
       }
     } catch (e) {
       console.error("advisor", e);
+      if (seq === askSeqRef.current) setClaudeErr("The advisor couldn't read this race (" + ((e && e.message) || e) + ").");
     } finally {
       if (seq === askSeqRef.current) setClaudeThinking(false);
     }
@@ -1198,6 +1201,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
+  if (step === "results" && !claudeRec && !claudeThinking && !claudeErr && !askTimerRef.current) scheduleAsk(600);
 
   return (
     <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
@@ -1220,7 +1224,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · v{APP_VERSION}</div>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 6 }}>
                 {step !== "start" && (
-                  <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
+                  <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
                     aria-label="Load a different card"
                     style={{ background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
                     ⏏ CARD
@@ -1543,9 +1547,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
                 </h2>
               </div>
-              {(claudeRec || claudeThinking) && (
+              {(claudeRec || claudeThinking || claudeErr) && (
                 <div style={{ background: "rgba(227,201,140,0.08)", border: "1px solid rgba(227,201,140,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
-                  {!claudeRec && claudeThinking ? (
+                  {claudeErr && !claudeRec && !claudeThinking ? (
+                    <span style={{ color: "#B9C8BB" }}>
+                      🤖 {claudeErr}{" "}
+                      <button onClick={() => { setClaudeErr(null); scheduleAsk(0); }}
+                        style={{ background: "none", border: "none", padding: 0, color: "#E3C98C", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>
+                        Re-read
+                      </button>
+                    </span>
+                  ) : !claudeRec && claudeThinking ? (
                     <span style={{ color: "#B9C8BB" }}>🤖 Reading the board…</span>
                   ) : (
                     <span>
