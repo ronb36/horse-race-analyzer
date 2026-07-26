@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -299,11 +299,9 @@ function trackMatches(code, name) {
   const C = String(code || "").toUpperCase().trim();
   const N = String(name || "").toUpperCase().trim();
   if (!C || !N) return false;
+  if (C === N) return true;
   if (TRACK_ALIASES[C] && N.includes(TRACK_ALIASES[C])) return true;
-  if (N.startsWith(C)) return true;
-  let i = 0;
-  for (const ch of N) { if (ch === C[i]) i++; if (i === C.length) return true; }
-  return false;
+  return N.startsWith(C);
 }
 
 function ymdToDisplay(ymd) {
@@ -401,7 +399,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.14.1";
+const APP_VERSION = "1.14.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1385,7 +1383,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               {dayScan.map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
-                const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && ((t.code && c.track === t.code) || trackMatches(c.track, t.track)))) || null;
+                const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && (t.code ? c.track === t.code : trackMatches(c.track, t.track)))) || null;
                 return (
                   <div key={ti} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
