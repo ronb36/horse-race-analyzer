@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -57,6 +57,12 @@ const BOARD_LADDER = [
   [5, "5"], [6, "6"], [7, "7"], [8, "8"], [9, "9"], [10, "10"], [12, "12"],
   [15, "15"], [20, "20"], [25, "25"], [30, "30"], [40, "40"], [50, "50"], [99, "99"],
 ];
+function normalizeOdds(v) {
+  const str = String(v || "").trim();
+  if (/^\d+\.\d+$/.test(str)) return decimalToBoard(parseFloat(str));
+  return str;
+}
+
 function decimalToBoard(dec) {
   if (dec === null || dec === undefined || !Number.isFinite(dec)) return "";
   let best = BOARD_LADDER[0];
@@ -327,8 +333,17 @@ function parseEntriesText(flatText) {
     const hm = body.match(/^([^-]+?)\s*-\s*([A-Za-z]+,\s*[A-Za-z]+\s+\d+\w*,\s*\d{4})/);
     if (hm) { track = hm[1].trim(); dateStr = hm[2]; }
     const tail = hm ? body.slice(hm[0].length) : body;
-    const tm2 = tail.match(/^\s*([A-Z][A-Z \-\.,'&]+?)\.\s/);
-    const rtype = tm2 ? tm2[1].replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase()) : "";
+    const squish = (x) => String(x).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const RACE_TYPES = ["MAIDEN SPECIAL WEIGHT", "MAIDEN OPTIONAL CLAIMING", "MAIDEN CLAIMING", "ALLOWANCE OPTIONAL CLAIMING", "STARTER OPTIONAL CLAIMING", "STARTER ALLOWANCE", "STARTER HANDICAP", "OPTIONAL CLAIMING", "ALLOWANCE", "CLAIMING", "STAKES", "HANDICAP", "MAIDEN"];
+    const squHead = squish(tail.slice(0, 120));
+    let rtype = "";
+    for (const rt of RACE_TYPES) {
+      if (squHead.startsWith(squish(rt))) { rtype = rt.replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase()); break; }
+    }
+    if (!rtype) {
+      const tm2 = tail.match(/^\s*([A-Z][A-Z \-\.,'&]+?)\.\s/);
+      rtype = tm2 ? tm2[1].replace(/\s+/g, " ").replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase()) : "";
+    }
     const dm = tail.slice(0, 220).match(/(\d+)(?:\s+(\d+)\s*\/\s*(\d+))?\s*(Furlongs?|Miles?)/i);
     let distF = null;
     if (dm) {
@@ -339,8 +354,9 @@ function parseEntriesText(flatText) {
     const pm = tail.match(/Purse\s*\$([\d,]+)/);
     const purse = pm ? parseInt(pm[1].replace(/,/g, ""), 10) : null;
     const ptm = tail.match(/\((\d{1,2}:\d{2}\s*[AP]M)\)\s*\((\d+)\)/);
-    const isMaiden = /\bMAIDEN\b/i.test(tail.slice(0, 80));
-    const is2yo = /TWO YEARS? OLDS?(?!.{0,30}AND UPWARD)/i.test(tail.slice(0, 400));
+    const S400 = squish(tail.slice(0, 400));
+    const isMaiden = squish(tail.slice(0, 80)).includes("MAIDEN");
+    const is2yo = (S400.includes("TWOYEAROLD") || S400.includes("TWOYEARSOLD")) && !S400.includes("ANDUPWARD");
     races.push({
       raceNumber: no, type: rtype, distanceFurlongs: distF, surface, purse,
       postTime: ptm ? ptm[1].replace(/^0/, "") : null, fieldSize: ptm ? parseInt(ptm[2], 10) : null,
@@ -366,7 +382,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.12.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -558,11 +574,15 @@ function HorseRaceAnalyzer() {
       setCardMeta(card.cardMeta || { track: "", date: "" });
       if (card.cardMeta && card.cardMeta.date) loadEntriesForDate(card.cardMeta.date);
       setRaceIndex(card.raceIndex || []);
-      setRaceData(card.raceData || {});
+      const hydrated = {};
+      for (const [k, val] of Object.entries(card.raceData || {})) {
+        hydrated[k] = { ...val, horses: (val.horses || []).map((h) => ({ ...h, mlOdds: normalizeOdds(h.mlOdds) })) };
+      }
+      setRaceData(hydrated);
       setSavedCards(null);
-      const firstOk = (card.raceIndex || []).find((r) => r.ok && card.raceData && card.raceData[r.raceNumber]);
+      const firstOk = (card.raceIndex || []).find((r) => r.ok && hydrated[r.raceNumber]);
       if (firstOk) {
-        const cached = card.raceData[firstOk.raceNumber];
+        const cached = hydrated[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
         setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null);
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
