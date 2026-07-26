@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.3.0 · July 2026**
+**Version: 1.4.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -42,7 +42,7 @@ Scratched horses are excluded and probabilities renormalize over the remaining f
 
 ## 5. Data sources
 
-**5.1 Brisnet Single Data File (primary).** Comma-delimited, ~1,435 fields per horse row, one row per entrant. Parsed locally and deterministically — identical file, identical output. Fields used (1-indexed): 1 track, 2 date, 3 race #, 4 post, 5 entry flag (S = scratched, skipped), 6 distance in yards (÷220 = furlongs), 7 surface, 9 race type (S/M/MO = maiden), 10 age/sex code ("AO…" = 2yo-only), 11 classification, 12 purse, 44 morning-line odds, 45 horse name, 86–90 current-year record, 97–101 lifetime record (fallback), 224 days since last race; per past race (10 slots): 256+ race date, 616+ finish position, 666+ lengths behind 1st call, 686+ lengths behind 2nd call, 746+ lengths behind at finish, 846+ BRIS Speed Rating. ZIP downloads are inflated in-browser (fflate). BRIS Speed Ratings ride the "modern" speed scale.
+**5.1 Brisnet Single Data File (primary).** Comma-delimited, ~1,435 fields per horse row, one row per entrant. Parsed locally and deterministically — identical file, identical output. Fields used (1-indexed): 1 track, 2 date, 3 race #, 4 post, 5 entry flag (S = scratched, skipped), 6 distance in yards (÷220 = furlongs), 7 surface, 9 race type (S/M/MO = maiden), 10 age/sex code ("AO…" = 2yo-only), 11 classification, 12 purse, 44 morning-line odds, 45 horse name, 86–90 current-year record, 97–101 lifetime record (fallback), 224 days since last race; per past race (10 slots): 256+ race date, 616+ finish position, 666+ lengths behind 1st call, 686+ lengths behind 2nd call, 746+ lengths behind at finish, 846+ BRIS Speed Rating. Additionally parsed for display and future modeling (not used by the v1 formula): trainer (28), jockey (33), run style (210), Quirin-style speed points (211), Prime Power (251), sire/dam/breeder/where-bred (52/54/56/57), and the full 10-race history summary (dates, tracks, distances, surfaces, finishes, beaten lengths, figures, odds). The complete raw data file is archived verbatim in `hra_cards.raw_file`, so any of the ~1,435 fields can be re-parsed retroactively when the model evolves — no repurchase needed. ZIP downloads are inflated in-browser (fflate). BRIS Speed Ratings ride the "modern" speed scale.
 
 **5.2 DRF PDF / photos (fallback).** Read via Claude vision (model claude-sonnet-4-6, temperature 0 for run-to-run consistency), two-stage: a card scan listing races, then per-race extraction into a compact schema, with a salvage parser for truncated responses. DRF PDFs encode fractional-length superscripts as substitute glyphs, so vision extraction is good but not exact — the review screen exists to catch misreads. Requires the user's Anthropic API key (browser-only storage).
 
@@ -74,6 +74,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.4.0 (2026-07-25)** — Raw Brisnet file archived verbatim in hra_cards.raw_file (requires `alter table hra_cards add column raw_file text`). Expand screen enriched: trainer, jockey, run style + Quirin speed points, Prime Power, breeding, and full 10-race history table. Ratings unchanged.
+- **1.3.1 (2026-07-25)** — Value sort and Re-analyze button removed: rows stay in post order permanently, and all figures (value, win/place/show) recalculate live as odds are typed. Tab and Enter (Shift+Tab to go back) step focus straight down the odds column. Ratings unchanged.
 - **1.3.0 (2026-07-25)** — Rows in post-position order (program style) with the projected-finish rank column dropped; centered numeric columns; Fair rendered as plain text (only Odds is editable); Scratch toggle button restored (a prior removal patch had silently failed, leaving Edit entries/New card in place — both now gone); card eject (⏏ CARD) moved to the faceplate beside ⚙ SET. Ratings unchanged.
 - **1.2.0 (2026-07-25)** — Column order re-anchored on the legacy rating (Rtg · Horse · Fair · Odds · Value · Win · Plc · Shw); ratings shown to one decimal; fair and board odds in matching format; Harville place (top-2) and show (top-3) split into separate columns. Ratings unchanged.
 - **1.1.0 (2026-07-25)** — Results view redesigned as a labeled grid (Proj / Odds / Fair / Win / Top-3 / Value / Rating); Harville top-3 probabilities; in-app scratch mode with probability renormalization; removed manual-entry and edit-entries paths from the primary flow. Ratings unchanged from 1.0.0.
