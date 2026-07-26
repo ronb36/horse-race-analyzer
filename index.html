@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.1.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.2.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -249,7 +249,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -665,8 +665,8 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   const expW = live.map((r) => Math.exp((r.rating - topRating) / TAU));
   const expSum = expW.reduce((a, b) => a + b, 0) || 1;
   const pWin = new Map(live.map((r, idx) => [r.i, expW[idx] / expSum]));
-  // Harville formulas: probability of finishing in the top three
-  const itmMap = new Map();
+  // Harville formulas: probabilities of finishing 2nd and 3rd, giving place (top-2) and show (top-3)
+  const placeMap = new Map(), showMap = new Map();
   {
     const ps = live.map((r) => pWin.get(r.i));
     const n = ps.length;
@@ -682,17 +682,18 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           p3 += py * (pz / (1 - py)) * (ps[x] / (1 - py - pz));
         }
       }
-      itmMap.set(live[x].i, Math.min(1, ps[x] + p2 + p3));
+      placeMap.set(live[x].i, Math.min(1, ps[x] + p2));
+      showMap.set(live[x].i, Math.min(1, ps[x] + p2 + p3));
     }
   }
   const overlay = results.map((r) => {
-    if (r.scratched) return { ...r, pModel: null, pItm: null, pBoard: null, edge: null, fair: null };
+    if (r.scratched) return { ...r, pModel: null, pPlace: null, pShow: null, pBoard: null, edge: null, fair: null };
     const pModel = pWin.get(r.i) ?? 0;
     const o = r.odds;
     const pBoard = o !== null ? 1 / (o + 1) : null;
     const edge = o !== null ? pModel * (o + 1) - 1 : null;
     const fair = pModel > 0 ? (1 - pModel) / pModel : null;
-    return { ...r, pModel, pItm: itmMap.get(r.i) ?? null, pBoard, edge, fair };
+    return { ...r, pModel, pPlace: placeMap.get(r.i) ?? null, pShow: showMap.get(r.i) ?? null, pBoard, edge, fair };
   });
   const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
   let liveRank = 0;
@@ -978,17 +979,18 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 </h2>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "8px 0 12px", lineHeight: 1.5 }}>
-                PROJ = the machine's projected finish order. ODDS = the live board price — starts at the morning line;
-                retype as the board changes. FAIR = the odds the machine would set. WIN / TOP-3 = its chance to win or
-                hit the board. VALUE = how much the board overpays (+) or underpays (−) that chance. Value is about
-                price, not performance — a big + on a longshot is a price opinion, not a prediction it wins. Tap a
-                horse's name for its score breakdown.
+                RTG = the legacy 1979-style rating; rows default to rating order, so the top row is the projected
+                winner. FAIR = the odds the machine would set from that rating. ODDS = the live board — starts at the
+                morning line; retype as the board changes. VALUE = how much the board overpays (+) or underpays (−) the
+                machine's opinion. WIN / PLC / SHW = chance to finish 1st, top two, or top three. Value is about price,
+                not performance — a big + on a longshot is a price opinion, not a prediction it wins. Tap a horse's
+                name for its score breakdown.
               </p>
 
               <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 480 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "36px minmax(110px, 1fr) 54px 56px 44px 50px 56px 58px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8" }}>
-                    <span>Proj</span><span>Horse</span><span>Odds</span><span>Fair</span><span>Win</span><span>Top-3</span><span style={{ textAlign: "right" }}>Value</span><span style={{ textAlign: "right" }}>Rtg</span>
+                <div style={{ minWidth: 500 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(120px, 1fr) 52px 54px 56px 44px 44px 44px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8" }}>
+                    <span>Rtg</span><span>Horse</span><span>Fair</span><span>Odds</span><span style={{ textAlign: "right" }}>Value</span><span>Win</span><span>Plc</span><span>Shw</span>
                   </div>
                   {displayed.map((r) => {
                     const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
@@ -996,32 +998,33 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                     const dim = r.scratched;
                     return (
                       <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "36px minmax(110px, 1fr) 54px 56px 44px 50px 56px 58px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode || scratchMode ? "rgba(227,201,140,0.06)" : "none" }}>
-                          <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 5px", fontSize: 12, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                            {dim ? "SCR" : r.ratingRank}
+                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(120px, 1fr) 52px 54px 56px 44px 44px 44px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode || scratchMode ? "rgba(227,201,140,0.06)" : "none" }}>
+                          <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
+                            {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
                           <button onClick={() => (scratchMode ? toggleScratch(r.i) : winnerMode ? (!dim && logWinner(r)) : setExpanded(expanded === r.i ? null : r.i))}
                             style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
+                            {!dim && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.ratingRank} · </span>}
                             {r.name}{isBest ? " ★" : ""}
                             {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 11 }}> p{r.post}</span>}
                           </button>
-                          {dim ? <span style={{ color: "#8FA396", fontSize: 11 }}>—</span> : (
+                          <span style={{ ...lcdFont, background: dim ? "transparent" : "#86917E", borderRadius: 5, padding: "3px 5px", fontSize: 12, textAlign: "center", boxShadow: dim ? "none" : "inset 0 2px 4px rgba(0,0,0,0.25)", color: dim ? "#8FA396" : LCD_INK }}>
+                            {r.fair !== null ? r.fair.toFixed(1) : "—"}
+                          </span>
+                          {dim ? <span style={{ color: "#8FA396", fontSize: 11, textAlign: "center" }}>—</span> : (
                             <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
                               placeholder="5-2" aria-label={`Odds for ${r.name}`} inputMode="decimal"
                               style={{ background: LCD_BG, ...lcdFont, fontSize: 12, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "3px 4px", width: "100%", textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
                           )}
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{r.fair !== null ? r.fair.toFixed(1) + "-1" : "—"}</span>
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pModel !== null ? (r.pModel * 100).toFixed(0) + "%" : "—"}</span>
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pItm !== null ? (r.pItm * 100).toFixed(0) + "%" : "—"}</span>
                           <span style={{ fontWeight: 700, fontSize: 12, color: edgeColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
                             {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
                           </span>
-                          <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "right", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
-                            {r.rating}
-                          </span>
+                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pModel !== null ? (r.pModel * 100).toFixed(0) + "%" : "—"}</span>
+                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pPlace !== null ? (r.pPlace * 100).toFixed(0) + "%" : "—"}</span>
+                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pShow !== null ? (r.pShow * 100).toFixed(0) + "%" : "—"}</span>
                         </div>
                         {expanded === r.i && (
-                          <div style={{ padding: "0 12px 9px 46px", fontSize: 12, color: "#CFDCCF" }}>
+                          <div style={{ padding: "0 12px 9px 12px", fontSize: 12, color: "#CFDCCF" }}>
                             {Object.entries(r.components).map(([k, v]) => (
                               <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                                 <span>{COMPONENT_LABELS[k]}</span>
