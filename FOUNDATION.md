@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.9.0 · July 2026**
+**Version: 1.11.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -50,7 +50,7 @@ Scratched horses are excluded and probabilities renormalize over the remaining f
 
 ## 5.35 Day scanner (free entries pages)
 
-Brisnet's free per-track entries pages (TwinSpires feed) contain each race's type, distance, surface, purse, age restrictions, **post time**, and field size — everything the 1979 eligibility rules need, before buying anything. Save each track's page as a PDF (Safari share → print → PDF) and upload the stack via 🔍 Scan entries: text is extracted locally (pdf.js, no API), each race is rules-checked, and a shopping-list screen shows per track how many races qualify. Scanned post times attach to the matching track's race tabs and headers when its data file is loaded (matched on the first three letters of the track name). Scans persist to Supabase (`hra_entries`, keyed track + date, jsonb of races including post times, types, field sizes, qualification verdicts); loading any card for a date auto-fetches that date's entries, so post times survive across sessions and devices. Field sizes archived here are a candidate feature for future model versions. The app cannot fetch these pages itself — browser cross-origin policy — so the save-and-upload step is the pipeline.
+Brisnet's free per-track entries pages (TwinSpires feed) contain each race's type, distance, surface, purse, age restrictions, **post time**, and field size — everything the 1979 eligibility rules need, before buying anything. Save each track's page as a PDF (Safari share → print → PDF) and upload the stack via 🔍 Scan entries: text is extracted locally (pdf.js, no API), each race is rules-checked, and a shopping-list screen shows per track how many races qualify. Scanned post times attach to the matching track's race tabs and headers when its data file is loaded (matched on the first three letters of the track name). Track identity keys on the canonical Brisnet 3-letter code everywhere: entries pages carry it in the printed URL footer (`trackId=SAR`), extracted at scan time; a small alias table + letters-in-order fallback covers pages printed without footers and legacy rows. Scans persist to Supabase (`hra_entries`, keyed track code + date, display name in `track_name`, jsonb of races including post times, types, field sizes, qualification verdicts); loading any card for a date auto-fetches that date's entries, so post times survive across sessions and devices. Field sizes archived here are a candidate feature for future model versions. The app cannot fetch these pages itself — browser cross-origin policy — so the save-and-upload step is the pipeline.
 
 ## 5.4 The race advisor (Claude in the machine)
 
@@ -82,6 +82,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.11.0 (2026-07-26)** — Canonical track codes: scans extract the Brisnet trackId from the page's printed URL and everything (post times, owned-card detection, hra_entries keys) matches on exact 3-letter codes, with the alias table demoted to fallback. Adds hra_entries.track_name for display. Includes 1.10.0 (unreleased): owned-card detection in the Entries list ("✓ card on file — open" replaces the buy link) and the trackMatches fallback that fixed MTH↔Monmouth. Ratings unchanged.
+- **1.9.1 (2026-07-26)** — "Buy this card" on qualifying tracks in the Entries list links to Brisnet's data-files store page (new tab). Ratings unchanged.
 - **1.9.0 (2026-07-26)** — Entries button now opens the stored shopping list from hra_entries (all scanned tracks, grouped with dates and post times) with "+ Scan more" for additions; re-scanning a track/date upserts over the stored copy. Ratings unchanged.
 - **1.8.1 (2026-07-26)** — Start-screen buttons reordered to workflow order (Scan entries · Upload card · Saved cards). Content-based routing guards: entries PDFs given to Upload card are detected and scanned instead (with a notice), and data ZIPs/files given to Scan entries are detected and loaded as cards — preventing malformed rows in hra_cards. Ratings unchanged.
 - **1.8.0 (2026-07-26)** — Scanned entries persist to Supabase (hra_entries table); post times auto-load onto race tabs and the Race line whenever a card for that date is opened, across sessions and devices. Ratings unchanged.

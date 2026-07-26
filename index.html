@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.9.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.11.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -261,6 +261,28 @@ const emptyHorse = () => ({
   lastRace: emptyRace(), priorRace: emptyRace(),
 });
 
+const TRACK_ALIASES = {
+  MTH: "MONMOUTH", SAR: "SARATOGA", BAQ: "AQUEDUCT", AQU: "AQUEDUCT", BEL: "BELMONT",
+  GP: "GULFSTREAM", CD: "CHURCHILL", SA: "SANTA ANITA", DMR: "DEL MAR", KEE: "KEENELAND",
+  WO: "WOODBINE", FG: "FAIR GROUNDS", OP: "OAKLAWN", RP: "REMINGTON", TAM: "TAMPA",
+  PRX: "PARX", PIM: "PIMLICO", LRL: "LAUREL", CT: "CHARLES TOWN", ELP: "ELLIS",
+  IND: "INDIANA", HOU: "HOUSTON", LS: "LONE STAR", EVD: "EVANGELINE", PID: "PRESQUE",
+  CBY: "CANTERBURY", TUP: "TURF PARADISE", GG: "GOLDEN GATE", DEL: "DELAWARE",
+  PEN: "PENN", MNR: "MOUNTAINEER", TDN: "THISTLEDOWN", FL: "FINGER LAKES",
+  HAW: "HAWTHORNE", EMD: "EMERALD", LAD: "LOUISIANA DOWNS",
+};
+
+function trackMatches(code, name) {
+  const C = String(code || "").toUpperCase().trim();
+  const N = String(name || "").toUpperCase().trim();
+  if (!C || !N) return false;
+  if (TRACK_ALIASES[C] && N.includes(TRACK_ALIASES[C])) return true;
+  if (N.startsWith(C)) return true;
+  let i = 0;
+  for (const ch of N) { if (ch === C[i]) i++; if (i === C.length) return true; }
+  return false;
+}
+
 function ymdToDisplay(ymd) {
   return ymd && ymd.length === 8 ? `${ymd.slice(4, 6)}/${ymd.slice(6, 8)}/${ymd.slice(0, 4)}` : ymd || "";
 }
@@ -279,6 +301,8 @@ function parseEntriesText(flatText) {
   const flat = flatText.replace(/\s+/g, " ");
   const parts = flat.split(/(\d{1,2})(?:st|nd|rd|th)\s+Race\s*-\s*/);
   let track = "", dateStr = "";
+  const idMatch = flat.match(/[?&]trackId=([A-Za-z0-9]{2,5})/);
+  let trackCode = idMatch ? idMatch[1].toUpperCase() : null;
   const races = [];
   for (let i = 1; i < parts.length; i += 2) {
     const no = parseInt(parts[i], 10);
@@ -306,7 +330,13 @@ function parseEntriesText(flatText) {
       isMaiden, is2yo,
     });
   }
-  return { track, dateStr, races };
+  if (!trackCode && track) {
+    const TU = track.toUpperCase();
+    for (const [code, sub] of Object.entries(TRACK_ALIASES)) {
+      if (TU.includes(sub)) { trackCode = code; break; }
+    }
+  }
+  return { track, trackCode, dateStr, races };
 }
 
 // ---------- Qualification rules (from the 1979 manual) ----------
@@ -319,7 +349,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.11.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -377,6 +407,7 @@ function HorseRaceAnalyzer() {
   const [savedCards, setSavedCards] = useState(null);
   const [dayScan, setDayScan] = useState(null);
   const [scanNote, setScanNote] = useState("");
+  const [ownedCards, setOwnedCards] = useState([]);
   const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
   const [claudeRec, setClaudeRec] = useState(null);
   const [claudeThinking, setClaudeThinking] = useState(false);
@@ -734,13 +765,13 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     }
   }
 
-  async function saveEntries(trackName, ymd, races) {
-    if (!supaUrl || !supaKey || !trackName || !ymd) return;
+  async function saveEntries(trackKey, trackName, ymd, races) {
+    if (!supaUrl || !supaKey || !trackKey || !ymd) return;
     try {
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?on_conflict=track,race_date", {
         method: "POST",
         headers: { ...supaHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify([{ track: trackName, race_date: ymd, entries: races }]),
+        body: JSON.stringify([{ track: trackKey, track_name: trackName, race_date: ymd, entries: races }]),
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
     } catch (e) {
@@ -770,11 +801,19 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     }
   }
 
+  async function fetchOwnedCards() {
+    if (!supaUrl || !supaKey) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,track,race_date", { headers: supaHeaders() });
+      if (resp.ok) setOwnedCards(await resp.json());
+    } catch (e) { console.error("owned cards fetch", e); }
+  }
+
   async function viewEntries() {
     if (!supaUrl || !supaKey) { scanFileRef.current && scanFileRef.current.click(); return; }
     setError(""); setBusy(true); setLcdMsg("LOADING ENTRIES...");
     try {
-      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?select=track,race_date,entries&order=race_date.desc,track.asc&limit=40", {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?select=track,track_name,race_date,entries&order=race_date.desc,track.asc&limit=40", {
         headers: supaHeaders(),
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
@@ -784,7 +823,8 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, r.postTime]));
         return next;
       });
-      setDayScan(rows.map((row) => ({ track: row.track, dateStr: ymdToDisplay(row.race_date), races: row.entries || [] })));
+      await fetchOwnedCards();
+      setDayScan(rows.map((row) => ({ track: row.track_name || row.track, code: row.track, ymd: row.race_date, dateStr: ymdToDisplay(row.race_date), races: row.entries || [] })));
       setScanNote("");
       setStep("scan");
       setLcdMsg(rows.length ? "ENTRIES ON FILE" : "NO ENTRIES YET");
@@ -830,10 +870,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const parsed = parseEntriesText(text);
         if (!parsed.races.length) { found.push({ track: f.name, dateStr: "", races: [], error: "No races recognized in this file." }); continue; }
         const races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
-        setPostTimes((prev) => ({ ...prev, [parsed.track.toUpperCase()]: Object.fromEntries(races.map((r) => [r.raceNumber, r.postTime])) }));
-        saveEntries(parsed.track.toUpperCase(), entriesDateToYmd(parsed.dateStr), races);
-        found.push({ track: parsed.track, dateStr: parsed.dateStr, races });
+        const key = (parsed.trackCode || parsed.track).toUpperCase();
+        setPostTimes((prev) => ({ ...prev, [key]: Object.fromEntries(races.map((r) => [r.raceNumber, r.postTime])) }));
+        saveEntries(key, parsed.track, entriesDateToYmd(parsed.dateStr), races);
+        found.push({ track: parsed.track, code: parsed.trackCode, ymd: entriesDateToYmd(parsed.dateStr), dateStr: parsed.dateStr, races });
       }
+      await fetchOwnedCards();
       setDayScan(found);
       setStep("scan");
       setLcdMsg(found.length + " TRACK" + (found.length === 1 ? "" : "S") + " SCANNED");
@@ -847,10 +889,11 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   function getPostTime(raceNo) {
-    const key3 = (cardMeta.track || "").slice(0, 3).toUpperCase();
-    if (!key3) return null;
+    const code = (cardMeta.track || "").toUpperCase();
+    if (!code) return null;
+    if (postTimes[code]) return postTimes[code][raceNo] || null;
     for (const [name, times] of Object.entries(postTimes)) {
-      if (name.startsWith(key3)) return times[raceNo] || null;
+      if (trackMatches(code, name)) return times[raceNo] || null; // legacy rows keyed by name
     }
     return null;
   }
@@ -1170,12 +1213,29 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               {dayScan.map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
+                const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && ((t.code && c.track === t.code) || trackMatches(c.track, t.track)))) || null;
                 return (
                   <div key={ti} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                       <b style={{ fontSize: 14 }}>{t.track}{t.dateStr ? <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · {t.dateStr}</span> : null}</b>
-                      <span style={{ fontSize: 11, color: ok.length ? "#E3C98C" : "#8FA396" }}>
-                        {t.error ? t.error : `${ok.length} of ${t.races.length} qualify${ok.length ? " — buy this card" : " — pass"}`}
+                      <span style={{ fontSize: 11, color: owned ? "#8FC49F" : ok.length ? "#E3C98C" : "#8FA396" }}>
+                        {t.error ? t.error : owned ? (
+                          <span>
+                            {ok.length} of {t.races.length} qualify —{" "}
+                            <button onClick={() => loadSavedCard(owned.id)} disabled={busy}
+                              style={{ background: "none", border: "none", padding: 0, color: "#8FC49F", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 11 }}>
+                              ✓ card on file — open
+                            </button>
+                          </span>
+                        ) : ok.length ? (
+                          <span>
+                            {ok.length} of {t.races.length} qualify —{" "}
+                            <a href="https://www.brisnet.com/product/data-files" target="_blank" rel="noopener noreferrer"
+                              style={{ color: "#E3C98C", fontWeight: 700, textDecoration: "underline" }}>
+                              buy this card ↗
+                            </a>
+                          </span>
+                        ) : `${ok.length} of ${t.races.length} qualify — pass`}
                       </span>
                     </div>
                     {(t.races || []).map((r) => (
