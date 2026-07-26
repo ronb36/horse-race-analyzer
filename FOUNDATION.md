@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.15.0 · July 2026**
+**Version: 1.16.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -86,6 +86,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.16.0 (2026-07-26)** [feature][cosmetic] — Today renamed Race Card: date selector chips (all card dates on file), eligible races only, sourced from uploaded cards (entries contribute post times only), Back-only bottom row. Settings is its own window: fields + Back, Done removed (values save as they're typed), home hidden while open. Entries/Cards screens: "Upload Entries"/"Upload Cards" labels, ⚙ Set removed — the gear now lives only on the home row. Sim fingerprint verified a2990c230e404b83. Known issue queued as a separate [fix]: blank race-type labels on some scanned rows (SAR R9, COL R3).
+- **1.15.1 (2026-07-26)** [process] — Change-control pact: build classes ([sim]/[feature]/[fix]/[cosmetic]) always ship as distinct builds; sim core fenced with SIM-CORE markers and fingerprinted (a2990c230e404b83); non-sim builds must preserve the fingerprint. Ratings unchanged — fingerprint established.
 - **1.15.0 (2026-07-26)** — 1970s navigation pass: faceplate buttons removed (LCD + branding only); ⚙ Set lives on the bottom button row, rightmost, on every screen; new 🃏 Cards screen (saved cards list, Upload card, Back) replaces the start-screen Saved cards button and inline list; race view gains ⏏ Back; every screen a button opens has a Back button. Ratings unchanged.
 - **1.14.3 (2026-07-26)** — Advisor made self-healing and failure-visible: a results view with no read auto-retries; API/network failures show in the read panel with a Re-read button (previously swallowed silently, leaving TOP on the LCD with no explanation); missing API key states itself. Ratings unchanged.
 - **1.14.2 (2026-07-26)** — Ownership matching is exact-code-only when the entries row carries a track code; the letters-in-order fuzzy fallback removed from trackMatches (it matched SAR inside "Gulfstream Park," falsely marking GP as owned). Alias table + prefix match remain for legacy rows. Ratings unchanged.
