@@ -1,6 +1,8 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.0.2 · July 2026**
+**Version: 2.1.0 · July 2026**
+
+*For the columnist who called Clyde the Winner.*
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -90,6 +92,9 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.1.0 (2026-07-26)** [feature] — Betting pipeline: 🎟 Place Bet opens a 1970s pari-mutuel slip (GGF- serial numbers, in tribute) capturing bet type, horse (verdict pre-selected), amount, plus a snapshot of board odds, model win/place/show, edge, fair line, and the machine's verdict at bet time; tickets save to the new hra_bets table. Once a race carries tickets the button becomes Log Results: tap winner, second, third (undo by re-tap), optional payout field, and Save writes hra_race_log with finish_pos and auto-settles the race's tickets (WIN payouts computed from odds at bet; place/show payouts recorded when supplied). The recap view's full dataset accumulates from here. Sim fingerprint verified ae7d1b405c989c31.
+- **2.0.4 (2026-07-26)** [cosmetic] — Log Result moved to the right end of the race-view row as the final action (Back · Scratch · — · Log Result). FOUNDATION dedication added: for the columnist who called Clyde the Winner — Golden Gate Fields, the local paper's handicap column, and a season-ending trophy, 1970s.
+- **2.0.3 (2026-07-26)** [fix] — Scratches and odds edits persist immediately (debounced auto-save of the current race snapshot); previously they saved only on tab switch or winner logging, so scratch → Back → reopen silently restored the horse. Sim fingerprint verified ae7d1b405c989c31.
 - **2.0.2 (2026-07-26)** [fix] — Advisor prose received a computed field-size fact line (live count + scratches) with instructions to use given numbers and never count lines itself; fixes "nine-horse field" narration on an 8-post, 7-live race. Sim fingerprint verified ae7d1b405c989c31.
 - **2.0.1 (2026-07-26)** [cosmetic] — Back buttons standardized: plain "Back", leftmost, no eject glyph, on every screen including the race view.
 - **2.0.0 (2026-07-26)** [sim] — Declared and signed off: the bet verdict moves into the SIM-CORE fence as coded policy (best positive edge; <+10% PASS; win%≥15% WIN; else place%≥35% PLACE; else show%≥50% SHOW; else PASS). The LCD shows the deterministic verdict; the advisor receives it in its prompt and explains — never chooses. Motivated by the Katie King / Don't Be Salty contradiction (SAR R3). Ratings and probabilities unchanged; fingerprint updated to ae7d1b405c989c31 (was a2990c230e404b83).

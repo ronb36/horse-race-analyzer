@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.0.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.1.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -17,7 +17,8 @@
 <div id="err"></div>
 <script>
 window.addEventListener("error", function (e) {
-  document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno : "");
+  document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno 
+: "");
 });
 window.addEventListener("load", function () {
   if (!window.Babel || !window.React || !window.ReactDOM) {
@@ -414,7 +415,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.1.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -467,6 +468,15 @@ function HorseRaceAnalyzer() {
   const [activeRace, setActiveRace] = useState(null);
   const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
   const [winnerMode, setWinnerMode] = useState(false);
+  const [finishPicks, setFinishPicks] = useState([]);
+  const [betSlipOpen, setBetSlipOpen] = useState(false);
+  const [slipType, setSlipType] = useState("WIN");
+  const [slipHorseI, setSlipHorseI] = useState(null);
+  const [slipAmount, setSlipAmount] = useState("2");
+  const [slipStamped, setSlipStamped] = useState(null);
+  const [slipSerial, setSlipSerial] = useState("");
+  const [raceBets, setRaceBets] = useState({}); // raceNo -> array of bet rows
+  const [resultPayout, setResultPayout] = useState("");
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [savedCards, setSavedCards] = useState(null);
@@ -493,6 +503,7 @@ function HorseRaceAnalyzer() {
   const askNowRef = useRef(null);
   const askSeqRef = useRef(0);
   const scanFileRef = useRef(null);
+  const persistTimerRef = useRef(null);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -559,6 +570,19 @@ function HorseRaceAnalyzer() {
 
   function supaHeaders() {
     return { apikey: supaKey, Authorization: "Bearer " + supaKey, "Content-Type": "application/json" };
+  }
+
+  function persistHorses(nextHorses) {
+    setHorses(nextHorses);
+    if (activeRace === null) return;
+    const nextData = { ...raceData, [activeRace]: { raceInfo, horses: nextHorses } };
+    setRaceData(nextData);
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    const meta = cardMeta, title = cardTitle, index = raceIndex;
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      saveCard(meta, title, index, nextData);
+    }, 600);
   }
 
   async function saveCard(meta, title, index, dataMap) {
@@ -1077,19 +1101,19 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   function toggleScratch(i) {
-    setHorses((prev) => prev.map((h, j) => (j === i ? { ...h, scratched: !h.scratched } : h)));
+    persistHorses(horses.map((h, j) => (j === i ? { ...h, scratched: !h.scratched } : h)));
     scheduleAsk(900);
   }
 
   function updateHorse(i, path, value) {
-    setHorses((prev) => {
-      const next = prev.map((h) => ({ ...h, lastRace: { ...h.lastRace }, priorRace: { ...h.priorRace } }));
-      const parts = path.split(".");
-      if (parts.length === 1) next[i][parts[0]] = value;
-      else next[i][parts[0]][parts[1]] = value;
-      return next;
-    });
+    const next = horses.map((h) => ({ ...h, lastRace: { ...h.lastRace }, priorRace: { ...h.priorRace } }));
+    const parts = path.split(".");
+    let obj = next[i];
+    for (let k = 0; k < parts.length - 1; k++) obj = obj[parts[k]];
+    obj[parts[parts.length - 1]] = value;
+    persistHorses(next);
   }
+
 
   const results = horses
     .map((h, i) => ({ i, name: h.name || `Horse ${i + 1}`, post: h.postPosition, scratched: !!h.scratched, odds: parseOdds(h.mlOdds), ...rateHorse(h, raceInfo, speedScale) }))
@@ -1205,6 +1229,129 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     }
   }
 
+  async function fetchBetsForRace(raceNo) {
+    if (!supaUrl || !supaKey || !cardMeta.track || !cardMeta.date || raceNo === null) return;
+    try {
+      const q = `track=eq.${cardMeta.track}&race_date=eq.${cardMeta.date}&race_no=eq.${raceNo}`;
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?" + q + "&select=*", { headers: supaHeaders() });
+      if (resp.ok) {
+        const rows = await resp.json();
+        setRaceBets((prev) => ({ ...prev, [raceNo]: rows }));
+      }
+    } catch (e) { console.error("bets fetch", e); }
+  }
+
+  function openBetSlip() {
+    const v = simVerdict(overlay);
+    setSlipType(v.action === "PLACE" || v.action === "SHOW" ? v.action : "WIN");
+    setSlipHorseI(v.horse ? v.horse.i : (overlay.find((o) => !o.scratched) || {}).i ?? null);
+    setSlipAmount("2");
+    setSlipStamped(null);
+    setSlipSerial("GGF-" + String(Date.now() % 100000).padStart(5, "0"));
+    setBetSlipOpen(true);
+  }
+
+  async function punchTicket() {
+    const o = overlay.find((x) => x.i === slipHorseI);
+    const amt = parseFloat(slipAmount);
+    if (!o || !Number.isFinite(amt) || amt <= 0) { setError("Pick a horse and a real amount."); return; }
+    const v = simVerdict(overlay);
+    const row = {
+      track: cardMeta.track || null, race_date: cardMeta.date || null, race_no: num(raceInfo.raceNumber),
+      horse: o.name, post: num(o.post), bet_type: slipType, amount: amt,
+      odds_at_bet: horses[o.i] ? horses[o.i].mlOdds || null : null,
+      model_win: o.pModel !== null ? Math.round(o.pModel * 1000) / 10 : null,
+      model_place: o.pPlace !== null ? Math.round(o.pPlace * 1000) / 10 : null,
+      model_show: o.pShow !== null ? Math.round(o.pShow * 1000) / 10 : null,
+      edge: o.edge !== null ? Math.round(o.edge * 1000) / 10 : null,
+      fair: o.fair !== null ? decimalToBoard(o.fair) : null,
+      verdict: v.horse ? `${v.action} ${v.horse.name}` : v.action,
+    };
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets", {
+        method: "POST",
+        headers: { ...supaHeaders(), Prefer: "return=representation" },
+        body: JSON.stringify([row]),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      const saved = await resp.json();
+      const rn = num(raceInfo.raceNumber);
+      setRaceBets((prev) => ({ ...prev, [rn]: [...(prev[rn] || []), ...(saved || [row])] }));
+      setSlipStamped(`${slipType} $${amt.toFixed(2)} — #${o.post} ${o.name.toUpperCase()}`);
+    } catch (e) {
+      setError("Ticket didn't save. " + (e.message || e));
+    }
+  }
+
+  function pickFinish(r) {
+    setFinishPicks((prev) => {
+      if (prev.includes(r.i)) return prev.filter((x) => x !== r.i);
+      if (prev.length >= 3) return prev;
+      return [...prev, r.i];
+    });
+  }
+
+  async function saveResults() {
+    if (finishPicks.length < 3) return;
+    const [p1, p2, p3] = finishPicks;
+    try {
+      const rows = overlay.filter((o) => !o.scratched).map((o) => ({
+        track: cardMeta.track || null,
+        race_date: cardMeta.date || null,
+        race_no: num(raceInfo.raceNumber),
+        distance_f: num(raceInfo.distanceFurlongs),
+        surface: raceInfo.surface || null,
+        purse: num(raceInfo.purse),
+        horse: o.name,
+        post: num(o.post),
+        rating: o.rating,
+        model_pct: Math.round(o.pModel * 1000) / 10,
+        odds: o.odds,
+        is_winner: o.i === p1,
+        finish_pos: o.i === p1 ? 1 : o.i === p2 ? 2 : o.i === p3 ? 3 : null,
+      }));
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log", {
+        method: "POST",
+        headers: { apikey: supaKey, Authorization: "Bearer " + supaKey, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(rows),
+      });
+      if (!resp.ok) throw new Error("Supabase said HTTP " + resp.status + ": " + (await resp.text()).slice(0, 140));
+      // settle this race's tickets
+      const rn = num(raceInfo.raceNumber);
+      const bets = raceBets[rn] || [];
+      const nameAt = (i) => (overlay.find((o) => o.i === i) || {}).name;
+      const top = [nameAt(p1), nameAt(p2), nameAt(p3)];
+      let settledNote = "";
+      for (const b of bets) {
+        if (!b.id) continue;
+        const pos = top.indexOf(b.horse);
+        const won = b.bet_type === "WIN" ? pos === 0 : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0;
+        let payout = won ? null : 0;
+        if (won && b.bet_type === "WIN") {
+          const od = parseOdds(b.odds_at_bet);
+          if (od !== null) payout = Math.round(b.amount * (od + 1) * 100) / 100;
+        }
+        if (won && resultPayout && parseFloat(resultPayout) > 0 && bets.length === 1) payout = parseFloat(resultPayout);
+        try {
+          await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?id=eq." + b.id, {
+            method: "PATCH",
+            headers: { ...supaHeaders(), Prefer: "return=minimal" },
+            body: JSON.stringify({ settled: true, won, payout }),
+          });
+        } catch (settleErr) { console.error(settleErr); }
+      }
+      if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
+      setWinnerMode(false); setFinishPicks([]); setResultPayout("");
+      setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
+      const merged = { ...raceData, [activeRace]: { raceInfo, horses } };
+      setRaceData(merged);
+      saveCard(cardMeta, cardTitle, raceIndex, merged);
+    } catch (e) {
+      setLogMsg("");
+      setError("Couldn't log the result. " + (e.message || e));
+    }
+  }
+
   async function logWinner(winner) {
     try {
       const rows = overlay.filter((o) => !o.scratched).map((o) => ({
@@ -1242,6 +1389,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
+  if (step === "results" && activeRace !== null && raceBets[activeRace] === undefined && supaUrl && supaKey) {
+    setRaceBets((prev) => ({ ...prev, [activeRace]: [] }));
+    fetchBetsForRace(activeRace);
+  }
   if (step === "results" && !claudeRec && !claudeThinking && !claudeErr && !askTimerRef.current) scheduleAsk(600);
 
   return (
@@ -1652,11 +1803,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
-                          <button onClick={() => (scratchMode ? toggleScratch(r.i) : winnerMode ? (!dim && logWinner(r)) : setExpanded(expanded === r.i ? null : r.i))}
+                          <button onClick={() => (scratchMode ? toggleScratch(r.i) : winnerMode ? (!dim && pickFinish(r)) : setExpanded(expanded === r.i ? null : r.i))}
                             tabIndex={-1}
                             style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
                             {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.post} · </span>}
                             {r.name}{isBest ? " ★" : ""}
+                            {winnerMode && finishPicks.includes(r.i) && (
+                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#8FC49F", borderRadius: 4, padding: "1px 5px" }}>
+                                {["1ST", "2ND", "3RD"][finishPicks.indexOf(r.i)]}
+                              </span>
+                            )}
                             {raceWatch.some((w) => w.horse.toUpperCase() === String(r.name).toUpperCase()) && (
                               <span title="Brisnet Scratch Watch — likely scratch" style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: "#3A2F17", background: "#E3C98C", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>SW</span>
                             )}
@@ -1771,7 +1927,75 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
               {winnerMode && (
                 <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
-                  Race is official? Tap the winning horse above to log this race's predictions and result.
+                  {finishPicks.length === 0 && "Race is official? Tap the WINNER above."}
+                  {finishPicks.length === 1 && "Now tap SECOND place."}
+                  {finishPicks.length === 2 && "Now tap THIRD place."}
+                  {finishPicks.length >= 3 && (
+                    <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <span>Top three set — tap a badge to undo.</span>
+                      {(raceBets[num(raceInfo.raceNumber)] || []).length === 1 && (
+                        <input value={resultPayout} onChange={(e) => setResultPayout(e.target.value)} placeholder="payout $ (optional)"
+                          style={{ background: LCD_BG, ...lcdFont, fontSize: 12, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "5px 8px", width: 130 }} />
+                      )}
+                      <Key onClick={saveResults}>Save results</Key>
+                    </span>
+                  )}
+                </div>
+              )}
+              {betSlipOpen && (
+                <div style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "14px 16px", margin: "4px 0 12px", fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", maxWidth: 520 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, letterSpacing: "0.1em" }}>
+                    <span>GOLDEN GATE STYLE PARI-MUTUEL</span>
+                    <span style={{ color: "#A33327", fontWeight: 700 }}>{slipSerial}</span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", margin: "6px 0 10px" }}>
+                    {(cardMeta.track || "").toUpperCase()} · RACE {raceInfo.raceNumber} · {ymdToDisplay(cardMeta.date)}
+                  </div>
+                  {!slipStamped ? (
+                    <div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        {["WIN", "PLACE", "SHOW"].map((t) => (
+                          <button key={t} onClick={() => setSlipType(t)}
+                            style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, letterSpacing: "0.1em", padding: "5px 12px", borderRadius: 3, cursor: "pointer", background: slipType === t ? "#A33327" : "transparent", color: slipType === t ? "#F2E8D0" : "#3A3226", border: "2px solid #A33327" }}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                        {overlay.filter((o) => !o.scratched).map((o) => (
+                          <button key={o.i} onClick={() => setSlipHorseI(o.i)}
+                            style={{ fontFamily: "inherit", fontSize: 12, padding: "4px 9px", borderRadius: 3, cursor: "pointer", background: slipHorseI === o.i ? "#3A3226" : "transparent", color: slipHorseI === o.i ? "#F2E8D0" : "#3A3226", border: "1px solid #3A3226" }}>
+                            {o.post} · {o.name}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+                        {["2", "5", "10", "20"].map((a) => (
+                          <button key={a} onClick={() => setSlipAmount(a)}
+                            style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "4px 10px", borderRadius: 3, cursor: "pointer", background: slipAmount === a ? "#3A3226" : "transparent", color: slipAmount === a ? "#F2E8D0" : "#3A3226", border: "1px solid #3A3226" }}>
+                            ${a}
+                          </button>
+                        ))}
+                        <input value={slipAmount} onChange={(e) => setSlipAmount(e.target.value)} inputMode="decimal"
+                          style={{ fontFamily: "inherit", fontSize: 12, width: 64, padding: "4px 8px", border: "1px solid #3A3226", borderRadius: 3, background: "transparent", color: "#3A3226" }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button onClick={punchTicket} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 13, letterSpacing: "0.12em", padding: "7px 16px", borderRadius: 3, cursor: "pointer", background: "#A33327", color: "#F2E8D0", border: "none" }}>PUNCH TICKET</button>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontSize: 12, padding: "7px 12px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3A3226", border: "1px solid #3A3226" }}>Back</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "0.1em", color: "#A33327", border: "2px solid #A33327", borderRadius: 3, padding: "8px 10px", transform: "rotate(-1.2deg)", display: "inline-block", marginBottom: 10 }}>
+                        {slipStamped}
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button onClick={() => { setSlipStamped(null); setSlipSerial("GGF-" + String(Date.now() % 100000).padStart(5, "0")); }}
+                          style={{ fontFamily: "inherit", fontSize: 12, padding: "6px 12px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3A3226", border: "1px solid #3A3226" }}>+ Another bet</button>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Done</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {scratchMode && (
@@ -1786,10 +2010,13 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                 <Key onClick={goHome}>Back</Key>
-                {supaUrl && supaKey && (
-                  <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
-                )}
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
+                <div style={{ flex: 1 }} />
+                {supaUrl && supaKey && ((raceBets[num(raceInfo.raceNumber)] || []).length === 0 ? (
+                  <Key onClick={openBetSlip} disabled={busy}>🎟 Place Bet</Key>
+                ) : (
+                  <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                ))}
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
