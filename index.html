@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.1.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.2.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -17,8 +17,7 @@
 <div id="err"></div>
 <script>
 window.addEventListener("error", function (e) {
-  document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno 
-: "");
+  document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno : "");
 });
 window.addEventListener("load", function () {
   if (!window.Babel || !window.React || !window.ReactDOM) {
@@ -415,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.2.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1283,6 +1282,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     }
   }
 
+  async function cancelBet(b) {
+    if (!b.id || b.settled) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?id=eq." + b.id, {
+        method: "DELETE",
+        headers: { ...supaHeaders(), Prefer: "return=minimal" },
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const rn = num(raceInfo.raceNumber);
+      setRaceBets((prev) => ({ ...prev, [rn]: (prev[rn] || []).filter((x) => x.id !== b.id) }));
+    } catch (e) { setError("Couldn't cancel that ticket. " + (e.message || e)); }
+  }
+
   function pickFinish(r) {
     setFinishPicks((prev) => {
       if (prev.includes(r.i)) return prev.filter((x) => x !== r.i);
@@ -1322,8 +1334,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       const nameAt = (i) => (overlay.find((o) => o.i === i) || {}).name;
       const top = [nameAt(p1), nameAt(p2), nameAt(p3)];
       let settledNote = "";
+      const settledLocal = [];
       for (const b of bets) {
-        if (!b.id) continue;
+        if (!b.id) { settledLocal.push(b); continue; }
         const pos = top.indexOf(b.horse);
         const won = b.bet_type === "WIN" ? pos === 0 : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0;
         let payout = won ? null : 0;
@@ -1339,7 +1352,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             body: JSON.stringify({ settled: true, won, payout }),
           });
         } catch (settleErr) { console.error(settleErr); }
+        settledLocal.push({ ...b, settled: true, won, payout });
       }
+      setRaceBets((prev) => ({ ...prev, [rn]: settledLocal }));
       if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
       setWinnerMode(false); setFinishPicks([]); setResultPayout("");
       setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
@@ -1951,6 +1966,27 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", margin: "6px 0 10px" }}>
                     {(cardMeta.track || "").toUpperCase()} · RACE {raceInfo.raceNumber} · {ymdToDisplay(cardMeta.date)}
                   </div>
+                  {(raceBets[num(raceInfo.raceNumber)] || []).length > 0 && (
+                    <div style={{ borderBottom: "1px dashed #C9B98F", marginBottom: 10, paddingBottom: 8 }}>
+                      {(raceBets[num(raceInfo.raceNumber)] || []).map((b, bi) => (
+                        <div key={b.id || bi} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, padding: "3px 0", opacity: b.settled ? 0.45 : 1 }}>
+                          <span style={{ fontWeight: 700, flex: 1 }}>
+                            {b.bet_type} ${Number(b.amount).toFixed(2)} — #{b.post} {String(b.horse).toUpperCase()}
+                          </span>
+                          {b.settled ? (
+                            <span style={{ fontWeight: 700, letterSpacing: "0.08em", color: b.won ? "#2E6B45" : "#A33327" }}>
+                              {b.won ? `WON${b.payout ? ` $${Number(b.payout).toFixed(2)}` : ""}` : "LOST"} · SETTLED
+                            </span>
+                          ) : (
+                            <button onClick={() => cancelBet(b)}
+                              style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 10, letterSpacing: "0.1em", padding: "3px 8px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#A33327", border: "2px solid #A33327" }}>
+                              CANCEL
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!slipStamped ? (
                     <div>
                       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -2012,11 +2048,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <Key onClick={goHome}>Back</Key>
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
                 <div style={{ flex: 1 }} />
-                {supaUrl && supaKey && ((raceBets[num(raceInfo.raceNumber)] || []).length === 0 ? (
-                  <Key onClick={openBetSlip} disabled={busy}>🎟 Place Bet</Key>
-                ) : (
+                {supaUrl && supaKey && (
+                  <Key onClick={openBetSlip} disabled={busy}>
+                    🎟 Bets{(raceBets[num(raceInfo.raceNumber)] || []).length ? ` (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : ""}
+                  </Key>
+                )}
+                {supaUrl && supaKey && (
                   <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
-                ))}
+                )}
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
