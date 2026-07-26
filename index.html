@@ -7,6 +7,7 @@
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script src="https://unpkg.com/fflate@0.8.2/umd/index.js"></script>
 <style>body { margin: 0; } #err { font-family: monospace; color: #B5442C; padding: 16px; white-space: pre-wrap; }</style>
 </head>
 <body>
@@ -358,6 +359,17 @@ function HorseRaceAnalyzer() {
     throw new Error("Couldn't parse the reading. Raw response started: " + JSON.stringify(clean.slice(0, 160)));
   }
 
+  function loadBrisnet(text, label) {
+    const parsedB = parseBrisnetFile(text);
+    if (!parsedB.races.length) throw new Error("Parsed " + label + " but found no races in it.");
+    brisRef.current = parsedB.byRace;
+    fileBlocksRef.current = null;
+    setCardTitle(parsedB.title + " · Brisnet data");
+    setRaceIndex(parsedB.races.map((race) => ({ ...race, ...qualify(race) })));
+    setStep("races");
+    setLcdMsg("SELECT RACE");
+  }
+
   // ----- STAGE 1: scan the card, list every race -----
   async function handleFiles(fileList) {
     setError("");
@@ -365,19 +377,38 @@ function HorseRaceAnalyzer() {
     setLcdMsg("SCANNING CARD...");
     try {
       const filesArr = Array.from(fileList || []);
-      if (filesArr.length === 1 && (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(filesArr[0].name) || (filesArr[0].type || "").startsWith("text/"))) {
+      // Brisnet ZIP straight from the download — unzip in the browser
+      if (filesArr.length === 1 && (/\.zip$/i.test(filesArr[0].name) || /zip/.test(filesArr[0].type || ""))) {
+        if (typeof fflate === "undefined") throw new Error("ZIP support didn't load. Unzip the file and upload the data file inside it instead.");
+        const buf = new Uint8Array(await filesArr[0].arrayBuffer());
+        const entries = fflate.unzipSync(buf);
+        const names = Object.keys(entries).filter((n) => !n.endsWith("/"));
+        let text = null, used = null;
+        for (const n of names) {
+          if (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(n)) { text = new TextDecoder("latin1").decode(entries[n]); used = n; break; }
+        }
+        if (text === null) {
+          for (const n of names) {
+            const t2 = new TextDecoder("latin1").decode(entries[n]);
+            if (looksLikeBrisnet(t2)) { text = t2; used = n; break; }
+          }
+        }
+        if (text === null || !looksLikeBrisnet(text)) {
+          throw new Error("No Brisnet data file found inside " + filesArr[0].name + ". It contains: " + names.join(", "));
+        }
+        loadBrisnet(text, used);
+        return;
+      }
+      // Bare Brisnet data file (any name — validated by column count, not extension)
+      if (filesArr.length === 1 && !/^(image\/|application\/pdf)/.test(filesArr[0].type || "")) {
         const rawText = await filesArr[0].text();
         if (looksLikeBrisnet(rawText)) {
-          const parsedB = parseBrisnetFile(rawText);
-          brisRef.current = parsedB.byRace;
-          fileBlocksRef.current = null;
-          setCardTitle(parsedB.title + " · Brisnet data");
-          setRaceIndex(parsedB.races.map((race) => ({ ...race, ...qualify(race) })));
-          setStep("races");
-          setLcdMsg("SELECT RACE");
+          loadBrisnet(rawText, filesArr[0].name);
           return;
         }
-        throw new Error("That file doesn't look like a Brisnet single-file card (too few columns). Download the \"Single Data File\" product from brisnet.com, unzip it, and upload the data file inside.");
+        if (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(filesArr[0].name)) {
+          throw new Error("That file doesn't look like a Brisnet single-file card (too few columns). Buy the \"Single Data File\" product on brisnet.com and upload its ZIP or the data file inside.");
+        }
       }
       brisRef.current = null;
       fileBlocksRef.current = await filesToBlocks(fileList);
@@ -556,8 +587,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 </Key>
                 <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
               </div>
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.drf,.dr2,.dr3,.dr4,.dr5,.mcp,.csv,.txt,text/plain,text/csv"
-                multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
+              <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
