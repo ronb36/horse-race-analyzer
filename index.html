@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -401,7 +401,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.14.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -944,7 +944,11 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         headers: supaHeaders(),
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
-      const rows = await resp.json();
+      const rawRows = await resp.json();
+      // hide legacy name-keyed rows when a code-keyed row exists for the same track+date
+      const rows = rawRows.filter((r) =>
+        !(String(r.track).length > 4 && rawRows.some((o) =>
+          o !== r && o.race_date === r.race_date && String(o.track).length <= 4 && trackMatches(o.track, r.track))));
       setPostTimes((prev) => {
         const next = { ...prev };
         for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));

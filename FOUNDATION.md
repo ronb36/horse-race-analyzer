@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.14.0 · July 2026**
+**Version: 1.14.1 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -86,6 +86,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.14.1 (2026-07-26)** — Entries view hides legacy name-keyed rows when a code-keyed row exists for the same track and date (the duplicate Del Mar case); one-time cleanup: `delete from hra_entries where char_length(track) > 4`. Ratings unchanged.
 - **1.14.0 (2026-07-26)** — Today view: all races from every owned card for the most recent race date, merged chronologically by post time (from stored entries), qualifiers tappable straight into their race, skips dimmed with reasons. loadSavedCard accepts a target race. Ratings unchanged.
 - **1.13.0 (2026-07-26)** — Program-style page harvest: Scratch Watch (likely scratches with reasons) flagged per horse via SW chip, expand warning, and advisor context; track handicapper's selections shown per race. Stored in hra_entries; scanner handles both free page types interchangeably. Ratings unchanged.
 - **1.12.2 (2026-07-26)** — Hidden file pickers now mount on every screen; "+ Scan more" on the Entries view (previously dead — its input only existed on the start screen) works. Ratings unchanged.
