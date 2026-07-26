@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.3</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.15.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -399,7 +399,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.14.3";
+const APP_VERSION = "1.15.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -502,7 +502,7 @@ function HorseRaceAnalyzer() {
   }
 
   async function askClaude(promptText) {
-    if (!apiKey) throw new Error("Enter your Anthropic API key first (tap the SET button, top right) — only needed for PDF/photo reading. Brisnet data files need no key.");
+    if (!apiKey) throw new Error("Enter your Anthropic API key first (tap ⚙ Set in the bottom row) — only needed for PDF/photo reading. Brisnet data files need no key.");
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -935,6 +935,18 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } catch (e) { console.error("owned cards fetch", e); }
   }
 
+  function goHome() {
+    setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null);
+    setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    brisRef.current = null; setLcdMsg("READY"); setError("");
+  }
+
+  async function viewCards() {
+    if (supaUrl && supaKey) { await fetchSavedCards(); } else { setSavedCards([]); }
+    setStep("cards");
+    setLcdMsg("CARDS ON FILE");
+  }
+
   async function viewEntries() {
     if (!supaUrl || !supaKey) { scanFileRef.current && scanFileRef.current.click(); return; }
     setError(""); setBusy(true); setLcdMsg("LOADING ENTRIES...");
@@ -1132,7 +1144,7 @@ Respond with EXACTLY three lines and nothing else:
 Line 1: LCD text, uppercase, max 34 characters: "BET: <HORSE> TO <WIN|PLACE|SHOW>" or "PASS THIS RACE"
 Line 2: one sentence (max 160 chars) describing this race's shape from the data: field size, distance/surface, where the early speed (E/EP styles, Quirin pts) and class sit.
 Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
-      if (!apiKey) { if (seq === askSeqRef.current) { setClaudeThinking(false); setClaudeErr("Add your Anthropic API key (⚙ SET) to enable the race advisor."); } return; }
+      if (!apiKey) { if (seq === askSeqRef.current) { setClaudeThinking(false); setClaudeErr("Add your Anthropic API key (⚙ Set, bottom row) to enable the race advisor."); } return; }
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -1222,19 +1234,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 HORSE RACE ANALYZER
               </div>
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · v{APP_VERSION}</div>
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 6 }}>
-                {step !== "start" && (
-                  <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
-                    aria-label="Load a different card"
-                    style={{ background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
-                    ⏏ CARD
-                  </button>
-                )}
-                <button onClick={() => setShowSettings((v) => !v)} aria-label="Settings"
-                  style={{ background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
-                  {showSettings ? "✕ CLOSE" : "⚙ SET"}
-                </button>
-              </div>
             </div>
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
@@ -1310,36 +1309,52 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 14, lineHeight: 1.55, margin: "0 0 16px" }}>
                 Best option: upload a Brisnet "Single Data File" (from brisnet.com — a few dollars per card). It parses
                 instantly, exactly, with no AI reading and no API key needed. Or upload a Daily Racing Form PDF or photos,
-                which the machine reads with AI vision (API key required — tap ⚙ SET, top right). Either way it shows which races qualify under
+                which the machine reads with AI vision (API key required — tap ⚙ Set in the bottom row). Either way it shows which races qualify under
                 the 1979 rules. Or punch the numbers in yourself.
               </p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <Key wide onClick={viewEntries} disabled={busy}>{busy ? "Working…" : "🔍 Entries"}</Key>
-                <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload card</Key>
+                <Key wide onClick={viewCards} disabled={busy}>🃏 Cards</Key>
                 {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>📅 Today</Key>}
-                {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
+                <div style={{ flex: 1 }} />
+                <Key onClick={() => setShowSettings((v) => !v)}>{showSettings ? "✕ Close" : "⚙ Set"}</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
                 Entries: your stored shopping list of scanned tracks (post times included), plus "+ Scan more" to add
                 tracks — save Brisnet's free entries page as a PDF per track and upload the stack. Re-scanning a track
                 refreshes its stored copy.
               </p>
-              {savedCards && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 14, maxWidth: 480 }}>
-                  <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Saved cards</div>
-                  {savedCards.length === 0 && <div style={{ fontSize: 12, color: "#B9C8BB" }}>Nothing saved yet — upload a Brisnet card and it saves automatically.</div>}
-                  {savedCards.map((c) => (
-                    <button key={c.id} onClick={() => loadSavedCard(c.id)} disabled={busy}
-                      style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 10px", marginBottom: 5, borderRadius: 6, border: "1px solid rgba(0,0,0,0.35)", background: GREEN, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
-                      <b>{c.title || (c.track + " " + c.race_date)}</b>
-                      <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
+            </div>
+          )}
+
+          {/* ---------- CARDS ---------- */}
+          {step === "cards" && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
+                Tap a card to open it. Uploaded Brisnet data files save here automatically.
+              </p>
+              {(!savedCards || savedCards.length === 0) && (
+                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                  Nothing saved yet — tap "📄 Upload card" below with a Brisnet data file.
+                </div>
+              )}
+              {(savedCards || []).map((c) => (
+                <button key={c.id} onClick={() => loadSavedCard(c.id)} disabled={busy}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
+                  <b>{c.title || (c.track + " " + c.race_date)}</b>
+                  <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
+                </button>
+              ))}
+              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload card</Key>
+                <div style={{ flex: 1 }} />
+                <Key onClick={() => setShowSettings((v) => !v)}>⚙ Set</Key>
+              </div>
             </div>
           )}
 
@@ -1362,8 +1377,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {!it.ok && <span style={{ fontSize: 11 }}>{it.reason}</span>}
                 </button>
               ))}
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+                <div style={{ flex: 1 }} />
+                <Key onClick={() => setShowSettings((v) => !v)}>⚙ Set</Key>
               </div>
             </div>
           )}
@@ -1424,9 +1441,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                 );
               })}
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
                 <Key onClick={() => scanFileRef.current?.click()}>+ Scan more</Key>
+                <div style={{ flex: 1 }} />
+                <Key onClick={() => setShowSettings((v) => !v)}>⚙ Set</Key>
               </div>
             </div>
           )}
@@ -1725,11 +1744,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   ✓ {logMsg}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                 {supaUrl && supaKey && (
                   <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
                 )}
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
+                <Key onClick={goHome}>⏏ Back</Key>
+                <div style={{ flex: 1 }} />
+                <Key onClick={() => setShowSettings((v) => !v)}>⚙ Set</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
