@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.2.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.3.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -249,7 +249,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -298,7 +298,7 @@ function HorseRaceAnalyzer() {
   const [horses, setHorses] = useState([]);
   const [speedScale, setSpeedScale] = useState("beyer");
   const [expanded, setExpanded] = useState(null);
-  const [sortMode, setSortMode] = useState("rating"); // rating | edge
+  const [sortMode, setSortMode] = useState("post"); // post | edge
   const [raceData, setRaceData] = useState({});        // raceNumber -> { raceInfo, horses }
   const [activeRace, setActiveRace] = useState(null);
   const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
@@ -434,7 +434,7 @@ function HorseRaceAnalyzer() {
       if (firstOk) {
         const cached = card.raceData[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-        setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+        setExpanded(null); setSortMode("post"); setWinnerMode(false); setScratchMode(false); setLogMsg("");
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
     } catch (e) {
@@ -455,7 +455,7 @@ function HorseRaceAnalyzer() {
     setHorses(hs);
     setActiveRace(r.raceNumber);
     setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
-    setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+    setExpanded(null); setSortMode("post"); setWinnerMode(false); setScratchMode(false); setLogMsg("");
     setStep("results");
     setLcdMsg("RACE " + r.raceNumber);
   }
@@ -491,7 +491,7 @@ function HorseRaceAnalyzer() {
     if (firstOk) {
       const cached = dataMap[firstOk.raceNumber];
       setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-      setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+      setExpanded(null); setSortMode("post"); setWinnerMode(false); setScratchMode(false); setLogMsg("");
       setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
     } else { setStep("races"); setLcdMsg("SELECT RACE"); }
   }
@@ -505,7 +505,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+    setError(""); setExpanded(null); setSortMode("post"); setWinnerMode(false); setScratchMode(false); setLogMsg("");
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -733,7 +733,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
   const displayed = sortMode === "edge"
     ? [...withRank].sort((a, b) => (a.scratched === b.scratched ? (((b.edge ?? -999) - (a.edge ?? -999)) || (b.rating - a.rating)) : a.scratched ? 1 : -1))
-    : withRank;
+    : [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
 
   return (
     <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
@@ -762,6 +762,13 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 style={{ marginTop: 6, background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
                 {showSettings ? "✕ CLOSE" : "⚙ SET"}
               </button>
+              {step !== "start" && (
+                <button onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); brisRef.current = null; setLcdMsg("READY"); setError(""); }}
+                  aria-label="Load a different card"
+                  style={{ marginTop: 6, marginLeft: 6, background: GREEN, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999, padding: "4px 12px", fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)" }}>
+                  ⏏ CARD
+                </button>
+              )}
             </div>
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
@@ -964,7 +971,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
 
               <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                 <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
-                <Key wide red onClick={() => { setStep("results"); setExpanded(null); setSortMode("rating"); }} disabled={!horses.length}>Analyze</Key>
+                <Key wide red onClick={() => { setStep("results"); setExpanded(null); setSortMode("post"); }} disabled={!horses.length}>Analyze</Key>
                 <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
               </div>
             </div>
@@ -975,53 +982,53 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
-                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — {sortMode === "edge" ? "sorted by value" : "sorted by rating"}
+                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — {sortMode === "edge" ? "sorted by value" : "sorted by post"}
                 </h2>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "8px 0 12px", lineHeight: 1.5 }}>
-                RTG = the legacy 1979-style rating; rows default to rating order, so the top row is the projected
-                winner. FAIR = the odds the machine would set from that rating. ODDS = the live board — starts at the
-                morning line; retype as the board changes. VALUE = how much the board overpays (+) or underpays (−) the
-                machine's opinion. WIN / PLC / SHW = chance to finish 1st, top two, or top three. Value is about price,
-                not performance — a big + on a longshot is a price opinion, not a prediction it wins. Tap a horse's
-                name for its score breakdown.
+                Rows are in post-position order, like the program. RTG = the legacy 1979-style rating (the projected
+                winner is the highest RTG). FAIR = the odds the machine would set. ODDS = the live board — the only
+                thing you type; retype as the board changes. VALUE = WIN% × (ODDS+1) − 1: how much the board over- or
+                underpays the machine's opinion. WIN / PLC / SHW = chance to finish 1st, top two, or top three. Value
+                is about price, not performance. Tap a horse's name for its score breakdown; use Scratch to remove
+                late scratches.
               </p>
 
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 500 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(120px, 1fr) 52px 54px 56px 44px 44px 44px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8" }}>
-                    <span>Rtg</span><span>Horse</span><span>Fair</span><span>Odds</span><span style={{ textAlign: "right" }}>Value</span><span>Win</span><span>Plc</span><span>Shw</span>
+                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8", textAlign: "center" }}>
+                    <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span>
                   </div>
                   {displayed.map((r) => {
                     const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
                     const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
                     const dim = r.scratched;
+                    const cell = { fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
                       <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(120px, 1fr) 52px 54px 56px 44px 44px 44px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode || scratchMode ? "rgba(227,201,140,0.06)" : "none" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode || scratchMode ? "rgba(227,201,140,0.06)" : "none" }}>
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
                           <button onClick={() => (scratchMode ? toggleScratch(r.i) : winnerMode ? (!dim && logWinner(r)) : setExpanded(expanded === r.i ? null : r.i))}
                             style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
-                            {!dim && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.ratingRank} · </span>}
+                            {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.post} · </span>}
                             {r.name}{isBest ? " ★" : ""}
-                            {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 11 }}> p{r.post}</span>}
                           </button>
-                          <span style={{ ...lcdFont, background: dim ? "transparent" : "#86917E", borderRadius: 5, padding: "3px 5px", fontSize: 12, textAlign: "center", boxShadow: dim ? "none" : "inset 0 2px 4px rgba(0,0,0,0.25)", color: dim ? "#8FA396" : LCD_INK }}>
+                          <span style={{ ...cell, color: dim ? "#8FA396" : "#EFE8D5", fontWeight: 700 }}>
                             {r.fair !== null ? r.fair.toFixed(1) : "—"}
                           </span>
-                          {dim ? <span style={{ color: "#8FA396", fontSize: 11, textAlign: "center" }}>—</span> : (
+                          {dim ? <span style={cell}>—</span> : (
                             <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
                               placeholder="5-2" aria-label={`Odds for ${r.name}`} inputMode="decimal"
                               style={{ background: LCD_BG, ...lcdFont, fontSize: 12, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "3px 4px", width: "100%", textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
                           )}
-                          <span style={{ fontWeight: 700, fontSize: 12, color: edgeColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                          <span style={{ ...cell, fontWeight: 700, color: edgeColor }}>
                             {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
                           </span>
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pModel !== null ? (r.pModel * 100).toFixed(0) + "%" : "—"}</span>
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pPlace !== null ? (r.pPlace * 100).toFixed(0) + "%" : "—"}</span>
-                          <span style={{ fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums" }}>{r.pShow !== null ? (r.pShow * 100).toFixed(0) + "%" : "—"}</span>
+                          <span style={cell}>{r.pModel !== null ? (r.pModel * 100).toFixed(0) + "%" : "—"}</span>
+                          <span style={cell}>{r.pPlace !== null ? (r.pPlace * 100).toFixed(0) + "%" : "—"}</span>
+                          <span style={cell}>{r.pShow !== null ? (r.pShow * 100).toFixed(0) + "%" : "—"}</span>
                         </div>
                         {expanded === r.i && (
                           <div style={{ padding: "0 12px 9px 12px", fontSize: 12, color: "#CFDCCF" }}>
@@ -1057,11 +1064,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                 <Key wide red onClick={() => { setSortMode("edge"); setExpanded(null); }}>Re-analyze · sort by value</Key>
                 {supaUrl && supaKey && (
-                  <Key onClick={() => { setWinnerMode(!winnerMode); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
+                  <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
                 )}
-                {sortMode === "edge" && <Key onClick={() => setSortMode("rating")}>Sort by rating</Key>}
-                <Key onClick={() => setStep("review")}>Edit entries</Key>
-                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setLogMsg(""); brisRef.current = null; setLcdMsg("READY"); setError(""); }}>New card</Key>
+                {sortMode === "edge" && <Key onClick={() => setSortMode("post")}>Sort by post</Key>}
+                <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 ★ = biggest positive edge. Numbered badges always show the machine's rating rank. Model % is an

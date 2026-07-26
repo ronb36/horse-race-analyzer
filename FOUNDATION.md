@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.2.0 · July 2026**
+**Version: 1.3.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -74,6 +74,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.3.0 (2026-07-25)** — Rows in post-position order (program style) with the projected-finish rank column dropped; centered numeric columns; Fair rendered as plain text (only Odds is editable); Scratch toggle button restored (a prior removal patch had silently failed, leaving Edit entries/New card in place — both now gone); card eject (⏏ CARD) moved to the faceplate beside ⚙ SET. Ratings unchanged.
 - **1.2.0 (2026-07-25)** — Column order re-anchored on the legacy rating (Rtg · Horse · Fair · Odds · Value · Win · Plc · Shw); ratings shown to one decimal; fair and board odds in matching format; Harville place (top-2) and show (top-3) split into separate columns. Ratings unchanged.
 - **1.1.0 (2026-07-25)** — Results view redesigned as a labeled grid (Proj / Odds / Fair / Win / Top-3 / Value / Rating); Harville top-3 probabilities; in-app scratch mode with probability renormalization; removed manual-entry and edit-entries paths from the primary flow. Ratings unchanged from 1.0.0.
 - **1.0.0 (2026-07-25)** — First versioned release. Quirin-inspired 7-component model (v1 weights, §3); Brisnet single-file parser with in-browser ZIP; DRF PDF vision fallback (temp 0); race tabs with 1979 eligibility filtering; one-line rows; overlay grid with editable odds and value sort; Supabase persistence (hra_cards) and result logging (hra_race_log); ⚙ SET credentials drawer.
