@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.6.0 · July 2026**
+**Version: 1.8.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -48,6 +48,10 @@ Scratched horses are excluded and probabilities renormalize over the remaining f
 
 **5.3 Manual entry.** The full 1979 experience.
 
+## 5.35 Day scanner (free entries pages)
+
+Brisnet's free per-track entries pages (TwinSpires feed) contain each race's type, distance, surface, purse, age restrictions, **post time**, and field size — everything the 1979 eligibility rules need, before buying anything. Save each track's page as a PDF (Safari share → print → PDF) and upload the stack via 🔍 Scan entries: text is extracted locally (pdf.js, no API), each race is rules-checked, and a shopping-list screen shows per track how many races qualify. Scanned post times attach to the matching track's race tabs and headers when its data file is loaded (matched on the first three letters of the track name). Scans persist to Supabase (`hra_entries`, keyed track + date, jsonb of races including post times, types, field sizes, qualification verdicts); loading any card for a date auto-fetches that date's entries, so post times survive across sessions and devices. Field sizes archived here are a candidate feature for future model versions. The app cannot fetch these pages itself — browser cross-origin policy — so the save-and-upload step is the pipeline.
+
 ## 5.4 The race advisor (Claude in the machine)
 
 When a race opens — and again ~1.5 s after odds edits or scratches — the app sends the computed grid (name, post, rating, board odds, fair odds, edge, win/place/show %, run style + Quirin points) to Claude (claude-sonnet-4-6, temperature 0) with a strict contract: identify the best overlay (largest positive edge, explicitly not necessarily the top-rated horse); choose Win only if the win% supports it (~15%+), Place/Show when the value horse's board-hitting chances outrun a thin win%, and PASS when no edge clears ~+10%; base everything on the supplied numbers and never invent track condition or weather. The three-line reply feeds the LCD verdict and the race-read panel (race shape from the data, then the reasoning). It is an interpretation layer over the model's own numbers — it sees nothing the grid doesn't contain — and requires the Anthropic API key. Bet-type selection is a heuristic since place/show payoffs are pool-dependent.
@@ -78,6 +82,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.8.0 (2026-07-26)** — Scanned entries persist to Supabase (hra_entries table); post times auto-load onto race tabs and the Race line whenever a card for that date is opened, across sessions and devices. Ratings unchanged.
+- **1.7.0 (2026-07-26)** — Day scanner: upload saved PDFs of Brisnet's free entries pages for any number of tracks; local pdf.js text extraction + 1979 rules produce a per-track shopping list (qualifying races, post times, field sizes). Post times flow onto race tabs and headers. Ratings unchanged.
 - **1.6.0 (2026-07-25)** — Automatic race advisor: Claude reads the computed grid on race open and after board changes, verdict on the LCD ("BET: X TO WIN" / "PASS THIS RACE") with a race-shape + reasoning panel under the race header (§5.4). Faceplate buttons arranged ⏏ CARD / ⚙ SET; column legend moved to the footer. Supersedes the manual Ask Claude button (1.5.0, unreleased). Ratings unchanged.
 - **1.4.0 (2026-07-25)** — Raw Brisnet file archived verbatim in hra_cards.raw_file (requires `alter table hra_cards add column raw_file text`). Expand screen enriched: trainer, jockey, run style + Quirin speed points, Prime Power, breeding, and full 10-race history table. Ratings unchanged.
 - **1.3.1 (2026-07-25)** — Value sort and Re-analyze button removed: rows stay in post order permanently, and all figures (value, win/place/show) recalculate live as odds are typed. Tab and Enter (Shift+Tab to go back) step focus straight down the odds column. Ratings unchanged.

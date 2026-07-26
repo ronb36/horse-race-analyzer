@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.6.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.8.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script src="https://unpkg.com/fflate@0.8.2/umd/index.js"></script>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";</script>
 <style>body { margin: 0; } #err { font-family: monospace; color: #B5442C; padding: 16px; white-space: pre-wrap; }</style>
 </head>
 <body>
@@ -259,6 +261,50 @@ const emptyHorse = () => ({
   lastRace: emptyRace(), priorRace: emptyRace(),
 });
 
+function entriesDateToYmd(dateStr) {
+  const m = String(dateStr || "").match(/([A-Za-z]+)\s+(\d{1,2})\w*,\s*(\d{4})/);
+  if (!m) return "";
+  const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+  const mi = months.indexOf(m[1].toLowerCase());
+  if (mi < 0) return "";
+  return m[3] + String(mi + 1).padStart(2, "0") + String(m[2]).padStart(2, "0");
+}
+
+// ---------- Free entries-page (TwinSpires/Brisnet) scanner ----------
+function parseEntriesText(flatText) {
+  const flat = flatText.replace(/\s+/g, " ");
+  const parts = flat.split(/(\d{1,2})(?:st|nd|rd|th)\s+Race\s*-\s*/);
+  let track = "", dateStr = "";
+  const races = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const no = parseInt(parts[i], 10);
+    const body = parts[i + 1] || "";
+    const hm = body.match(/^([^-]+?)\s*-\s*([A-Za-z]+,\s*[A-Za-z]+\s+\d+\w*,\s*\d{4})/);
+    if (hm) { track = hm[1].trim(); dateStr = hm[2]; }
+    const tail = hm ? body.slice(hm[0].length) : body;
+    const tm2 = tail.match(/^\s*([A-Z][A-Z \-\.,'&]+?)\.\s/);
+    const rtype = tm2 ? tm2[1].replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase()) : "";
+    const dm = tail.slice(0, 220).match(/(\d+)(?:\s+(\d+)\s*\/\s*(\d+))?\s*(Furlongs?|Miles?)/i);
+    let distF = null;
+    if (dm) {
+      const v = parseFloat(dm[1]) + (dm[2] ? parseFloat(dm[2]) / parseFloat(dm[3]) : 0);
+      distF = Math.round(v * (/^mile/i.test(dm[4]) ? 8 : 1) * 100) / 100;
+    }
+    const surface = /turf/i.test(tail.slice(0, 220)) ? "turf" : "dirt";
+    const pm = tail.match(/Purse\s*\$([\d,]+)/);
+    const purse = pm ? parseInt(pm[1].replace(/,/g, ""), 10) : null;
+    const ptm = tail.match(/\((\d{1,2}:\d{2}\s*[AP]M)\)\s*\((\d+)\)/);
+    const isMaiden = /\bMAIDEN\b/i.test(tail.slice(0, 80));
+    const is2yo = /TWO YEARS? OLDS?(?!.{0,30}AND UPWARD)/i.test(tail.slice(0, 400));
+    races.push({
+      raceNumber: no, type: rtype, distanceFurlongs: distF, surface, purse,
+      postTime: ptm ? ptm[1].replace(/^0/, "") : null, fieldSize: ptm ? parseInt(ptm[2], 10) : null,
+      isMaiden, is2yo,
+    });
+  }
+  return { track, dateStr, races };
+}
+
 // ---------- Qualification rules (from the 1979 manual) ----------
 function qualify(r) {
   const reasons = [];
@@ -269,7 +315,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.8.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -325,6 +371,8 @@ function HorseRaceAnalyzer() {
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [savedCards, setSavedCards] = useState(null);
+  const [dayScan, setDayScan] = useState(null);
+  const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
   const [claudeRec, setClaudeRec] = useState(null);
   const [claudeThinking, setClaudeThinking] = useState(false);
   const [logMsg, setLogMsg] = useState("");
@@ -340,6 +388,7 @@ function HorseRaceAnalyzer() {
   const askTimerRef = useRef(null);
   const askNowRef = useRef(null);
   const askSeqRef = useRef(0);
+  const scanFileRef = useRef(null);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -454,6 +503,7 @@ function HorseRaceAnalyzer() {
       brisRef.current = null; fileBlocksRef.current = null;
       setCardTitle(card.cardTitle || "");
       setCardMeta(card.cardMeta || { track: "", date: "" });
+      if (card.cardMeta && card.cardMeta.date) loadEntriesForDate(card.cardMeta.date);
       setRaceIndex(card.raceIndex || []);
       setRaceData(card.raceData || {});
       setSavedCards(null);
@@ -499,6 +549,7 @@ function HorseRaceAnalyzer() {
     const meta = { track: parsedB.track, date: parsedB.dateStr };
     setCardTitle(title);
     setCardMeta(meta);
+    loadEntriesForDate(meta.date);
     const list = parsedB.races.map((race) => ({ ...race, ...qualify(race) }));
     setRaceIndex(list);
     const dataMap = {};
@@ -663,6 +714,91 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } finally {
       setBusy(false);
     }
+  }
+
+  async function saveEntries(trackName, ymd, races) {
+    if (!supaUrl || !supaKey || !trackName || !ymd) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?on_conflict=track,race_date", {
+        method: "POST",
+        headers: { ...supaHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify([{ track: trackName, race_date: ymd, entries: races }]),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+    } catch (e) {
+      console.error("entries save failed", e);
+      setError("Entries auto-save to Supabase failed (post times still work this session). " + (e.message || e));
+    }
+  }
+
+  async function loadEntriesForDate(ymd) {
+    if (!supaUrl || !supaKey || !ymd) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=eq." + ymd + "&select=track,entries", {
+        headers: supaHeaders(),
+      });
+      if (!resp.ok) return;
+      const rows = await resp.json();
+      if (!rows.length) return;
+      setPostTimes((prev) => {
+        const next = { ...prev };
+        for (const row of rows) {
+          next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, r.postTime]));
+        }
+        return next;
+      });
+    } catch (e) {
+      console.error("entries load failed", e);
+    }
+  }
+
+  async function pdfFileToText(file) {
+    if (typeof pdfjsLib === "undefined") throw new Error("PDF text engine didn't load — check your connection and refresh.");
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let out = "";
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      out += tc.items.map((it) => it.str).join(" ") + "\n";
+    }
+    return out;
+  }
+
+  async function handleScanFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError(""); setBusy(true); setLcdMsg("SCANNING TRACKS...");
+    try {
+      const found = [];
+      for (const f of files) {
+        const text = /pdf$/i.test(f.name) || f.type === "application/pdf" ? await pdfFileToText(f) : await f.text();
+        const parsed = parseEntriesText(text);
+        if (!parsed.races.length) { found.push({ track: f.name, dateStr: "", races: [], error: "No races recognized in this file." }); continue; }
+        const races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
+        setPostTimes((prev) => ({ ...prev, [parsed.track.toUpperCase()]: Object.fromEntries(races.map((r) => [r.raceNumber, r.postTime])) }));
+        saveEntries(parsed.track.toUpperCase(), entriesDateToYmd(parsed.dateStr), races);
+        found.push({ track: parsed.track, dateStr: parsed.dateStr, races });
+      }
+      setDayScan(found);
+      setStep("scan");
+      setLcdMsg(found.length + " TRACK" + (found.length === 1 ? "" : "S") + " SCANNED");
+    } catch (e) {
+      setError("Scan failed. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally {
+      setBusy(false);
+      if (scanFileRef.current) scanFileRef.current.value = "";
+    }
+  }
+
+  function getPostTime(raceNo) {
+    const key3 = (cardMeta.track || "").slice(0, 3).toUpperCase();
+    if (!key3) return null;
+    for (const [name, times] of Object.entries(postTimes)) {
+      if (name.startsWith(key3)) return times[raceNo] || null;
+    }
+    return null;
   }
 
   function startManual() {
@@ -904,7 +1040,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     }}>
                     R{r.raceNumber}
                     <span style={{ display: "block", fontSize: 9, fontWeight: 400, letterSpacing: "0.05em", opacity: 0.85 }}>
-                      {r.ok ? `${r.distanceFurlongs}f` : "skip"}
+                      {r.ok ? (getPostTime(r.raceNumber) || `${r.distanceFurlongs}f`) : "skip"}
                     </span>
                   </button>
                 );
@@ -935,7 +1071,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {busy ? "Scanning…" : "📄 Upload card"}
                 </Key>
                 {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
+                <Key wide onClick={() => scanFileRef.current?.click()} disabled={busy}>🔍 Scan entries</Key>
               </div>
+              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
+                Scan entries: save Brisnet's free entries page as a PDF for each track you're curious about, upload the
+                whole stack here, and the machine flags which tracks have races worth buying the data file for — post
+                times included.
+              </p>
+              <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
               {savedCards && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 14, maxWidth: 480 }}>
                   <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Saved cards</div>
@@ -953,6 +1096,42 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
+            </div>
+          )}
+
+          {/* ---------- DAY SCAN ---------- */}
+          {step === "scan" && dayScan && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Today's shopping list</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
+              </p>
+              {dayScan.map((t, ti) => {
+                const ok = (t.races || []).filter((r) => r.ok);
+                return (
+                  <div key={ti} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                      <b style={{ fontSize: 14 }}>{t.track}</b>
+                      <span style={{ fontSize: 11, color: ok.length ? "#E3C98C" : "#8FA396" }}>
+                        {t.error ? t.error : `${ok.length} of ${t.races.length} qualify${ok.length ? " — buy this card" : " — pass"}`}
+                      </span>
+                    </div>
+                    {(t.races || []).map((r) => (
+                      <div key={r.raceNumber} style={{ display: "flex", gap: 10, fontSize: 12, padding: "3px 0", color: r.ok ? "#EFE8D5" : "#6E8378", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <span style={{ minWidth: 30, fontWeight: 700 }}>R{r.raceNumber}</span>
+                        <span style={{ minWidth: 62 }}>{r.postTime || "—"}</span>
+                        <span style={{ minWidth: 70 }}>{r.distanceFurlongs}f {r.surface}</span>
+                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.type}{r.fieldSize ? ` · ${r.fieldSize} horses` : ""}</span>
+                        {!r.ok && <span style={{ fontSize: 11 }}>{r.reason}</span>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+                <Key onClick={() => scanFileRef.current?.click()}>+ Scan more</Key>
+              </div>
             </div>
           )}
 
@@ -1069,7 +1248,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
-                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order
+                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
                 </h2>
               </div>
               {(claudeRec || claudeThinking) && (
