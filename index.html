@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.13.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.14.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -401,7 +401,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -458,6 +458,7 @@ function HorseRaceAnalyzer() {
   const [showSettings, setShowSettings] = useState(false);
   const [savedCards, setSavedCards] = useState(null);
   const [dayScan, setDayScan] = useState(null);
+  const [dayView, setDayView] = useState(null);
   const [scanNote, setScanNote] = useState("");
   const [ownedCards, setOwnedCards] = useState([]);
   const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
@@ -578,7 +579,7 @@ function HorseRaceAnalyzer() {
     }
   }
 
-  async function loadSavedCard(id) {
+  async function loadSavedCard(id, targetRace) {
     setError(""); setBusy(true); setLcdMsg("LOADING CARD...");
     try {
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?id=eq." + id + "&select=card", {
@@ -599,7 +600,10 @@ function HorseRaceAnalyzer() {
       }
       setRaceData(hydrated);
       setSavedCards(null);
-      const firstOk = (card.raceIndex || []).find((r) => r.ok && hydrated[r.raceNumber]);
+      const wanted = targetRace !== undefined && targetRace !== null
+        ? (card.raceIndex || []).find((r) => r.raceNumber === targetRace && r.ok && hydrated[r.raceNumber])
+        : null;
+      const firstOk = wanted || (card.raceIndex || []).find((r) => r.ok && hydrated[r.raceNumber]);
       if (firstOk) {
         const cached = hydrated[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
@@ -855,6 +859,73 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } catch (e) {
       console.error("entries load failed", e);
     }
+  }
+
+  function postTimeToMinutes(t) {
+    const m = String(t || "").match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
+    if (!m) return 9999;
+    let hh = parseInt(m[1], 10) % 12;
+    if (/P/i.test(m[3])) hh += 12;
+    return hh * 60 + parseInt(m[2], 10);
+  }
+
+  function extrasFor(code, raceNo, ptMap) {
+    const C = String(code || "").toUpperCase();
+    if (ptMap[C] && ptMap[C][raceNo] !== undefined) {
+      const v = ptMap[C][raceNo];
+      return typeof v === "string" ? { t: v } : (v || { t: null });
+    }
+    for (const [name, times] of Object.entries(ptMap)) {
+      if (trackMatches(C, name) && times[raceNo] !== undefined) {
+        const v = times[raceNo];
+        return typeof v === "string" ? { t: v } : (v || { t: null });
+      }
+    }
+    return { t: null };
+  }
+
+  async function viewToday() {
+    if (!supaUrl || !supaKey) { setError("Today view needs Supabase (tap ⚙ SET)."); return; }
+    setError(""); setBusy(true); setLcdMsg("BUILDING THE DAY...");
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,track,race_date,card&order=race_date.desc&limit=12", {
+        headers: supaHeaders(),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      const rows = await resp.json();
+      if (!rows.length) throw new Error("No saved cards yet — upload a Brisnet card first.");
+      const day = rows[0].race_date;
+      const todays = rows.filter((r) => r.race_date === day);
+      // pull that day's entries so post times ride along
+      let ptMap = { ...postTimes };
+      try {
+        const er = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=eq." + day + "&select=track,entries", { headers: supaHeaders() });
+        if (er.ok) {
+          for (const row of await er.json()) {
+            ptMap[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
+          }
+          setPostTimes(ptMap);
+        }
+      } catch (entriesErr) { console.error(entriesErr); }
+      const items = [];
+      for (const row of todays) {
+        for (const r of (row.card && row.card.raceIndex) || []) {
+          const ex = extrasFor(row.track, r.raceNumber, ptMap);
+          items.push({
+            cardId: row.id, track: row.track, raceNumber: r.raceNumber, ok: r.ok, reason: r.reason,
+            distanceFurlongs: r.distanceFurlongs, surface: r.surface, type: r.type, horseCount: r.horseCount,
+            postTime: ex.t, sortKey: postTimeToMinutes(ex.t),
+          });
+        }
+      }
+      items.sort((a, b) => a.sortKey - b.sortKey || String(a.track).localeCompare(String(b.track)) || a.raceNumber - b.raceNumber);
+      setDayView({ date: ymdToDisplay(day), items });
+      setStep("today");
+      setLcdMsg("THE DAY AHEAD");
+    } catch (e) {
+      setError("Couldn't build the day view. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally { setBusy(false); }
   }
 
   async function fetchOwnedCards() {
@@ -1239,6 +1310,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <Key wide onClick={viewEntries} disabled={busy}>{busy ? "Working…" : "🔍 Entries"}</Key>
                 <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload card</Key>
+                {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>📅 Today</Key>}
                 {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
@@ -1262,6 +1334,31 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
+            </div>
+          )}
+
+          {/* ---------- TODAY ---------- */}
+          {step === "today" && dayView && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>The day — {dayView.date}</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
+                Every race on your owned cards, in post-time order. Tap a qualifying race to open it.
+              </p>
+              {dayView.items.map((it, ii) => (
+                <button key={ii} onClick={() => it.ok && loadSavedCard(it.cardId, it.raceNumber)} disabled={!it.ok || busy}
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", marginBottom: 5, borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: it.ok ? GREEN_DARK : "rgba(36,59,49,0.6)", color: it.ok ? "#EFE8D5" : "#6E8378", cursor: it.ok ? "pointer" : "default", textAlign: "left", fontSize: 13 }}>
+                  <span style={{ ...lcdFont, background: it.ok ? LCD_BG : "transparent", borderRadius: 5, padding: "3px 7px", fontSize: 12, minWidth: 62, textAlign: "center", boxShadow: it.ok ? "inset 0 2px 4px rgba(0,0,0,0.3)" : "none" }}>
+                    {it.postTime || "—"}
+                  </span>
+                  <b style={{ minWidth: 66 }}>{it.track} R{it.raceNumber}</b>
+                  <span style={{ minWidth: 66, color: it.ok ? "#CFDCCF" : "#6E8378" }}>{it.distanceFurlongs}f {it.surface}</span>
+                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}</span>
+                  {!it.ok && <span style={{ fontSize: 11 }}>{it.reason}</span>}
+                </button>
+              ))}
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+              </div>
             </div>
           )}
 
