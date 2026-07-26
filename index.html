@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -382,7 +382,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.12.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1157,6 +1157,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             </div>
           )}
 
+          {/* file pickers live on every screen so any button can open them */}
+          <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
+          <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
+
           {raceIndex.length > 0 && step !== "start" && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
               {raceIndex.map((r) => {
@@ -1210,7 +1214,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 tracks — save Brisnet's free entries page as a PDF per track and upload the stack. Re-scanning a track
                 refreshes its stored copy.
               </p>
-              <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
               {savedCards && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 14, maxWidth: 480 }}>
                   <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Saved cards</div>
@@ -1224,7 +1227,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   ))}
                 </div>
               )}
-              <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>

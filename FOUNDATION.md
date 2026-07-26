@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.12.1 · July 2026**
+**Version: 1.12.2 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -82,6 +82,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.12.2 (2026-07-26)** — Hidden file pickers now mount on every screen; "+ Scan more" on the Entries view (previously dead — its input only existed on the start screen) works. Ratings unchanged.
 - **1.12.1 (2026-07-26)** — Entries classification made robust to PDF text fragmentation ("MAIDE N CLAIMI N G"): race types matched space-insensitively against a canonical vocabulary, fixing maiden/2yo races slipping through as qualifiers on some pages; type labels display clean canonical names. Saved cards hydrate legacy decimal odds into board notation. Re-scan previously scanned tracks to correct stored entries. Ratings unchanged.
 - **1.12.0 (2026-07-26)** — Explainable ratings: each component in the expand view shows the inputs that produced it (call lengths, figures, earnings/start vs purse, record, days, post), with an automatic warnings box flagging known blind spots per horse: turf-built rating on a dirt day (and vice versa), missing last-race figure, 90+ day layoff, thin current-year record. Ratings unchanged.
 - **1.11.1 (2026-07-26)** — Board-style odds notation: morning-line seeds and the FAIR column display as standard tote fractions (9/5, 5/2, 7/2) via a ladder mapping; typed odds are never reformatted. Tab/Enter now moves focus without selecting the field's text (no iOS selection handles). Ratings unchanged.
