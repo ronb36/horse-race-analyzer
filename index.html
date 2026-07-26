@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.7.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.7.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.7.1";
+const APP_VERSION = "2.7.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -622,7 +622,7 @@ function HorseRaceAnalyzer() {
     }
   }
 
-  async function loadSavedCard(id, targetRace) {
+  async function loadSavedCard(id, targetRace, preview) {
     if (targetRace === undefined) raceOriginRef.current = "home";
     setError(""); setBusy(true); setLcdMsg("LOADING CARD...");
     try {
@@ -643,6 +643,12 @@ function HorseRaceAnalyzer() {
         hydrated[k] = { ...val, horses: (val.horses || []).map((h) => ({ ...h, mlOdds: normalizeOdds(h.mlOdds) })) };
       }
       setRaceData(hydrated);
+      if (preview) {
+        setActiveRace(null);
+        setStep("cards");
+        setLcdMsg("CARDS ON FILE");
+        return;
+      }
       setSavedCards(null);
       const wanted = targetRace !== undefined && targetRace !== null
         ? (card.raceIndex || []).find((r) => r.raceNumber === targetRace && r.ok && hydrated[r.raceNumber])
@@ -1629,7 +1635,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {raceIndex.length > 0 && step !== "start" && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
               {raceIndex.map((r) => {
-                const isActive = activeRace === r.raceNumber;
+                const isActive = step === "results" && activeRace === r.raceNumber;
                 return (
                   <button key={r.raceNumber} onClick={() => step === "results" && switchTab(r)} disabled={!r.ok || busy || step !== "results"}
                     title={r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
@@ -1768,11 +1774,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {(savedCards || []).map((c) => (
-                <div key={c.id}
-                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", fontSize: 13, textAlign: "left", boxSizing: "border-box" }}>
+                <button key={c.id} onClick={() => loadSavedCard(c.id, undefined, true)} disabled={busy}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
                   <b>✓ {c.title || (c.track + " " + c.race_date)}</b>
                   <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
-                </div>
+                </button>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
