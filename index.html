@@ -16,8 +16,6 @@
 window.addEventListener("error", function (e) {
   document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno : "");
 });
-</script>
-<script>
 window.addEventListener("load", function () {
   if (!window.Babel || !window.React || !window.ReactDOM) {
     document.getElementById("err").textContent = "App error: a required library failed to load from unpkg.com. Check your connection and refresh.";
@@ -37,6 +35,16 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// Parse "8-1", "5/2", "2.5" -> decimal odds-to-1
+function parseOdds(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const str = String(v).trim();
+  const m = str.match(/^(\d+(?:\.\d+)?)\s*[-\/]\s*(\d+(?:\.\d+)?)$/);
+  if (m) return parseFloat(m[1]) / parseFloat(m[2]);
+  const f = parseFloat(str);
+  return Number.isFinite(f) ? f : null;
+}
 
 function ratePastRaceEarlySpeed(race) {
   if (!race) return null;
@@ -131,7 +139,7 @@ const emptyRace = () => ({
 });
 const emptyHorse = () => ({
   name: "", postPosition: "", daysSinceLastRace: "", racesThisYear: "",
-  wins: "", places: "", shows: "", earnings: "",
+  wins: "", places: "", shows: "", earnings: "", mlOdds: "",
   lastRace: emptyRace(), priorRace: emptyRace(),
 });
 
@@ -291,8 +299,8 @@ Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5).
     try {
       const parsed = await askClaude(
         `Extract ONLY race number ${r.raceNumber} from this card. Respond with ONLY valid compact JSON, no markdown fences, no spaces, no commentary:
-{"horses":[["name",postPosition,daysSinceLastRace,racesThisYear,wins,places,shows,earnings,[lastFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating],[priorFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating]],...]}
-Rules: lenBehind = lengths behind the leader at that call (0 if leading), read from the running-line superscripts. speedRating = Beyer figure. races/wins/places/shows/earnings from the current-year record line (lifetime if that is all shown). daysSinceLastRace = most recent race date to today. The two inner arrays are the two most recent races; nulls if fewer than 2 starts. JSON only.`
+{"horses":[["name",postPosition,daysSinceLastRace,racesThisYear,wins,places,shows,earnings,[lastFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating],[priorFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating],"morningLineOdds"],...]}
+Rules: lenBehind = lengths behind the leader at that call (0 if leading), read from the running-line superscripts. speedRating = Beyer figure. races/wins/places/shows/earnings from the current-year record line (lifetime if that is all shown). daysSinceLastRace = most recent race date to today. The two inner arrays are the two most recent races; nulls if fewer than 2 starts. morningLineOdds as printed, e.g. "5-2" or "8-1". JSON only.`
       );
       const toStr = (v) => (v === null || v === undefined ? "" : String(v));
       const mapRace = (arr) => ({
@@ -309,6 +317,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         racesThisYear: toStr(h?.[3]), wins: toStr(h?.[4]), places: toStr(h?.[5]),
         shows: toStr(h?.[6]), earnings: toStr(h?.[7]),
         lastRace: mapRace(h?.[8]), priorRace: mapRace(h?.[9]),
+        mlOdds: toStr(h?.[10]),
       })));
       setStep("review");
       setLcdMsg("CHECK ENTRIES");
@@ -338,9 +347,23 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   const results = horses
-    .map((h, i) => ({ i, name: h.name || `Horse ${i + 1}`, post: h.postPosition, ...rateHorse(h, raceInfo, speedScale) }))
+    .map((h, i) => ({ i, name: h.name || `Horse ${i + 1}`, post: h.postPosition, odds: parseOdds(h.mlOdds), oddsRaw: h.mlOdds, ...rateHorse(h, raceInfo, speedScale) }))
     .sort((a, b) => b.rating - a.rating);
   const topRating = results.length ? results[0].rating : 0;
+
+  // Model win probabilities from ratings (softmax; approximate by design)
+  const TAU = 8;
+  const expWeights = results.map((r) => Math.exp((r.rating - topRating) / TAU));
+  const expSum = expWeights.reduce((a, b) => a + b, 0) || 1;
+  const overlay = results.map((r, idx) => {
+    const pModel = expWeights[idx] / expSum;
+    const o = r.odds;
+    const pBoard = o !== null ? 1 / (o + 1) : null;
+    const edge = o !== null ? pModel * (o + 1) - 1 : null;
+    const fair = pModel > 0 ? (1 - pModel) / pModel : null;
+    return { ...r, pModel, pBoard, edge, fair };
+  });
+  const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
 
   return (
     <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
@@ -486,6 +509,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                     <Field label="Places" value={h.places} onChange={(v) => updateHorse(i, "places", v)} />
                     <Field label="Shows" value={h.shows} onChange={(v) => updateHorse(i, "shows", v)} />
                     <Field label="Earnings ($)" value={h.earnings} onChange={(v) => updateHorse(i, "earnings", v)} />
+                    <Field label="ML odds (e.g. 5-2)" value={h.mlOdds} onChange={(v) => updateHorse(i, "mlOdds", v)} />
                   </div>
                   {["lastRace", "priorRace"].map((rk) => (
                     <div key={rk} style={{ marginTop: 10 }}>
@@ -546,6 +570,55 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                   )}
                 </div>
               ))}
+              {/* ---------- OVERLAY GRID ---------- */}
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "20px 0 6px" }}>Overlay grid</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px", lineHeight: 1.5 }}>
+                Odds start from the morning line in the form. At the track, retype the live board odds and the grid updates.
+                Edge = model win% × payout − 1. Positive edge = the board is offering more than the machine thinks the horse is worth.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 430 }}>
+                  <thead>
+                    <tr style={{ ...labelFont, color: "#D8CBA8", textAlign: "left" }}>
+                      <th style={{ padding: "6px 6px" }}>Horse</th>
+                      <th style={{ padding: "6px 6px" }}>Odds</th>
+                      <th style={{ padding: "6px 6px" }}>Board %</th>
+                      <th style={{ padding: "6px 6px" }}>Model %</th>
+                      <th style={{ padding: "6px 6px" }}>Fair odds</th>
+                      <th style={{ padding: "6px 6px" }}>Edge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overlay.map((r) => {
+                      const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
+                      const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
+                      return (
+                        <tr key={r.i} style={{ borderTop: "1px solid rgba(255,255,255,0.08)", background: isBest ? "rgba(227,201,140,0.10)" : "none" }}>
+                          <td style={{ padding: "7px 6px", fontWeight: 700 }}>
+                            {r.name}{isBest ? " ★" : ""}
+                          </td>
+                          <td style={{ padding: "7px 6px" }}>
+                            <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => updateHorse(r.i, "mlOdds", e.target.value)}
+                              placeholder="5-2"
+                              style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 58, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                          </td>
+                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.pBoard !== null ? (r.pBoard * 100).toFixed(0) + "%" : "—"}</td>
+                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{(r.pModel * 100).toFixed(0)}%</td>
+                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.fair !== null ? r.fair.toFixed(1) + "-1" : "—"}</td>
+                          <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: edgeColor }}>
+                            {r.edge !== null ? (r.edge > 0 ? "+" : "") + (r.edge * 100).toFixed(0) + "%" : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 8, lineHeight: 1.5 }}>
+                ★ = biggest positive edge. Model % is an approximation from the ratings, not a calibrated probability, and the
+                track keeps 15–20% of the pool — treat edges as signals to investigate, not sure things.
+              </p>
+
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                 <Key onClick={() => setStep("review")}>Edit entries</Key>
                 {raceIndex.length > 0 && <Key onClick={() => { setStep("races"); setLcdMsg("SELECT RACE"); }}>Another race</Key>}
