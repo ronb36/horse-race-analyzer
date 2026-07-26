@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.16.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.0.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -399,9 +399,22 @@ function qualify(r) {
   return { ok: reasons.length === 0, reason: reasons.join(", ") };
 }
 
+// Deterministic bet verdict — the machine's call; the advisor only explains it.
+// Policy: largest positive edge; < +10% => PASS; win% >= 15% => WIN;
+// else PLACE if place% >= 35%; else SHOW if show% >= 50%; else PASS.
+function simVerdict(rows) {
+  const live = rows.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
+  if (!live.length) return { action: "NONE", horse: null };
+  const best = live.reduce((a, b) => (b.edge > a.edge ? b : a));
+  if (best.edge < 0.10) return { action: "PASS", horse: best };
+  if (best.pModel >= 0.15) return { action: "WIN", horse: best };
+  if ((best.pPlace ?? 0) >= 0.35) return { action: "PLACE", horse: best };
+  if ((best.pShow ?? 0) >= 0.50) return { action: "SHOW", horse: best };
+  return { action: "PASS", horse: best };
+}
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "2.0.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -505,7 +518,7 @@ function HorseRaceAnalyzer() {
   }
 
   async function askClaude(promptText) {
-    if (!apiKey) throw new Error("Enter your Anthropic API key first (tap ⚙ Set in the bottom row) — only needed for PDF/photo reading. Brisnet data files need no key.");
+    if (!apiKey) throw new Error("Enter your Anthropic API key first (tap ⚙ Set on the home screen) — only needed for PDF/photo reading. Brisnet data files need no key.");
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -1118,6 +1131,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const fair = pModel > 0 ? (1 - pModel) / pModel : null;
     return { ...r, pModel, pPlace: placeMap.get(r.i) ?? null, pShow: showMap.get(r.i) ?? null, pBoard, edge, fair };
   });
+  const verdict = simVerdict(overlay);
   /* SIM-CORE END */
   const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
   let liveRank = 0;
@@ -1142,7 +1156,11 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const swNote = wsw ? ` [Brisnet scratch-watch: ${wsw.reason} — likely but not official scratch]` : "";
         return `${o.name} (post ${o.post || "?"}): rating ${o.rating.toFixed(1)}, board odds ${o.odds !== null ? o.odds : "unknown"}, fair ${o.fair !== null ? o.fair.toFixed(1) : "?"}, edge ${o.edge !== null ? (o.edge > 0 ? "+" : "") + Math.round(o.edge * 100) + "%" : "?"}, win ${Math.round((o.pModel ?? 0) * 100)}%, place ${Math.round((o.pPlace ?? 0) * 100)}%, show ${Math.round((o.pShow ?? 0) * 100)}%${style}${swNote}`;
       }).join("\n");
-      const prompt = `You are the betting advisor inside a 1979 Horse Race Analyzer handheld. Interpret ONLY these computed numbers for Race ${raceInfo.raceNumber} (${raceInfo.distanceFurlongs}f ${raceInfo.surface}):
+      const v = simVerdict(overlay);
+      const verdictLine = v.action === "PASS" || v.action === "NONE"
+        ? "PASS — no playable edge"
+        : `${v.horse.name} to ${v.action} (edge ${(v.horse.edge * 100).toFixed(0)}%, win ${(v.horse.pModel * 100).toFixed(0)}%)`;
+      const prompt = `The machine's deterministic verdict for this race is: ${verdictLine}. Your job is to explain that verdict from the data — never propose a different bet.\nYou are the betting advisor inside a 1979 Horse Race Analyzer handheld. Interpret ONLY these computed numbers for Race ${raceInfo.raceNumber} (${raceInfo.distanceFurlongs}f ${raceInfo.surface}):
 ${lines}
 
 Task: find the best OVERLAY — the horse whose board odds most overpay the model (largest positive edge). That is often NOT the top-rated horse. Then choose the bet type: WIN if its win% is at least ~15% and the edge is clearly positive; PLACE or SHOW if the value horse's win% is thin but its place/show chances are strong (place/show payoffs are pool-dependent, so this is a judgment call); PASS if no horse has an edge above roughly +10%.
@@ -1236,7 +1254,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
                 ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {busy ? lcdMsg : step === "results" ? (claudeRec ? claudeRec.lcd : claudeThinking ? "READING BOARD..." : `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating.toFixed(1)}`) : lcdMsg}
+              {busy ? lcdMsg : step === "results" ? (verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
@@ -1765,11 +1783,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <Key onClick={goHome}>Back</Key>
                 {supaUrl && supaKey && (
                   <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
                 )}
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
-                <Key onClick={goHome}>⏏ Back</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds

@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.16.0 · July 2026**
+**Version: 2.0.1 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -56,6 +56,10 @@ Brisnet's free per-track entries pages (TwinSpires feed) contain each race's typ
 
 Brisnet's free Program-style entries pages (same URL family, same headers) additionally carry per-race handicapper's selections and a Scratch Watch section listing likely — not official — scratches with reasons (Main-Track-Only, Trainer, cross-entries). The scanner extracts both into hra_entries. When a card is open: watch-listed horses show an SW chip and an expand-view warning, the advisor prompt is told about them, and the track handicapper's picks display under the race read. Watch entries never auto-scratch; the Scratch button remains the sole authority, since the list is predictive.
 
+## 4.5 The bet verdict (deterministic, sim-guarded — v2.0.0)
+
+The recommendation is computed in code, inside the SIM-CORE fence, from the overlay table: take the horse with the largest positive edge; if that edge is below +10%, PASS. Otherwise: WIN if model win% ≥ 15%; else PLACE if place% ≥ 35%; else SHOW if show% ≥ 50%; else PASS. The LCD displays this verdict directly ("BET: <HORSE> TO WIN" / "PASS THIS RACE"), updating instantly and deterministically on every odds edit and scratch, with no language model in the loop. Before 2.0.0 the advisor chose the verdict in prose, which once contradicted the machine (Katie King over Don't Be Salty, SAR R3 07/26/2026 after a scratch) — the motivating defect.
+
 ## 5.4 The race advisor (Claude in the machine)
 
 When a race opens — and again ~1.5 s after odds edits or scratches — the app sends the computed grid (name, post, rating, board odds, fair odds, edge, win/place/show %, run style + Quirin points) to Claude (claude-sonnet-4-6, temperature 0) with a strict contract: identify the best overlay (largest positive edge, explicitly not necessarily the top-rated horse); choose Win only if the win% supports it (~15%+), Place/Show when the value horse's board-hitting chances outrun a thin win%, and PASS when no edge clears ~+10%; base everything on the supplied numbers and never invent track condition or weather. The three-line reply feeds the LCD verdict and the race-read panel (race shape from the data, then the reasoning). It is an interpretation layer over the model's own numbers — it sees nothing the grid doesn't contain — and requires the Anthropic API key. Bet-type selection is a heuristic since place/show payoffs are pool-dependent.
@@ -86,6 +90,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.0.1 (2026-07-26)** [cosmetic] — Back buttons standardized: plain "Back", leftmost, no eject glyph, on every screen including the race view.
+- **2.0.0 (2026-07-26)** [sim] — Declared and signed off: the bet verdict moves into the SIM-CORE fence as coded policy (best positive edge; <+10% PASS; win%≥15% WIN; else place%≥35% PLACE; else show%≥50% SHOW; else PASS). The LCD shows the deterministic verdict; the advisor receives it in its prompt and explains — never chooses. Motivated by the Katie King / Don't Be Salty contradiction (SAR R3). Ratings and probabilities unchanged; fingerprint updated to ae7d1b405c989c31 (was a2990c230e404b83).
 - **1.16.0 (2026-07-26)** [feature][cosmetic] — Today renamed Race Card: date selector chips (all card dates on file), eligible races only, sourced from uploaded cards (entries contribute post times only), Back-only bottom row. Settings is its own window: fields + Back, Done removed (values save as they're typed), home hidden while open. Entries/Cards screens: "Upload Entries"/"Upload Cards" labels, ⚙ Set removed — the gear now lives only on the home row. Sim fingerprint verified a2990c230e404b83. Known issue queued as a separate [fix]: blank race-type labels on some scanned rows (SAR R9, COL R3).
 - **1.15.1 (2026-07-26)** [process] — Change-control pact: build classes ([sim]/[feature]/[fix]/[cosmetic]) always ship as distinct builds; sim core fenced with SIM-CORE markers and fingerprinted (a2990c230e404b83); non-sim builds must preserve the fingerprint. Ratings unchanged — fingerprint established.
 - **1.15.0 (2026-07-26)** — 1970s navigation pass: faceplate buttons removed (LCD + branding only); ⚙ Set lives on the bottom button row, rightmost, on every screen; new 🃏 Cards screen (saved cards list, Upload card, Back) replaces the start-screen Saved cards button and inline list; race view gains ⏏ Back; every screen a button opens has a Back button. Ratings unchanged.
