@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Horse Race Analyzer — est. 1979, rebuilt</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>body { margin: 0; } #err { font-family: monospace; color: #B5442C; padding: 16px; white-space: pre-wrap; }</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="err"></div>
+<script>
+window.addEventListener("error", function (e) {
+  document.getElementById("err").textContent = "App error: " + (e.message || e.error) + (e.filename ? " @ " + e.lineno : "");
+});
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useRef } = React;
+
+// ============================================================
+// HORSE RACE ANALYZER — a tribute to the 1979 Mattel original
+// Two-stage card reader: scan races -> pick -> extract -> rate
+// ============================================================
+
+function num(v) {
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  return Number.isFinite(n) ? n : null;
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function ratePastRaceEarlySpeed(race) {
+  if (!race) return null;
+  const leb1 = num(race.lengthsBehindFirstCall);
+  if (leb1 === null) return null;
+  return clamp(12 - leb1 * 1.5, 0, 12);
+}
+
+function rateHorse(horse, raceInfo, speedScale) {
+  const c = {};
+  const isSprint = (num(raceInfo.distanceFurlongs) ?? 8) < 8;
+
+  // 1. EARLY SPEED — Quirin's strongest positive factor
+  const es1 = ratePastRaceEarlySpeed(horse.lastRace);
+  const es2 = ratePastRaceEarlySpeed(horse.priorRace);
+  let early = 0, earlyCount = 0;
+  if (es1 !== null) { early += es1; earlyCount++; }
+  if (es2 !== null) { early += es2; earlyCount++; }
+  if (earlyCount === 1) early *= 2;
+  c.earlySpeed = clamp(early * (isSprint ? 1.25 : 1), 0, isSprint ? 30 : 24);
+
+  // 2. RECENT FORM
+  let form = 0;
+  const lr = horse.lastRace || {};
+  const fin = num(lr.finishPosition);
+  if (fin !== null) {
+    const finPts = { 1: 10, 2: 8, 3: 6, 4: 4, 5: 2 }[fin] ?? 0;
+    form += isSprint ? finPts * 0.6 : finPts;
+  }
+  const lebFin = num(lr.lengthsBehindFinish);
+  if (lebFin !== null) form += clamp(8 - lebFin, 0, 8);
+  const leb2 = num(lr.lengthsBehindSecondCall);
+  if (lebFin !== null && leb2 !== null && lebFin < leb2) form += 2;
+  c.recentForm = clamp(form, 0, 20);
+
+  // 3. SPEED RATINGS
+  const sr1 = num(lr.speedRating);
+  const sr2 = num((horse.priorRace || {}).speedRating);
+  const figs = [sr1, sr2].filter((x) => x !== null);
+  if (figs.length) {
+    const avg = figs.reduce((a, b) => a + b, 0) / figs.length;
+    c.speed = speedScale === "beyer"
+      ? clamp(((avg - 40) / 60) * 24, 0, 24)
+      : clamp(((avg - 60) / 40) * 24, 0, 24);
+  } else c.speed = 0;
+
+  // 4. CLASS
+  const races = num(horse.racesThisYear);
+  const earnings = num(horse.earnings);
+  const purse = num(raceInfo.purse);
+  if (races && earnings !== null && purse) {
+    c.class = clamp((earnings / races / (0.6 * purse)) * 12, 0, 12);
+  } else c.class = 0;
+
+  // 5. CONSISTENCY
+  const w = num(horse.wins), p = num(horse.places), s = num(horse.shows);
+  if (races && w !== null) {
+    c.consistency = clamp((w / races) * 8 + ((w + (p ?? 0) + (s ?? 0)) / races) * 4, 0, 12);
+  } else c.consistency = 0;
+
+  // 6. FRESHNESS
+  const days = num(horse.daysSinceLastRace);
+  if (days !== null) {
+    if (days >= 7 && days <= 30) c.freshness = 8;
+    else if (days >= 31 && days <= 45) c.freshness = 6;
+    else if (days >= 4 && days <= 6) c.freshness = 5;
+    else if (days >= 46 && days <= 60) c.freshness = 4;
+    else if (days >= 61 && days <= 90) c.freshness = 2;
+    else if (days < 4) c.freshness = 3;
+    else c.freshness = 0;
+  } else c.freshness = 0;
+
+  // 7. POST POSITION
+  const post = num(horse.postPosition);
+  if (post !== null) {
+    if (isSprint) c.post = post <= 4 ? 2 : post <= 8 ? 1 : 0;
+    else c.post = post <= 7 ? 1 : post >= 10 ? -1 : 0;
+  } else c.post = 0;
+
+  const total = Object.values(c).reduce((a, b) => a + b, 0);
+  return { components: c, rating: Math.round(total * 10) / 10 };
+}
+
+const COMPONENT_LABELS = {
+  earlySpeed: "Early speed", recentForm: "Recent form", speed: "Speed figures",
+  class: "Class", consistency: "Consistency", freshness: "Freshness", post: "Post position",
+};
+
+const emptyRace = () => ({
+  finishPosition: "", lengthsBehindFirstCall: "", lengthsBehindSecondCall: "",
+  lengthsBehindFinish: "", speedRating: "",
+});
+const emptyHorse = () => ({
+  name: "", postPosition: "", daysSinceLastRace: "", racesThisYear: "",
+  wins: "", places: "", shows: "", earnings: "",
+  lastRace: emptyRace(), priorRace: emptyRace(),
+});
+
+// ---------- Qualification rules (from the 1979 manual) ----------
+function qualify(r) {
+  const reasons = [];
+  if (r.isMaiden) reasons.push("maiden race");
+  if (r.is2yo) reasons.push("2-year-olds");
+  if (num(r.distanceFurlongs) !== null && r.distanceFurlongs < 6) reasons.push("under 6 furlongs");
+  return { ok: reasons.length === 0, reason: reasons.join(", ") };
+}
+
+// ---------- Styles ----------
+const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
+const GREEN = "#16382B";
+const GREEN_DARK = "#0E2820";
+const LCD_BG = "#96A08D";
+const LCD_INK = "#2A3328";
+const RED = "#B5442C";
+const lcdFont = { fontFamily: "'Courier New', monospace", fontWeight: 700, color: LCD_INK, letterSpacing: "0.06em" };
+const labelFont = { fontFamily: "Arial, Helvetica, sans-serif", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" };
+
+function Key({ children, onClick, disabled, wide, red }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{
+        background: disabled ? "#3E5A4D" : red ? RED : GREEN, color: "#EFE8D5",
+        border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999,
+        padding: wide ? "12px 22px" : "9px 16px",
+        fontFamily: "Arial, sans-serif", fontSize: 12, fontWeight: 700,
+        letterSpacing: "0.1em", textTransform: "uppercase",
+        boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)",
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1,
+      }}>{children}</button>
+  );
+}
+
+function Field({ label, value, onChange }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ ...labelFont, color: "#D8CBA8" }}>{label}</span>
+      <input value={value ?? ""} onChange={(e) => onChange(e.target.value)} inputMode="decimal"
+        style={{ background: LCD_BG, ...lcdFont, fontSize: 15, border: "1px solid rgba(0,0,0,0.4)",
+          borderRadius: 6, padding: "7px 9px", width: "100%", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+    </label>
+  );
+}
+
+function HorseRaceAnalyzer() {
+  const [step, setStep] = useState("start"); // start | races | review | results
+  const [apiKey, setApiKeyState] = useState(() => { try { return localStorage.getItem("hra_api_key") || ""; } catch { return ""; } });
+  const setApiKey = (v) => { setApiKeyState(v); try { localStorage.setItem("hra_api_key", v); } catch {} };
+  const [busy, setBusy] = useState(false);
+  const [lcdMsg, setLcdMsg] = useState("READY");
+  const [error, setError] = useState("");
+  const [cardTitle, setCardTitle] = useState("");
+  const [raceIndex, setRaceIndex] = useState([]);
+  const [raceInfo, setRaceInfo] = useState({ distanceFurlongs: "", purse: "", surface: "dirt", raceNumber: "" });
+  const [horses, setHorses] = useState([]);
+  const [speedScale, setSpeedScale] = useState("beyer");
+  const [expanded, setExpanded] = useState(null);
+  const fileRef = useRef(null);
+  const fileBlocksRef = useRef(null);
+
+  async function filesToBlocks(fileList) {
+    const files = Array.from(fileList || []);
+    const supported = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
+    const bad = files.filter((f) => !supported.includes(f.type));
+    if (bad.length) throw new Error(
+      "Unsupported file type: " + bad.map((f) => f.name).join(", ") +
+      ". Use JPG, PNG, WebP, or PDF. iPhone tip: HEIC photos won't work — screenshot the photo instead."
+    );
+    const blocks = [];
+    for (const f of files) {
+      const b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("Could not read " + f.name));
+        r.readAsDataURL(f);
+      });
+      blocks.push(f.type === "application/pdf"
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
+        : { type: "image", source: { type: "base64", media_type: f.type, data: b64 } });
+    }
+    return blocks;
+  }
+
+  async function askClaude(promptText) {
+    if (!apiKey) throw new Error("Enter your Anthropic API key first (get one at console.anthropic.com). It stays in your browser.");
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: [...fileBlocksRef.current, { type: "text", text: promptText }] }],
+      }),
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = (await resp.text()).slice(0, 200); } catch {}
+      throw new Error(`API request failed (HTTP ${resp.status}). ${detail}`);
+    }
+    const data = await resp.json();
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    const clean = text.replace(/```json|```/g, "").trim();
+    try {
+      return JSON.parse(clean);
+    } catch {
+      throw new Error("Couldn't parse the reading. Raw response started: " + JSON.stringify(clean.slice(0, 160)));
+    }
+  }
+
+  // ----- STAGE 1: scan the card, list every race -----
+  async function handleFiles(fileList) {
+    setError("");
+    setBusy(true);
+    setLcdMsg("SCANNING CARD...");
+    try {
+      fileBlocksRef.current = await filesToBlocks(fileList);
+      const parsed = await askClaude(
+        `List every race on this past-performance card. Respond with ONLY valid compact JSON, no markdown fences, no commentary:
+{"title":"Track MM/DD/YYYY","races":[[raceNumber,distanceFurlongs,"dirt"|"turf",purse,"short race type",isMaiden(0 or 1),is2yoOnly(0 or 1),horseCount],...]}
+Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5). isMaiden=1 for any maiden race. is2yoOnly=1 if restricted to two-year-olds. Be terse; JSON only.`
+      );
+      setCardTitle(parsed.title || "");
+      setRaceIndex((parsed.races || []).map((r) => {
+        const race = {
+          raceNumber: r[0], distanceFurlongs: r[1], surface: r[2] || "dirt",
+          purse: r[3], type: r[4] || "", isMaiden: !!r[5], is2yo: !!r[6], horseCount: r[7],
+        };
+        return { ...race, ...qualify(race) };
+      }));
+      setStep("races");
+      setLcdMsg("SELECT RACE");
+    } catch (e) {
+      console.error(e);
+      setError(e.message || String(e));
+      setLcdMsg("READY");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  // ----- STAGE 2: extract one chosen race -----
+  async function pickRace(r) {
+    if (!r.ok || busy) return;
+    setError("");
+    setBusy(true);
+    setLcdMsg(`READING RACE ${r.raceNumber}...`);
+    try {
+      const parsed = await askClaude(
+        `Extract ONLY race number ${r.raceNumber} from this card. Respond with ONLY valid compact JSON, no markdown fences, no spaces, no commentary:
+{"horses":[["name",postPosition,daysSinceLastRace,racesThisYear,wins,places,shows,earnings,[lastFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating],[priorFinishPos,lenBehind1stCall,lenBehind2ndCall,lenBehindFinish,speedRating]],...]}
+Rules: lenBehind = lengths behind the leader at that call (0 if leading), read from the running-line superscripts. speedRating = Beyer figure. races/wins/places/shows/earnings from the current-year record line (lifetime if that is all shown). daysSinceLastRace = most recent race date to today. The two inner arrays are the two most recent races; nulls if fewer than 2 starts. JSON only.`
+      );
+      const toStr = (v) => (v === null || v === undefined ? "" : String(v));
+      const mapRace = (arr) => ({
+        finishPosition: toStr(arr?.[0]), lengthsBehindFirstCall: toStr(arr?.[1]),
+        lengthsBehindSecondCall: toStr(arr?.[2]), lengthsBehindFinish: toStr(arr?.[3]),
+        speedRating: toStr(arr?.[4]),
+      });
+      setRaceInfo({
+        raceNumber: toStr(r.raceNumber), distanceFurlongs: toStr(r.distanceFurlongs),
+        purse: toStr(r.purse), surface: r.surface,
+      });
+      setHorses((parsed.horses || []).map((h) => ({
+        name: toStr(h?.[0]), postPosition: toStr(h?.[1]), daysSinceLastRace: toStr(h?.[2]),
+        racesThisYear: toStr(h?.[3]), wins: toStr(h?.[4]), places: toStr(h?.[5]),
+        shows: toStr(h?.[6]), earnings: toStr(h?.[7]),
+        lastRace: mapRace(h?.[8]), priorRace: mapRace(h?.[9]),
+      })));
+      setStep("review");
+      setLcdMsg("CHECK ENTRIES");
+    } catch (e) {
+      console.error(e);
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startManual() {
+    setHorses([emptyHorse(), emptyHorse()]);
+    setRaceInfo({ distanceFurlongs: "", purse: "", surface: "dirt", raceNumber: "" });
+    setStep("review");
+    setLcdMsg("ENTER DATA");
+  }
+
+  function updateHorse(i, path, value) {
+    setHorses((prev) => {
+      const next = prev.map((h) => ({ ...h, lastRace: { ...h.lastRace }, priorRace: { ...h.priorRace } }));
+      const parts = path.split(".");
+      if (parts.length === 1) next[i][parts[0]] = value;
+      else next[i][parts[0]][parts[1]] = value;
+      return next;
+    });
+  }
+
+  const results = horses
+    .map((h, i) => ({ i, name: h.name || `Horse ${i + 1}`, post: h.postPosition, ...rateHorse(h, raceInfo, speedScale) }))
+    .sort((a, b) => b.rating - a.rating);
+  const topRating = results.length ? results[0].rating : 0;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#EDEAE2", padding: "16px 10px 48px", fontFamily: "Arial, sans-serif" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+
+        {/* ===== Device faceplate ===== */}
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", boxShadow: "0 6px 18px rgba(0,0,0,0.3)" }}>
+          <div style={{ width: 18, background: GREEN_DARK }} />
+          <div style={{ flex: 1, background: GOLD, padding: "16px 14px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <div aria-live="polite"
+              style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
+                boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
+                ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {busy ? lcdMsg : step === "results" ? `TOP: ${results[0]?.name?.toUpperCase().slice(0, 14) || "—"} ${topRating}` : lcdMsg}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
+                HORSE RACE ANALYZER
+              </div>
+              <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · rebuilt {new Date().getFullYear()}</div>
+            </div>
+          </div>
+          <div style={{ width: 18, background: GREEN_DARK }} />
+        </div>
+
+        {/* ===== Body ===== */}
+        <div style={{ background: GREEN, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: "#EFE8D5" }}>
+
+          {error && (
+            <div style={{ background: "#3E1F16", border: `1px solid ${RED}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
+              {error}
+            </div>
+          )}
+
+          {/* ---------- START ---------- */}
+          {step === "start" && (
+            <div>
+              <p style={{ fontSize: 14, lineHeight: 1.55, margin: "0 0 16px" }}>
+                Upload the full past-performance card (Daily Racing Form PDF or photos). The machine will scan it, show
+                you which races qualify under the 1979 rules, and read whichever one you pick. Or punch the numbers in yourself.
+              </p>
+              <div style={{ maxWidth: 420, marginBottom: 14 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (stored only in this browser)</span>
+                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
+                    style={{ background: LCD_BG, ...lcdFont, fontSize: 14, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", width: "100%", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                </label>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>
+                  {busy ? "Scanning…" : "📄 Upload card"}
+                </Key>
+                <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
+              </div>
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
+              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
+                Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
+              </p>
+            </div>
+          )}
+
+          {/* ---------- RACE PICKER ---------- */}
+          {step === "races" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                  {cardTitle || "Card"} — pick a race
+                </h2>
+                <span style={{ fontSize: 11, color: "#B9C8BB" }}>Greyed races don't meet the 1979 rules.</span>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                {raceIndex.map((r) => (
+                  <button key={r.raceNumber} onClick={() => pickRace(r)} disabled={!r.ok || busy}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+                      marginBottom: 8, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", textAlign: "left",
+                      background: r.ok ? GREEN_DARK : "#243B31", color: r.ok ? "#EFE8D5" : "#8FA396",
+                      cursor: r.ok && !busy ? "pointer" : "default", opacity: busy ? 0.7 : 1 }}>
+                    <span style={{ ...lcdFont, background: r.ok ? LCD_BG : "#7C857A", borderRadius: 6, padding: "4px 9px", fontSize: 15, minWidth: 34, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                      {r.raceNumber}
+                    </span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>
+                        {r.distanceFurlongs}f {r.surface} · {r.type}
+                      </span>
+                      <span style={{ display: "block", fontSize: 11, color: r.ok ? "#B9C8BB" : "#7E948A", marginTop: 2 }}>
+                        {r.ok
+                          ? `Purse $${Number(r.purse || 0).toLocaleString()}${r.horseCount ? ` · ${r.horseCount} horses` : ""} — tap to analyze`
+                          : `Skipped: ${r.reason}`}
+                      </span>
+                    </span>
+                    {r.ok && <span style={{ fontSize: 16 }}>▸</span>}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); setError(""); }}>Back</Key>
+              </div>
+            </div>
+          )}
+
+          {/* ---------- REVIEW ---------- */}
+          {step === "review" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} — check the entries` : "Check the entries"}
+                </h2>
+                <span style={{ fontSize: 11, color: "#B9C8BB" }}>Reading a racing form is hard — fix anything the machine got wrong.</span>
+              </div>
+
+              <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 12 }}>
+                <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Today's race</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+                  <Field label="Distance (furlongs)" value={raceInfo.distanceFurlongs} onChange={(v) => setRaceInfo({ ...raceInfo, distanceFurlongs: v })} />
+                  <Field label="Purse ($)" value={raceInfo.purse} onChange={(v) => setRaceInfo({ ...raceInfo, purse: v })} />
+                  <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    <span style={{ ...labelFont, color: "#D8CBA8" }}>Speed figure scale</span>
+                    <select value={speedScale} onChange={(e) => setSpeedScale(e.target.value)}
+                      style={{ background: LCD_BG, ...lcdFont, fontSize: 14, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px" }}>
+                      <option value="beyer">Beyer (modern)</option>
+                      <option value="classic">1979 DRF rating</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              {horses.map((h, i) => (
+                <div key={i} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <input value={h.name} placeholder={`Horse ${i + 1} name`} onChange={(e) => updateHorse(i, "name", e.target.value)}
+                      style={{ background: "transparent", border: "none", borderBottom: "1px solid #4A6B5A", color: "#EFE8D5", fontSize: 15, fontWeight: 700, padding: "2px 0", width: "60%" }} />
+                    <button onClick={() => setHorses(horses.filter((_, j) => j !== i))}
+                      style={{ background: "none", border: "none", color: "#B9C8BB", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+                      remove
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))", gap: 8 }}>
+                    <Field label="Post posn" value={h.postPosition} onChange={(v) => updateHorse(i, "postPosition", v)} />
+                    <Field label="Days since race" value={h.daysSinceLastRace} onChange={(v) => updateHorse(i, "daysSinceLastRace", v)} />
+                    <Field label="Races" value={h.racesThisYear} onChange={(v) => updateHorse(i, "racesThisYear", v)} />
+                    <Field label="Wins" value={h.wins} onChange={(v) => updateHorse(i, "wins", v)} />
+                    <Field label="Places" value={h.places} onChange={(v) => updateHorse(i, "places", v)} />
+                    <Field label="Shows" value={h.shows} onChange={(v) => updateHorse(i, "shows", v)} />
+                    <Field label="Earnings ($)" value={h.earnings} onChange={(v) => updateHorse(i, "earnings", v)} />
+                  </div>
+                  {["lastRace", "priorRace"].map((rk) => (
+                    <div key={rk} style={{ marginTop: 10 }}>
+                      <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 6 }}>{rk === "lastRace" ? "Last race" : "Race before that"}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))", gap: 8 }}>
+                        <Field label="Finish posn" value={h[rk].finishPosition} onChange={(v) => updateHorse(i, `${rk}.finishPosition`, v)} />
+                        <Field label="L.E.B. 1st call" value={h[rk].lengthsBehindFirstCall} onChange={(v) => updateHorse(i, `${rk}.lengthsBehindFirstCall`, v)} />
+                        <Field label="L.E.B. 2nd call" value={h[rk].lengthsBehindSecondCall} onChange={(v) => updateHorse(i, `${rk}.lengthsBehindSecondCall`, v)} />
+                        <Field label="L.E.B. finish" value={h[rk].lengthsBehindFinish} onChange={(v) => updateHorse(i, `${rk}.lengthsBehindFinish`, v)} />
+                        <Field label="Speed rating" value={h[rk].speedRating} onChange={(v) => updateHorse(i, `${rk}.speedRating`, v)} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
+                <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
+                <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
+              </div>
+            </div>
+          )}
+
+          {/* ---------- RESULTS ---------- */}
+          {step === "results" && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 12px" }}>
+                {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} ratings` : "Ratings"}
+              </h2>
+              {results.map((r, rank) => (
+                <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 8, overflow: "hidden" }}>
+                  <button onClick={() => setExpanded(expanded === r.i ? null : r.i)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 8px", fontSize: 14, minWidth: 30, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                      {rank + 1}
+                    </span>
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>
+                      {r.name}
+                      {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · post {r.post}</span>}
+                    </span>
+                    <span style={{ flex: "0 0 90px", height: 8, background: "#0A1E17", borderRadius: 999, overflow: "hidden" }}>
+                      <span style={{ display: "block", height: "100%", width: `${topRating ? clamp((r.rating / topRating) * 100, 3, 100) : 0}%`, background: GOLD }} />
+                    </span>
+                    <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 10px", fontSize: 16, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
+                      {r.rating}
+                    </span>
+                  </button>
+                  {expanded === r.i && (
+                    <div style={{ padding: "0 14px 12px 56px", fontSize: 12, color: "#CFDCCF" }}>
+                      {Object.entries(r.components).map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                          <span>{COMPONENT_LABELS[k]}</span>
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                <Key onClick={() => setStep("review")}>Edit entries</Key>
+                {raceIndex.length > 0 && <Key onClick={() => { setStep("races"); setLcdMsg("SELECT RACE"); }}>Another race</Key>}
+                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setLcdMsg("READY"); setError(""); }}>New card</Key>
+              </div>
+              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
+                In the words of the original manual: some unknowns just can't be predicted. This is a period-style analytical toy,
+                not betting advice — even the best horse can lose on any given day. Ratings use a Quirin-inspired formula
+                (early speed weighted heaviest), not the exact 1979 ROM.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 14, ...labelFont, color: "#7A756A" }}>
+          🏇 For thoroughbreds, 6 furlongs or more · no maiden races
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<HorseRaceAnalyzer />);
+</script>
+</body>
+</html>
