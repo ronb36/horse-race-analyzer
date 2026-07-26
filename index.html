@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.3.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.4.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -476,6 +476,7 @@ function HorseRaceAnalyzer() {
   const [slipSerial, setSlipSerial] = useState("");
   const [raceBets, setRaceBets] = useState({}); // raceNo -> array of bet rows
   const [slipsView, setSlipsView] = useState(null);
+  const [slipsDate, setSlipsDate] = useState(null);
   const [resultPayout, setResultPayout] = useState("");
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -934,15 +935,26 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         setPostTimes(ptMap);
       }
     } catch (entriesErr) { console.error(entriesErr); }
+    const betMap = {}, runMap = {};
+    try {
+      const br = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?race_date=eq." + day + "&select=track,race_no,settled,won,payout,amount", { headers: supaHeaders() });
+      if (br.ok) for (const b of await br.json()) { const k = b.track + "|" + b.race_no; (betMap[k] = betMap[k] || []).push(b); }
+    } catch (e2) { console.error(e2); }
+    try {
+      const lr = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log?race_date=eq." + day + "&is_winner=eq.true&select=track,race_no", { headers: supaHeaders() });
+      if (lr.ok) for (const w of await lr.json()) runMap[w.track + "|" + w.race_no] = true;
+    } catch (e3) { console.error(e3); }
     const items = [];
     for (const row of rows.filter((r) => r.race_date === day)) {
       for (const r of (row.card && row.card.raceIndex) || []) {
         if (!r.ok) continue;
         const ex = extrasFor(row.track, r.raceNumber, ptMap);
+        const k = row.track + "|" + r.raceNumber;
         items.push({
           cardId: row.id, track: row.track, raceNumber: r.raceNumber,
           distanceFurlongs: r.distanceFurlongs, surface: r.surface, type: r.type, horseCount: r.horseCount,
           postTime: ex.t, sortKey: postTimeToMinutes(ex.t),
+          bets: betMap[k] || [], run: !!runMap[k],
         });
       }
     }
@@ -1290,6 +1302,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?select=*&order=created_at.desc&limit=60", { headers: supaHeaders() });
       if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
       setSlipsView(await resp.json());
+      setSlipsDate(null);
       setStep("slips");
       setLcdMsg("THE TABLE");
     } catch (e) {
@@ -1569,13 +1582,26 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every ticket, face up. Live tickets can be cancelled; settled tickets are history.
               </p>
+              {(() => {
+                const dates = [...new Set(slipsView.map((b) => b.race_date))].filter(Boolean);
+                return dates.length > 1 ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    {[null, ...dates].map((d) => (
+                      <button key={d || "all"} onClick={() => setSlipsDate(d)}
+                        style={{ background: slipsDate === d ? "#E3C98C" : GREEN_DARK, color: slipsDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {d ? ymdToDisplay(d) : "All"}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               {slipsView.length === 0 && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
                   No tickets yet — punch one from a race with 🎟 Bets.
                 </div>
               )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
-                {slipsView.map((b) => (
+                {slipsView.filter((b) => !slipsDate || b.race_date === slipsDate).map((b) => (
                   <div key={b.id} style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "10px 13px", width: 250, fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", transform: `rotate(${((b.id % 5) - 2) * 0.8}deg)`, opacity: b.settled ? 0.55 : 1, position: "relative" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, letterSpacing: "0.08em" }}>
                       <span>{b.track} · R{b.race_no} · {ymdToDisplay(b.race_date)}</span>
@@ -1604,12 +1630,13 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 ))}
               </div>
               {(() => {
-                const settled = slipsView.filter((b) => b.settled);
-                const staked = slipsView.reduce((a, b) => a + Number(b.amount || 0), 0);
+                const shown = slipsView.filter((b) => !slipsDate || b.race_date === slipsDate);
+                const settled = shown.filter((b) => b.settled);
+                const staked = shown.reduce((a, b) => a + Number(b.amount || 0), 0);
                 const returned = settled.reduce((a, b) => a + Number(b.payout || 0), 0);
                 const pendingPayout = settled.filter((b) => b.won && (b.payout === null || b.payout === undefined)).length;
                 const net = returned - settled.reduce((a, b) => a + Number(b.amount || 0), 0);
-                return slipsView.length > 0 ? (
+                return shown.length > 0 ? (
                   <div style={{ fontSize: 12, color: "#CFDCCF", marginBottom: 12 }}>
                     Staked ${staked.toFixed(2)} · Returned ${returned.toFixed(2)} · Net on settled {net >= 0 ? "+" : ""}${net.toFixed(2)}
                     {pendingPayout ? ` · ${pendingPayout} winner${pendingPayout > 1 ? "s" : ""} awaiting payout entry` : ""}
@@ -1679,6 +1706,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <b style={{ minWidth: 66 }}>{it.track} R{it.raceNumber}</b>
                   <span style={{ minWidth: 66, color: "#CFDCCF" }}>{it.distanceFurlongs}f {it.surface}</span>
                   <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}</span>
+                  {(() => {
+                    const bets = it.bets || [];
+                    if (it.run) {
+                      if (!bets.length) return <span style={{ fontSize: 11, color: "#8FA396", whiteSpace: "nowrap" }}>Race Run ✓</span>;
+                      const settled = bets.filter((b) => b.settled);
+                      const net = settled.reduce((a, b) => a + Number(b.payout || 0) - Number(b.amount || 0), 0);
+                      const pend = settled.some((b) => b.won && (b.payout === null || b.payout === undefined));
+                      if (settled.some((b) => b.won)) return <span style={{ fontSize: 11, fontWeight: 700, color: "#8FC49F", whiteSpace: "nowrap" }}>{pend ? "Won · payout?" : `Won ${net >= 0 ? "+" : "−"}$${Math.abs(net).toFixed(2)}`}</span>;
+                      return <span style={{ fontSize: 11, fontWeight: 700, color: "#D08770", whiteSpace: "nowrap" }}>Lost −${Math.abs(net).toFixed(2)}</span>;
+                    }
+                    if (bets.length) return <span style={{ fontSize: 11, fontWeight: 700, color: "#E3C98C", whiteSpace: "nowrap" }}>Bet Placed ({bets.length})</span>;
+                    return null;
+                  })()}
                 </button>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
