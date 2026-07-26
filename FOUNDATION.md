@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.7.0 · July 2026**
+**Version: 2.7.1 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -92,6 +92,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.7.1 (2026-07-26)** [cosmetic] — Race tab strip is display-only outside the race view: eligibility colors and post times still show on setup screens, but tabs only navigate from within a race. All entry into racing remains through Race Day. Sim fingerprint verified ae7d1b405c989c31.
 - **2.7.0 (2026-07-26)** [feature] — 📸 Odds on the race view: upload a screenshot of the betting app's board and AI vision reads it — live odds filled per horse (matched by name), SCR markings applied as scratches, one tap instead of eight, with the count reported ("Board read: 6 odds updated, 1 scratch applied"). Needs the API key. The aspiration on record: one day this becomes a live odds feed.
 - **2.6.1 (2026-07-26)** [cosmetic] — Setup screens dead-end: Cards on File rows are status only (✓, no tap-to-open), Entries shows "✓ card on file" without a link into racing; the buy-card link remains. All racing flows through Race Day. Sim fingerprint verified ae7d1b405c989c31.
 - **2.6.0 (2026-07-26)** [cosmetic] — Night-before workflow: uploads live inside ⚙ Set as Entry Uploads (n) / Cards Uploads (n), counters showing rows on file for the current or upcoming race date (race_date ≥ today), so a one-track player sees (1)(1) and never touches them again; the Uploads hub screen and home button removed — home is Race Day + Set. Race Day rows show live horse counts with scratch notes ("7 horses · 1 scr") from saved card state. Queued: blank type labels [fix], odds snapshot [feature]. Sim fingerprint verified ae7d1b405c989c31.

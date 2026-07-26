@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.7.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.7.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.7.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1631,7 +1631,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               {raceIndex.map((r) => {
                 const isActive = activeRace === r.raceNumber;
                 return (
-                  <button key={r.raceNumber} onClick={() => switchTab(r)} disabled={!r.ok || busy}
+                  <button key={r.raceNumber} onClick={() => step === "results" && switchTab(r)} disabled={!r.ok || busy || step !== "results"}
                     title={r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
                     style={{
                       flex: "0 0 auto", minWidth: 52, padding: "7px 10px", borderRadius: 8,
