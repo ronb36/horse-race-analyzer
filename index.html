@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.5.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.6.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.5.2";
+const APP_VERSION = "2.6.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -476,6 +476,7 @@ function HorseRaceAnalyzer() {
   const [slipSerial, setSlipSerial] = useState("");
   const [raceBets, setRaceBets] = useState({}); // raceNo -> array of bet rows
   const [loggedRaces, setLoggedRaces] = useState({});
+  const [uploadCounts, setUploadCounts] = useState({ entries: null, cards: null });
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
   const [resultPayout, setResultPayout] = useState("");
@@ -952,9 +953,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         if (!r.ok) continue;
         const ex = extrasFor(row.track, r.raceNumber, ptMap);
         const k = row.track + "|" + r.raceNumber;
+        const cachedHorses = row.card && row.card.raceData && row.card.raceData[r.raceNumber] && row.card.raceData[r.raceNumber].horses;
+        const live = cachedHorses ? cachedHorses.filter((h) => !h.scratched).length : r.horseCount;
         items.push({
           cardId: row.id, track: row.track, raceNumber: r.raceNumber,
-          distanceFurlongs: r.distanceFurlongs, surface: r.surface, type: r.type, horseCount: r.horseCount,
+          distanceFurlongs: r.distanceFurlongs, surface: r.surface, type: r.type,
+          horseCount: live, scrCount: cachedHorses ? cachedHorses.length - live : 0,
           postTime: ex.t, sortKey: postTimeToMinutes(ex.t),
           bets: betMap[k] || [], run: !!runMap[k],
         });
@@ -983,6 +987,26 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setError("Couldn't build the Race Card. " + (e.message || e));
       setLcdMsg("READY");
     } finally { setBusy(false); }
+  }
+
+  function todayYmd() {
+    const d = new Date();
+    return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  }
+
+  async function fetchUploadCounts() {
+    if (!supaUrl || !supaKey) return;
+    const ymd = todayYmd();
+    try {
+      const [er, cr] = await Promise.all([
+        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=gte." + ymd + "&select=id", { headers: supaHeaders() }),
+        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?race_date=gte." + ymd + "&select=id", { headers: supaHeaders() }),
+      ]);
+      setUploadCounts({
+        entries: er.ok ? (await er.json()).length : null,
+        cards: cr.ok ? (await cr.json()).length : null,
+      });
+    } catch (e) { console.error("upload counts", e); }
   }
 
   async function fetchOwnedCards() {
@@ -1519,6 +1543,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 After each race goes official, hit "Log result" and tap the winner — the full prediction snapshot is saved
                 to your hra_race_log table for future model tuning. The Anthropic key is only needed for PDF/photo reading.
               </p>
+              {supaUrl && supaKey && (
+                <div style={{ margin: "14px 0" }}>
+                  <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Day setup — load the night before, then live on Race Day</div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
+                      🔍 Entry Uploads{uploadCounts.entries !== null ? ` (${uploadCounts.entries})` : ""}
+                    </Key>
+                    <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
+                      🃏 Cards Uploads{uploadCounts.cards !== null ? ` (${uploadCounts.cards})` : ""}
+                    </Key>
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <Key onClick={() => setShowSettings(false)}>Back</Key>
                 <span style={{ fontSize: 11, color: "#B9C8BB" }}>Values save as you type — nothing to submit.</span>
@@ -1575,35 +1612,13 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </p>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>{busy ? "Working…" : "📅 Race Day"}</Key>}
-                <Key wide onClick={() => { setStep("uploads"); setLcdMsg("UPLOADS"); }} disabled={busy}>📤 Uploads</Key>
                 <div style={{ flex: 1 }} />
-                <Key onClick={() => setShowSettings(true)}>⚙ Set</Key>
+                <Key onClick={() => { setShowSettings(true); fetchUploadCounts(); }}>⚙ Set</Key>
               </div>
-              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
-                Entries: your stored shopping list of scanned tracks (post times included), plus "Upload Entries" to add
-                tracks — save Brisnet's free entries page as a PDF per track and upload the stack. Re-scanning a track
-                refreshes its stored copy.
-              </p>
+
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
-            </div>
-          )}
-
-          {/* ---------- UPLOADS ---------- */}
-          {step === "uploads" && (
-            <div>
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Uploads</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
-                Set the day's data here — scan the free entries pages, buy and load the cards — then live on Race Day.
-              </p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Key wide onClick={viewEntries} disabled={busy}>🔍 Entries</Key>
-                <Key wide onClick={viewCards} disabled={busy}>🃏 Cards</Key>
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
-              </div>
             </div>
           )}
 
@@ -1701,7 +1716,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </button>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-                <Key onClick={() => { setStep("uploads"); setLcdMsg("UPLOADS"); }}>Back</Key>
+                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
                 <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
               </div>
             </div>
@@ -1737,7 +1752,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </span>
                   <b style={{ minWidth: 66 }}>{it.track} R{it.raceNumber}</b>
                   <span style={{ minWidth: 66, color: "#CFDCCF" }}>{it.distanceFurlongs}f {it.surface}</span>
-                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}</span>
+                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}{it.scrCount ? ` · ${it.scrCount} scr` : ""}</span>
                   {(() => {
                     const bets = it.bets || [];
                     if (it.run) {
@@ -1816,7 +1831,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 );
               })}
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-                <Key onClick={() => { setStep("uploads"); setLcdMsg("UPLOADS"); }}>Back</Key>
+                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
                 <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
               </div>
             </div>
