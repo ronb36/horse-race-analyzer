@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.8.0 · July 2026**
+**Version: 1.8.1 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -82,6 +82,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.8.1 (2026-07-26)** — Start-screen buttons reordered to workflow order (Scan entries · Upload card · Saved cards). Content-based routing guards: entries PDFs given to Upload card are detected and scanned instead (with a notice), and data ZIPs/files given to Scan entries are detected and loaded as cards — preventing malformed rows in hra_cards. Ratings unchanged.
 - **1.8.0 (2026-07-26)** — Scanned entries persist to Supabase (hra_entries table); post times auto-load onto race tabs and the Race line whenever a card for that date is opened, across sessions and devices. Ratings unchanged.
 - **1.7.0 (2026-07-26)** — Day scanner: upload saved PDFs of Brisnet's free entries pages for any number of tracks; local pdf.js text extraction + 1979 rules produce a per-track shopping list (qualifying races, post times, field sizes). Post times flow onto race tabs and headers. Ratings unchanged.
 - **1.6.0 (2026-07-25)** — Automatic race advisor: Claude reads the computed grid on race open and after board changes, verdict on the LCD ("BET: X TO WIN" / "PASS THIS RACE") with a race-shape + reasoning panel under the race header (§5.4). Faceplate buttons arranged ⏏ CARD / ⚙ SET; column legend moved to the footer. Supersedes the manual Ask Claude button (1.5.0, unreleased). Ratings unchanged.

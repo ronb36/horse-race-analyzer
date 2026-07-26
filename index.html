@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.8.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.8.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -315,7 +315,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -372,6 +372,7 @@ function HorseRaceAnalyzer() {
   const [showSettings, setShowSettings] = useState(false);
   const [savedCards, setSavedCards] = useState(null);
   const [dayScan, setDayScan] = useState(null);
+  const [scanNote, setScanNote] = useState("");
   const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
   const [claudeRec, setClaudeRec] = useState(null);
   const [claudeThinking, setClaudeThinking] = useState(false);
@@ -640,6 +641,19 @@ function HorseRaceAnalyzer() {
           throw new Error("That file doesn't look like a Brisnet single-file card (too few columns). Buy the \"Single Data File\" product on brisnet.com and upload its ZIP or the data file inside.");
         }
       }
+      // Entries pages mistakenly given to Upload card? Detect and scan them instead.
+      if (filesArr.length && filesArr.every((f) => f.type === "application/pdf" || /pdf$/i.test(f.name))) {
+        try {
+          if (typeof pdfjsLib !== "undefined") {
+            const probe = await pdfFileToText(filesArr[0]);
+            if (parseEntriesText(probe).races.length) {
+              await handleScanFiles(fileList);
+              setScanNote("Those were free entries pages, not data cards — scanned them instead. Data cards go through 📄 Upload card.");
+              return;
+            }
+          }
+        } catch (probeErr) { console.error("entries probe", probeErr); }
+      }
       brisRef.current = null;
       fileBlocksRef.current = await filesToBlocks(fileList);
       const parsed = await askClaude(
@@ -768,6 +782,18 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   async function handleScanFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
+    setScanNote("");
+    // Data cards mistakenly given to Scan entries? Detect and load them instead.
+    if (files.length === 1 && (/\.zip$/i.test(files[0].name) || /zip/.test(files[0].type || ""))) {
+      await handleFiles(fileList);
+      return;
+    }
+    if (files.length === 1 && files[0].type !== "application/pdf" && !/pdf$/i.test(files[0].name)) {
+      try {
+        const probe = await files[0].text();
+        if (looksLikeBrisnet(probe)) { await handleFiles(fileList); return; }
+      } catch (probeErr) { console.error("card probe", probeErr); }
+    }
     setError(""); setBusy(true); setLcdMsg("SCANNING TRACKS...");
     try {
       const found = [];
@@ -1067,11 +1093,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 the 1979 rules. Or punch the numbers in yourself.
               </p>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>
-                  {busy ? "Scanning…" : "📄 Upload card"}
-                </Key>
+                <Key wide onClick={() => scanFileRef.current?.click()} disabled={busy}>{busy ? "Working…" : "🔍 Scan entries"}</Key>
+                <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload card</Key>
                 {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
-                <Key wide onClick={() => scanFileRef.current?.click()} disabled={busy}>🔍 Scan entries</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
                 Scan entries: save Brisnet's free entries page as a PDF for each track you're curious about, upload the
@@ -1102,6 +1126,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- DAY SCAN ---------- */}
           {step === "scan" && dayScan && (
             <div>
+              {scanNote && (
+                <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                  {scanNote}
+                </div>
+              )}
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Today's shopping list</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
