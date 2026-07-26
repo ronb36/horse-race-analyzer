@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.11.0 · July 2026**
+**Version: 1.12.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -82,6 +82,8 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.12.0 (2026-07-26)** — Explainable ratings: each component in the expand view shows the inputs that produced it (call lengths, figures, earnings/start vs purse, record, days, post), with an automatic warnings box flagging known blind spots per horse: turf-built rating on a dirt day (and vice versa), missing last-race figure, 90+ day layoff, thin current-year record. Ratings unchanged.
+- **1.11.1 (2026-07-26)** — Board-style odds notation: morning-line seeds and the FAIR column display as standard tote fractions (9/5, 5/2, 7/2) via a ladder mapping; typed odds are never reformatted. Tab/Enter now moves focus without selecting the field's text (no iOS selection handles). Ratings unchanged.
 - **1.11.0 (2026-07-26)** — Canonical track codes: scans extract the Brisnet trackId from the page's printed URL and everything (post times, owned-card detection, hra_entries keys) matches on exact 3-letter codes, with the alias table demoted to fallback. Adds hra_entries.track_name for display. Includes 1.10.0 (unreleased): owned-card detection in the Entries list ("✓ card on file — open" replaces the buy link) and the trackMatches fallback that fixed MTH↔Monmouth. Ratings unchanged.
 - **1.9.1 (2026-07-26)** — "Buy this card" on qualifying tracks in the Entries list links to Brisnet's data-files store page (new tab). Ratings unchanged.
 - **1.9.0 (2026-07-26)** — Entries button now opens the stored shopping list from hra_entries (all scanned tracks, grouped with dates and post times) with "+ Scan more" for additions; re-scanning a track/date upserts over the stored copy. Ratings unchanged.

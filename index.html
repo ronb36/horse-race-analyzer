@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.11.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -47,6 +47,23 @@ function parseOdds(v) {
   if (m) return parseFloat(m[1]) / parseFloat(m[2]);
   const f = parseFloat(str);
   return Number.isFinite(f) ? f : null;
+}
+
+// Standard tote-board odds ladder; converts decimal odds-to-1 to board notation
+const BOARD_LADDER = [
+  [0.1, "1/10"], [0.2, "1/5"], [0.4, "2/5"], [0.5, "1/2"], [0.6, "3/5"], [0.8, "4/5"],
+  [1, "1"], [1.2, "6/5"], [1.4, "7/5"], [1.5, "3/2"], [1.6, "8/5"], [1.8, "9/5"],
+  [2, "2"], [2.5, "5/2"], [3, "3"], [3.5, "7/2"], [4, "4"], [4.5, "9/2"],
+  [5, "5"], [6, "6"], [7, "7"], [8, "8"], [9, "9"], [10, "10"], [12, "12"],
+  [15, "15"], [20, "20"], [25, "25"], [30, "30"], [40, "40"], [50, "50"], [99, "99"],
+];
+function decimalToBoard(dec) {
+  if (dec === null || dec === undefined || !Number.isFinite(dec)) return "";
+  let best = BOARD_LADDER[0];
+  for (const step of BOARD_LADDER) {
+    if (Math.abs(step[0] - dec) / Math.max(dec, 0.1) < Math.abs(best[0] - dec) / Math.max(dec, 0.1)) best = step;
+  }
+  return best[1];
 }
 
 // ---------- Brisnet single-file data parser (deterministic — no AI involved) ----------
@@ -154,7 +171,7 @@ function brisnetHorses(rws) {
       postPosition: t(fn(row, 4)),
       daysSinceLastRace: t(fn(row, 224)),
       racesThisYear: t(races), wins: t(w), places: t(p), shows: t(sh), earnings: t(earn),
-      mlOdds: ml !== null ? t(Math.round(ml * 100) / 100) : "",
+      mlOdds: ml !== null ? decimalToBoard(ml) : "",
       lastRace: past(0), priorRace: past(1),
       trainer: f(row, 28), jockey: f(row, 33),
       runStyle: f(row, 210), quirinPts: t(fn(row, 211)), primePower: t(fn(row, 251)),
@@ -349,7 +366,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.12.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1413,7 +1430,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                             {r.name}{isBest ? " ★" : ""}
                           </button>
                           <span style={{ ...cell, color: dim ? "#8FA396" : "#EFE8D5", fontWeight: 700 }}>
-                            {r.fair !== null ? r.fair.toFixed(1) : "—"}
+                            {r.fair !== null ? decimalToBoard(r.fair) : "—"}
                           </span>
                           {dim ? <span style={cell}>—</span> : (
                             <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => { updateHorse(r.i, "mlOdds", e.target.value); scheduleAsk(1500); }}
@@ -1424,7 +1441,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                                 const dir = e.shiftKey ? -1 : 1;
                                 for (let j = di + dir; j >= 0 && j < displayed.length; j += dir) {
                                   const el = oddsRefs.current[j];
-                                  if (el) { el.focus(); if (el.select) el.select(); return; }
+                                  if (el) { el.focus(); return; }
                                 }
                               }}
                               placeholder="5-2" aria-label={`Odds for ${r.name}`} inputMode="decimal"
@@ -1465,14 +1482,50 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                                   ))}
                                 </div>
                               )}
-                              <div style={{ paddingTop: 6 }}>
-                                {Object.entries(r.components).map(([k, v]) => (
-                                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                                    <span>{COMPONENT_LABELS[k]}</span>
-                                    <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
+                              {(() => {
+                                const lr = h.lastRace || {}, pr = h.priorRace || {};
+                                const eps = Math.round((num(h.earnings) || 0) / Math.max(num(h.racesThisYear) || 1, 1));
+                                const caps = {
+                                  earlySpeed: `1st-call lengths behind: ${lr.lengthsBehindFirstCall || "—"} / ${pr.lengthsBehindFirstCall || "—"} (last two races)`,
+                                  recentForm: `last race: finished ${lr.finishPosition || "—"}, ${lr.lengthsBehindFinish || "—"}L at the wire`,
+                                  speed: `figures ${lr.speedRating || "—"} / ${pr.speedRating || "—"}`,
+                                  class: `$${eps.toLocaleString()}/start vs $${Number(raceInfo.purse || 0).toLocaleString()} purse`,
+                                  consistency: `${h.wins || 0}-${h.places || 0}-${h.shows || 0} in ${h.racesThisYear || 0} starts`,
+                                  freshness: `${h.daysSinceLastRace || "—"} days since last race`,
+                                  post: `post ${h.postPosition || "—"} at ${raceInfo.distanceFurlongs || "?"}f`,
+                                };
+                                const warns = [];
+                                const today = raceInfo.surface || "dirt";
+                                const recent = (h.history || []).slice(0, 2).map((x) => x.surface);
+                                if (recent.length && recent.every((x) => x === "T") && today === "dirt") warns.push("Rating built on turf races — today is dirt. The 1979 formula can't see surface switches.");
+                                if (recent.length && recent.every((x) => x === "D") && today === "turf") warns.push("Rating built on dirt races — today is turf.");
+                                if (!num(lr.speedRating)) warns.push("No last-race speed figure — the speed component is underscored, not necessarily bad form.");
+                                const dd = num(h.daysSinceLastRace);
+                                if (dd !== null && dd > 90) warns.push(`Long layoff: ${dd} days — freshness scores near zero.`);
+                                const rr = num(h.racesThisYear);
+                                if (rr !== null && rr <= 1) warns.push("Thin current-year record — class and consistency score near zero.");
+                                return (
+                                  <div style={{ paddingTop: 6 }}>
+                                    {warns.length > 0 && (
+                                      <div style={{ background: "rgba(227,201,140,0.10)", border: "1px solid rgba(227,201,140,0.4)", borderRadius: 6, padding: "8px 10px", fontSize: 11, lineHeight: 1.5, marginBottom: 8, color: "#E8DAB0" }}>
+                                        {warns.map((w, wi) => <span key={wi} style={{ display: "block" }}>⚠ {w}</span>)}
+                                      </div>
+                                    )}
+                                    {Object.entries(r.components).map(([k, v]) => (
+                                      <div key={k} style={{ padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                          <span>{COMPONENT_LABELS[k]}</span>
+                                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
+                                        </div>
+                                        <div style={{ fontSize: 10, color: "#8FA396" }}>{caps[k]}</div>
+                                      </div>
+                                    ))}
+                                    <div style={{ fontSize: 10, color: "#8FA396", paddingTop: 5 }}>
+                                      The rating scores only the two most recent races; older lines above are context.
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
+                                );
+                              })()}
                             </div>
                           );
                         })()}
