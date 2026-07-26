@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.6.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.7.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -507,6 +507,7 @@ function HorseRaceAnalyzer() {
   const askSeqRef = useRef(0);
   const scanFileRef = useRef(null);
   const persistTimerRef = useRef(null);
+  const oddsSnapRef = useRef(null);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -1380,6 +1381,63 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     } catch (e) { setError("Couldn't cancel that ticket. " + (e.message || e)); }
   }
 
+  async function handleOddsSnap(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError(""); setBusy(true); setLcdMsg("READING THE BOARD...");
+    try {
+      const blocks = await filesToBlocks(files);
+      const names = overlay.map((o) => o.name).join("; ");
+      const prompt = `This is a screenshot of a horse-race betting app board. The horses in this race are: ${names}. Extract each horse's CURRENT win odds as shown (board fractions like 9/2, 3/1 -> write "9/2", "3"). If a horse is marked scratched (SCR/strikethrough), give odds "SCR". Respond with ONLY a JSON array, no prose: [{"name":"<horse name>","odds":"<odds or SCR>"}]`;
+      if (!apiKey) throw new Error("Add your Anthropic API key (⚙ Set on the home screen) to read board snapshots.");
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1500,
+          temperature: 0,
+          messages: [{ role: "user", content: [...blocks, { type: "text", text: prompt }] }],
+        }),
+      });
+      if (!resp.ok) throw new Error("API HTTP " + resp.status + ": " + (await resp.text()).slice(0, 140));
+      const data = await resp.json();
+      const text = (data.content || []).map((c) => c.text || "").join("").replace(/```json|```/g, "").trim();
+      const arr = JSON.parse(text.slice(text.indexOf("[")));
+      const norm = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      let updated = 0, scratches = 0;
+      const next = horses.map((h) => ({ ...h }));
+      for (const item of arr) {
+        const target = norm(item.name);
+        let idx = overlay.findIndex((o) => norm(o.name) === target);
+        if (idx < 0) idx = overlay.findIndex((o) => norm(o.name).startsWith(target) || target.startsWith(norm(o.name)));
+        if (idx < 0) continue;
+        const hi = overlay[idx].i;
+        if (String(item.odds).toUpperCase() === "SCR") {
+          if (!next[hi].scratched) { next[hi].scratched = true; scratches++; }
+        } else if (item.odds) {
+          next[hi].mlOdds = String(item.odds);
+          updated++;
+        }
+      }
+      persistHorses(next);
+      scheduleAsk(800);
+      setLogMsg(`Board read: ${updated} odds updated${scratches ? `, ${scratches} scratch${scratches > 1 ? "es" : ""} applied` : ""}.`);
+      setLcdMsg("BOARD UPDATED");
+    } catch (e) {
+      setError("Couldn't read the board snapshot. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally {
+      setBusy(false);
+      if (oddsSnapRef.current) oddsSnapRef.current.value = "";
+    }
+  }
+
   function pickFinish(r) {
     setFinishPicks((prev) => {
       if (prev.includes(r.i)) return prev.filter((x) => x !== r.i);
@@ -1566,6 +1624,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* file pickers live on every screen so any button can open them */}
           <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
           <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
+          <input ref={oddsSnapRef} type="file" accept="image/*" multiple onChange={(e) => handleOddsSnap(e.target.files)} style={{ display: "none" }} />
 
           {raceIndex.length > 0 && step !== "start" && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
@@ -1701,7 +1760,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
-                Tap a card to open it. Uploaded Brisnet data files save here automatically.
+                Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
               {(!savedCards || savedCards.length === 0) && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
@@ -1709,11 +1768,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {(savedCards || []).map((c) => (
-                <button key={c.id} onClick={() => loadSavedCard(c.id)} disabled={busy}
-                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
-                  <b>{c.title || (c.track + " " + c.race_date)}</b>
+                <div key={c.id}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", fontSize: 13, textAlign: "left", boxSizing: "border-box" }}>
+                  <b>✓ {c.title || (c.track + " " + c.race_date)}</b>
                   <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
-                </button>
+                </div>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
@@ -1802,10 +1861,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                         {t.error ? t.error : owned ? (
                           <span>
                             {ok.length} of {t.races.length} qualify —{" "}
-                            <button onClick={() => loadSavedCard(owned.id)} disabled={busy}
-                              style={{ background: "none", border: "none", padding: 0, color: "#8FC49F", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 11 }}>
-                              ✓ card on file — open
-                            </button>
+                            <span style={{ color: "#8FC49F", fontWeight: 700, fontSize: 11 }}>✓ card on file</span>
                           </span>
                         ) : ok.length ? (
                           <span>
@@ -2248,6 +2304,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                 <Key onClick={backFromRace}>Back</Key>
                 <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
+                <Key onClick={() => oddsSnapRef.current?.click()} disabled={busy}>{busy ? "Reading…" : "📸 Odds"}</Key>
                 <div style={{ flex: 1 }} />
                 {supaUrl && supaKey && (
                   <Key onClick={openBetSlip} disabled={busy}>
