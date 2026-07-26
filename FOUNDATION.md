@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 1.12.2 · July 2026**
+**Version: 1.13.0 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -52,6 +52,10 @@ Scratched horses are excluded and probabilities renormalize over the remaining f
 
 Brisnet's free per-track entries pages (TwinSpires feed) contain each race's type, distance, surface, purse, age restrictions, **post time**, and field size — everything the 1979 eligibility rules need, before buying anything. Save each track's page as a PDF (Safari share → print → PDF) and upload the stack via 🔍 Scan entries: text is extracted locally (pdf.js, no API), each race is rules-checked, and a shopping-list screen shows per track how many races qualify. Scanned post times attach to the matching track's race tabs and headers when its data file is loaded (matched on the first three letters of the track name). Track identity keys on the canonical Brisnet 3-letter code everywhere: entries pages carry it in the printed URL footer (`trackId=SAR`), extracted at scan time; a small alias table + letters-in-order fallback covers pages printed without footers and legacy rows. Scans persist to Supabase (`hra_entries`, keyed track code + date, display name in `track_name`, jsonb of races including post times, types, field sizes, qualification verdicts); loading any card for a date auto-fetches that date's entries, so post times survive across sessions and devices. Field sizes archived here are a candidate feature for future model versions. The app cannot fetch these pages itself — browser cross-origin policy — so the save-and-upload step is the pipeline.
 
+## 5.36 Program-style pages: Scratch Watch and selections
+
+Brisnet's free Program-style entries pages (same URL family, same headers) additionally carry per-race handicapper's selections and a Scratch Watch section listing likely — not official — scratches with reasons (Main-Track-Only, Trainer, cross-entries). The scanner extracts both into hra_entries. When a card is open: watch-listed horses show an SW chip and an expand-view warning, the advisor prompt is told about them, and the track handicapper's picks display under the race read. Watch entries never auto-scratch; the Scratch button remains the sole authority, since the list is predictive.
+
 ## 5.4 The race advisor (Claude in the machine)
 
 When a race opens — and again ~1.5 s after odds edits or scratches — the app sends the computed grid (name, post, rating, board odds, fair odds, edge, win/place/show %, run style + Quirin points) to Claude (claude-sonnet-4-6, temperature 0) with a strict contract: identify the best overlay (largest positive edge, explicitly not necessarily the top-rated horse); choose Win only if the win% supports it (~15%+), Place/Show when the value horse's board-hitting chances outrun a thin win%, and PASS when no edge clears ~+10%; base everything on the supplied numbers and never invent track condition or weather. The three-line reply feeds the LCD verdict and the race-read panel (race shape from the data, then the reasoning). It is an interpretation layer over the model's own numbers — it sees nothing the grid doesn't contain — and requires the Anthropic API key. Bet-type selection is a heuristic since place/show payoffs are pool-dependent.
@@ -82,6 +86,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **1.13.0 (2026-07-26)** — Program-style page harvest: Scratch Watch (likely scratches with reasons) flagged per horse via SW chip, expand warning, and advisor context; track handicapper's selections shown per race. Stored in hra_entries; scanner handles both free page types interchangeably. Ratings unchanged.
 - **1.12.2 (2026-07-26)** — Hidden file pickers now mount on every screen; "+ Scan more" on the Entries view (previously dead — its input only existed on the start screen) works. Ratings unchanged.
 - **1.12.1 (2026-07-26)** — Entries classification made robust to PDF text fragmentation ("MAIDE N CLAIMI N G"): race types matched space-insensitively against a canonical vocabulary, fixing maiden/2yo races slipping through as qualifiers on some pages; type labels display clean canonical names. Saved cards hydrate legacy decimal odds into board notation. Re-scan previously scanned tracks to correct stored entries. Ratings unchanged.
 - **1.12.0 (2026-07-26)** — Explainable ratings: each component in the expand view shows the inputs that produced it (call lengths, figures, earnings/start vs purse, record, days, post), with an automatic warnings box flagging known blind spots per horse: turf-built rating on a dirt day (and vice versa), missing last-race figure, 90+ day layoff, thin current-year record. Ratings unchanged.

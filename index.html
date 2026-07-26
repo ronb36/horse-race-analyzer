@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.12.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.13.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -357,11 +357,30 @@ function parseEntriesText(flatText) {
     const S400 = squish(tail.slice(0, 400));
     const isMaiden = squish(tail.slice(0, 80)).includes("MAIDEN");
     const is2yo = (S400.includes("TWOYEAROLD") || S400.includes("TWOYEARSOLD")) && !S400.includes("ANDUPWARD");
+    const selM = tail.match(/S\s*e\s*l\s*e\s*c\s*t\s*i\s*o\s*n\s*s\s*:?\s*((?:\d+[\s,]*)+)/i);
     races.push({
       raceNumber: no, type: rtype, distanceFurlongs: distF, surface, purse,
       postTime: ptm ? ptm[1].replace(/^0/, "") : null, fieldSize: ptm ? parseInt(ptm[2], 10) : null,
       isMaiden, is2yo,
+      selections: selM ? selM[1].replace(/\s+/g, "").replace(/,+$/, "") : null,
     });
+  }
+  // Program-style pages carry a Scratch Watch section: LIKELY scratches, not official ones
+  const swIdx = flat.search(/S\s*c\s*r\s*a\s*t\s*c\s*h\s+W\s*a\s*t\s*c\s*h/i);
+  if (swIdx >= 0) {
+    const sect = flat.slice(swIdx, swIdx + 5000);
+    const re = /(\d{1,2})\s+([A-Za-z][A-Za-z .'’-]{2,28}?)\s+\d{1,2}[A-Za-z]{3}\d{2}\s+[A-Z0-9]{2,5}\s*\d{0,2}\s+[A-Z0-9\/]+\s+([A-Za-z][A-Za-z-]+)/g;
+    const seen = new Set();
+    let m;
+    while ((m = re.exec(sect))) {
+      const rn = parseInt(m[1], 10);
+      const nm = m[2].trim().replace(/\s*\(.*?\)\s*$/, "");
+      const key = rn + "|" + nm.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const race = races.find((r) => r.raceNumber === rn);
+      if (race) { (race.watch = race.watch || []).push({ horse: nm, reason: m[3] }); }
+    }
   }
   if (!trackCode && track) {
     const TU = track.toUpperCase();
@@ -382,7 +401,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.12.2";
+const APP_VERSION = "1.13.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -829,7 +848,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setPostTimes((prev) => {
         const next = { ...prev };
         for (const row of rows) {
-          next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, r.postTime]));
+          next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
         }
         return next;
       });
@@ -857,7 +876,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const rows = await resp.json();
       setPostTimes((prev) => {
         const next = { ...prev };
-        for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, r.postTime]));
+        for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
         return next;
       });
       await fetchOwnedCards();
@@ -908,7 +927,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         if (!parsed.races.length) { found.push({ track: f.name, dateStr: "", races: [], error: "No races recognized in this file." }); continue; }
         const races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
         const key = (parsed.trackCode || parsed.track).toUpperCase();
-        setPostTimes((prev) => ({ ...prev, [key]: Object.fromEntries(races.map((r) => [r.raceNumber, r.postTime])) }));
+        setPostTimes((prev) => ({ ...prev, [key]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
         saveEntries(key, parsed.track, entriesDateToYmd(parsed.dateStr), races);
         found.push({ track: parsed.track, code: parsed.trackCode, ymd: entriesDateToYmd(parsed.dateStr), dateStr: parsed.dateStr, races });
       }
@@ -925,14 +944,23 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     }
   }
 
-  function getPostTime(raceNo) {
+  function getRaceExtras(raceNo) {
     const code = (cardMeta.track || "").toUpperCase();
     if (!code) return null;
-    if (postTimes[code]) return postTimes[code][raceNo] || null;
-    for (const [name, times] of Object.entries(postTimes)) {
-      if (trackMatches(code, name)) return times[raceNo] || null; // legacy rows keyed by name
+    let v = null;
+    if (postTimes[code]) v = postTimes[code][raceNo] || null;
+    else {
+      for (const [name, times] of Object.entries(postTimes)) {
+        if (trackMatches(code, name)) { v = times[raceNo] || null; break; }
+      }
     }
-    return null;
+    if (v === null) return null;
+    return typeof v === "string" ? { t: v, sel: null, watch: [] } : v;
+  }
+
+  function getPostTime(raceNo) {
+    const ex = getRaceExtras(raceNo);
+    return ex ? ex.t : null;
   }
 
   function startManual() {
@@ -1015,7 +1043,9 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const lines = overlay.filter((o) => !o.scratched).map((o) => {
         const h = horses[o.i] || {};
         const style = h.runStyle ? `, style ${h.runStyle}${h.quirinPts ? " " + h.quirinPts + "pts" : ""}` : "";
-        return `${o.name} (post ${o.post || "?"}): rating ${o.rating.toFixed(1)}, board odds ${o.odds !== null ? o.odds : "unknown"}, fair ${o.fair !== null ? o.fair.toFixed(1) : "?"}, edge ${o.edge !== null ? (o.edge > 0 ? "+" : "") + Math.round(o.edge * 100) + "%" : "?"}, win ${Math.round((o.pModel ?? 0) * 100)}%, place ${Math.round((o.pPlace ?? 0) * 100)}%, show ${Math.round((o.pShow ?? 0) * 100)}%${style}`;
+        const wsw = raceWatch.find((w) => w.horse.toUpperCase() === String(o.name).toUpperCase());
+        const swNote = wsw ? ` [Brisnet scratch-watch: ${wsw.reason} — likely but not official scratch]` : "";
+        return `${o.name} (post ${o.post || "?"}): rating ${o.rating.toFixed(1)}, board odds ${o.odds !== null ? o.odds : "unknown"}, fair ${o.fair !== null ? o.fair.toFixed(1) : "?"}, edge ${o.edge !== null ? (o.edge > 0 ? "+" : "") + Math.round(o.edge * 100) + "%" : "?"}, win ${Math.round((o.pModel ?? 0) * 100)}%, place ${Math.round((o.pPlace ?? 0) * 100)}%, show ${Math.round((o.pShow ?? 0) * 100)}%${style}${swNote}`;
       }).join("\n");
       const prompt = `You are the betting advisor inside a 1979 Horse Race Analyzer handheld. Interpret ONLY these computed numbers for Race ${raceInfo.raceNumber} (${raceInfo.distanceFurlongs}f ${raceInfo.surface}):
 ${lines}
@@ -1090,6 +1120,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       setError("Couldn't log the result. " + (e.message || e));
     }
   }
+  const raceExtras = getRaceExtras(num(raceInfo.raceNumber)) || { t: null, sel: null, watch: [] };
+  const raceWatch = raceExtras.watch || [];
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
@@ -1429,6 +1461,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
 
 
+              {raceExtras.sel && (
+                <div style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px" }}>
+                  Track handicapper's picks: {raceExtras.sel}
+                </div>
+              )}
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 500 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8", textAlign: "center" }}>
@@ -1450,6 +1487,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                             style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
                             {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.post} · </span>}
                             {r.name}{isBest ? " ★" : ""}
+                            {raceWatch.some((w) => w.horse.toUpperCase() === String(r.name).toUpperCase()) && (
+                              <span title="Brisnet Scratch Watch — likely scratch" style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: "#3A2F17", background: "#E3C98C", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>SW</span>
+                            )}
                           </button>
                           <span style={{ ...cell, color: dim ? "#8FA396" : "#EFE8D5", fontWeight: 700 }}>
                             {r.fair !== null ? decimalToBoard(r.fair) : "—"}
@@ -1526,6 +1566,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                                 if (dd !== null && dd > 90) warns.push(`Long layoff: ${dd} days — freshness scores near zero.`);
                                 const rr = num(h.racesThisYear);
                                 if (rr !== null && rr <= 1) warns.push("Thin current-year record — class and consistency score near zero.");
+                                const wh = raceWatch.find((w) => w.horse.toUpperCase() === String(r.name).toUpperCase());
+                                if (wh) warns.push(`Brisnet Scratch Watch: ${wh.reason} — a likely (not official) scratch. Use the Scratch button only when it's confirmed.`);
                                 return (
                                   <div style={{ paddingTop: 6 }}>
                                     {warns.length > 0 && (
