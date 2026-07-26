@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.2.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.3.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -475,6 +475,7 @@ function HorseRaceAnalyzer() {
   const [slipStamped, setSlipStamped] = useState(null);
   const [slipSerial, setSlipSerial] = useState("");
   const [raceBets, setRaceBets] = useState({}); // raceNo -> array of bet rows
+  const [slipsView, setSlipsView] = useState(null);
   const [resultPayout, setResultPayout] = useState("");
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1282,6 +1283,38 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     }
   }
 
+  async function viewSlips() {
+    if (!supaUrl || !supaKey) { setError("Slips need Supabase (tap ⚙ Set)."); return; }
+    setError(""); setBusy(true); setLcdMsg("SPREADING THE TICKETS...");
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?select=*&order=created_at.desc&limit=60", { headers: supaHeaders() });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      setSlipsView(await resp.json());
+      setStep("slips");
+      setLcdMsg("THE TABLE");
+    } catch (e) {
+      setError("Couldn't fetch the tickets. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally { setBusy(false); }
+  }
+
+  async function cancelSlip(b) {
+    if (!b.id || b.settled) return;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?id=eq." + b.id, {
+        method: "DELETE",
+        headers: { ...supaHeaders(), Prefer: "return=minimal" },
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      setSlipsView((prev) => (prev || []).filter((x) => x.id !== b.id));
+      setRaceBets((prev) => {
+        const next = { ...prev };
+        if (b.race_no !== null && next[b.race_no]) next[b.race_no] = next[b.race_no].filter((x) => x.id !== b.id);
+        return next;
+      });
+    } catch (e) { setError("Couldn't cancel that ticket. " + (e.message || e)); }
+  }
+
   async function cancelBet(b) {
     if (!b.id || b.settled) return;
     try {
@@ -1514,6 +1547,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <Key wide onClick={viewEntries} disabled={busy}>{busy ? "Working…" : "🔍 Entries"}</Key>
                 <Key wide onClick={viewCards} disabled={busy}>🃏 Cards</Key>
                 {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>📅 Race Card</Key>}
+                {supaUrl && supaKey && <Key wide onClick={viewSlips} disabled={busy}>🎫 Slips</Key>}
                 <div style={{ flex: 1 }} />
                 <Key onClick={() => setShowSettings(true)}>⚙ Set</Key>
               </div>
@@ -1525,6 +1559,66 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
               </p>
+            </div>
+          )}
+
+          {/* ---------- SLIPS ---------- */}
+          {step === "slips" && slipsView && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Betting slips — the table</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Every ticket, face up. Live tickets can be cancelled; settled tickets are history.
+              </p>
+              {slipsView.length === 0 && (
+                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                  No tickets yet — punch one from a race with 🎟 Bets.
+                </div>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+                {slipsView.map((b) => (
+                  <div key={b.id} style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "10px 13px", width: 250, fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", transform: `rotate(${((b.id % 5) - 2) * 0.8}deg)`, opacity: b.settled ? 0.55 : 1, position: "relative" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, letterSpacing: "0.08em" }}>
+                      <span>{b.track} · R{b.race_no} · {ymdToDisplay(b.race_date)}</span>
+                      <span style={{ color: "#A33327", fontWeight: 700 }}>GGF-{String(b.id).padStart(5, "0")}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, margin: "7px 0 3px" }}>
+                      {b.bet_type} ${Number(b.amount).toFixed(2)} — #{b.post} {String(b.horse).toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#6B5F49" }}>
+                      {b.odds_at_bet ? `${b.odds_at_bet} taken` : "odds n/a"}{b.fair ? ` · fair ${b.fair}` : ""}{b.edge !== null ? ` · edge ${b.edge > 0 ? "+" : ""}${b.edge}%` : ""}
+                    </div>
+                    <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      {b.settled ? (
+                        <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: "0.1em", color: b.won ? "#2E6B45" : "#A33327", border: `2px solid ${b.won ? "#2E6B45" : "#A33327"}`, borderRadius: 3, padding: "3px 8px", transform: "rotate(-4deg)" }}>
+                          {b.won ? `WON${b.payout ? ` $${Number(b.payout).toFixed(2)}` : ""}` : "LOST"}
+                        </span>
+                      ) : (
+                        <button onClick={() => cancelSlip(b)}
+                          style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 10, letterSpacing: "0.1em", padding: "3px 9px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#A33327", border: "2px solid #A33327" }}>
+                          CANCEL
+                        </button>
+                      )}
+                      <span style={{ fontSize: 9, color: "#8B7D63" }}>{b.settled ? "SETTLED" : "LIVE"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(() => {
+                const settled = slipsView.filter((b) => b.settled);
+                const staked = slipsView.reduce((a, b) => a + Number(b.amount || 0), 0);
+                const returned = settled.reduce((a, b) => a + Number(b.payout || 0), 0);
+                const pendingPayout = settled.filter((b) => b.won && (b.payout === null || b.payout === undefined)).length;
+                const net = returned - settled.reduce((a, b) => a + Number(b.amount || 0), 0);
+                return slipsView.length > 0 ? (
+                  <div style={{ fontSize: 12, color: "#CFDCCF", marginBottom: 12 }}>
+                    Staked ${staked.toFixed(2)} · Returned ${returned.toFixed(2)} · Net on settled {net >= 0 ? "+" : ""}${net.toFixed(2)}
+                    {pendingPayout ? ` · ${pendingPayout} winner${pendingPayout > 1 ? "s" : ""} awaiting payout entry` : ""}
+                  </div>
+                ) : null;
+              })()}
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+              </div>
             </div>
           )}
 

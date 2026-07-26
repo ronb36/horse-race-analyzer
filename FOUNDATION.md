@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.2.0 · July 2026**
+**Version: 2.3.0 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -92,6 +92,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.3.0 (2026-07-26)** [feature] — The table: 🎫 Slips on the home row spreads every ticket face up as paper slips (GGF- serials, slight scatter), live tickets cancellable from the table, settled tickets greyed with WON/LOST stamps, with running totals (staked, returned, net on settled, winners awaiting payout entry). Sim fingerprint verified ae7d1b405c989c31.
 - **2.2.0 (2026-07-26)** [feature] — Ticket lifecycle: 🎟 Bets (with count) and Log Results are both always available on a race; the slip lists this race's tickets with a CANCEL stamp while unsettled (deletes the row — window rules: cancellation until the race, at the teller); once Log Results runs, tickets grey out permanently with WON/LOST · SETTLED stamps and cancellation is impossible. Races without bets can be logged (calibration doctrine restored). Sim fingerprint verified ae7d1b405c989c31.
 - **2.1.0 (2026-07-26)** [feature] — Betting pipeline: 🎟 Place Bet opens a 1970s pari-mutuel slip (GGF- serial numbers, in tribute) capturing bet type, horse (verdict pre-selected), amount, plus a snapshot of board odds, model win/place/show, edge, fair line, and the machine's verdict at bet time; tickets save to the new hra_bets table. Once a race carries tickets the button becomes Log Results: tap winner, second, third (undo by re-tap), optional payout field, and Save writes hra_race_log with finish_pos and auto-settles the race's tickets (WIN payouts computed from odds at bet; place/show payouts recorded when supplied). The recap view's full dataset accumulates from here. Sim fingerprint verified ae7d1b405c989c31.
 - **2.0.4 (2026-07-26)** [cosmetic] — Log Result moved to the right end of the race-view row as the final action (Back · Scratch · — · Log Result). FOUNDATION dedication added: for the columnist who called Clyde the Winner — Golden Gate Fields, the local paper's handicap column, and a season-ending trophy, 1970s.
