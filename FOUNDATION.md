@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.0.1 · July 2026**
+**Version: 2.0.2 · July 2026**
 
 This document is the reference for what the Analyzer is, how its model works, where its numbers come from, and how it is intended to evolve. It is the companion to README.md (setup and usage).
 
@@ -90,6 +90,7 @@ Semantic-ish: **major** = model change (new weights/features — anything that c
 
 ### Changelog
 
+- **2.0.2 (2026-07-26)** [fix] — Advisor prose received a computed field-size fact line (live count + scratches) with instructions to use given numbers and never count lines itself; fixes "nine-horse field" narration on an 8-post, 7-live race. Sim fingerprint verified ae7d1b405c989c31.
 - **2.0.1 (2026-07-26)** [cosmetic] — Back buttons standardized: plain "Back", leftmost, no eject glyph, on every screen including the race view.
 - **2.0.0 (2026-07-26)** [sim] — Declared and signed off: the bet verdict moves into the SIM-CORE fence as coded policy (best positive edge; <+10% PASS; win%≥15% WIN; else place%≥35% PLACE; else show%≥50% SHOW; else PASS). The LCD shows the deterministic verdict; the advisor receives it in its prompt and explains — never chooses. Motivated by the Katie King / Don't Be Salty contradiction (SAR R3). Ratings and probabilities unchanged; fingerprint updated to ae7d1b405c989c31 (was a2990c230e404b83).
 - **1.16.0 (2026-07-26)** [feature][cosmetic] — Today renamed Race Card: date selector chips (all card dates on file), eligible races only, sourced from uploaded cards (entries contribute post times only), Back-only bottom row. Settings is its own window: fields + Back, Done removed (values save as they're typed), home hidden while open. Entries/Cards screens: "Upload Entries"/"Upload Cards" labels, ⚙ Set removed — the gear now lives only on the home row. Sim fingerprint verified a2990c230e404b83. Known issue queued as a separate [fix]: blank race-type labels on some scanned rows (SAR R9, COL R3).
