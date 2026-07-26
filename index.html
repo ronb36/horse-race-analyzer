@@ -104,7 +104,7 @@ function parseBrisnetFile(text) {
       horseCount: rws.length,
     };
   });
-  return { title, races, byRace };
+  return { title, track: first ? f(first, 1) : "", dateStr: dateRaw, races, byRace };
 }
 
 function brisnetHorses(rws) {
@@ -292,6 +292,15 @@ function HorseRaceAnalyzer() {
   const [speedScale, setSpeedScale] = useState("beyer");
   const [expanded, setExpanded] = useState(null);
   const [sortMode, setSortMode] = useState("rating"); // rating | edge
+  const [raceData, setRaceData] = useState({});        // raceNumber -> { raceInfo, horses }
+  const [activeRace, setActiveRace] = useState(null);
+  const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
+  const [winnerMode, setWinnerMode] = useState(false);
+  const [logMsg, setLogMsg] = useState("");
+  const [supaUrl, setSupaUrlState] = useState(() => { try { return localStorage.getItem("hra_supa_url") || ""; } catch { return ""; } });
+  const setSupaUrl = (v) => { setSupaUrlState(v); try { localStorage.setItem("hra_supa_url", v); } catch {} };
+  const [supaKey, setSupaKeyState] = useState(() => { try { return localStorage.getItem("hra_supa_key") || ""; } catch { return ""; } });
+  const setSupaKey = (v) => { setSupaKeyState(v); try { localStorage.setItem("hra_supa_key", v); } catch {} };
   const fileRef = useRef(null);
   const fileBlocksRef = useRef(null);
   const brisRef = useRef(null);
@@ -359,15 +368,57 @@ function HorseRaceAnalyzer() {
     throw new Error("Couldn't parse the reading. Raw response started: " + JSON.stringify(clean.slice(0, 160)));
   }
 
+  function openBrisRace(r) {
+    const info = {
+      raceNumber: String(r.raceNumber),
+      distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
+      purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
+      surface: r.surface,
+    };
+    const hs = brisnetHorses(brisRef.current.get(r.raceNumber));
+    setRaceInfo(info);
+    setHorses(hs);
+    setActiveRace(r.raceNumber);
+    setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
+    setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+    setStep("results");
+    setLcdMsg("RACE " + r.raceNumber);
+  }
+
   function loadBrisnet(text, label) {
     const parsedB = parseBrisnetFile(text);
     if (!parsedB.races.length) throw new Error("Parsed " + label + " but found no races in it.");
     brisRef.current = parsedB.byRace;
     fileBlocksRef.current = null;
     setCardTitle(parsedB.title + " · Brisnet data");
-    setRaceIndex(parsedB.races.map((race) => ({ ...race, ...qualify(race) })));
-    setStep("races");
-    setLcdMsg("SELECT RACE");
+    setCardMeta({ track: parsedB.track, date: parsedB.dateStr });
+    setRaceData({}); setActiveRace(null);
+    const list = parsedB.races.map((race) => ({ ...race, ...qualify(race) }));
+    setRaceIndex(list);
+    const firstOk = list.find((r) => r.ok);
+    if (firstOk) openBrisRace(firstOk);
+    else { setStep("races"); setLcdMsg("SELECT RACE"); }
+  }
+
+  function switchTab(r) {
+    if (!r.ok || busy) return;
+    // persist current race's edits before leaving it
+    if (activeRace !== null) {
+      const curInfo = raceInfo, curHorses = horses;
+      setRaceData((prev) => ({ ...prev, [activeRace]: { raceInfo: curInfo, horses: curHorses } }));
+    }
+    setError(""); setExpanded(null); setSortMode("rating"); setWinnerMode(false); setLogMsg("");
+    const cached = raceData[r.raceNumber];
+    if (cached) {
+      setRaceInfo(cached.raceInfo);
+      setHorses(cached.horses);
+      setActiveRace(r.raceNumber);
+      setStep("results");
+      setLcdMsg("RACE " + r.raceNumber);
+      return;
+    }
+    if (brisRef.current && brisRef.current.has(r.raceNumber)) { openBrisRace(r); return; }
+    pickRace(r); // PDF path: extract via vision, lands on review
   }
 
   // ----- STAGE 1: scan the card, list every race -----
@@ -418,15 +469,20 @@ function HorseRaceAnalyzer() {
 Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5). isMaiden=1 for any maiden race. is2yoOnly=1 if restricted to two-year-olds. Be terse; JSON only.`
       );
       setCardTitle(parsed.title || "");
-      setRaceIndex((parsed.races || []).map((r) => {
+      const m = /^(.*?)\s+(\d{2})\/(\d{2})\/(\d{4})/.exec(parsed.title || "");
+      setCardMeta({ track: m ? m[1] : (parsed.title || ""), date: m ? m[4] + m[2] + m[3] : "" });
+      setRaceData({}); setActiveRace(null);
+      const pdfList = (parsed.races || []).map((r) => {
         const race = {
           raceNumber: r[0], distanceFurlongs: r[1], surface: r[2] || "dirt",
           purse: r[3], type: r[4] || "", isMaiden: !!r[5], is2yo: !!r[6], horseCount: r[7],
         };
         return { ...race, ...qualify(race) };
-      }));
-      setStep("races");
-      setLcdMsg("SELECT RACE");
+      });
+      setRaceIndex(pdfList);
+      const pdfFirst = pdfList.find((rr) => rr.ok);
+      if (pdfFirst) { await pickRace(pdfFirst); }
+      else { setStep("races"); setLcdMsg("SELECT RACE"); }
     } catch (e) {
       console.error(e);
       setError(e.message || String(e));
@@ -441,18 +497,7 @@ Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5).
   async function pickRace(r) {
     if (!r.ok || busy) return;
     setError("");
-    if (brisRef.current && brisRef.current.has(r.raceNumber)) {
-      setRaceInfo({
-        raceNumber: String(r.raceNumber),
-        distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
-        purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
-        surface: r.surface,
-      });
-      setHorses(brisnetHorses(brisRef.current.get(r.raceNumber)));
-      setStep("review");
-      setLcdMsg("CHECK ENTRIES");
-      return;
-    }
+    if (brisRef.current && brisRef.current.has(r.raceNumber)) { openBrisRace(r); return; }
     setBusy(true);
     setLcdMsg(`READING RACE ${r.raceNumber}...`);
     try {
@@ -467,17 +512,21 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         lengthsBehindSecondCall: toStr(arr?.[2]), lengthsBehindFinish: toStr(arr?.[3]),
         speedRating: toStr(arr?.[4]),
       });
-      setRaceInfo({
+      const infoObj = {
         raceNumber: toStr(r.raceNumber), distanceFurlongs: toStr(r.distanceFurlongs),
         purse: toStr(r.purse), surface: r.surface,
-      });
-      setHorses((parsed.horses || []).map((h) => ({
+      };
+      const horsesArr = ((parsed.horses || []).map((h) => ({
         name: toStr(h?.[0]), postPosition: toStr(h?.[1]), daysSinceLastRace: toStr(h?.[2]),
         racesThisYear: toStr(h?.[3]), wins: toStr(h?.[4]), places: toStr(h?.[5]),
         shows: toStr(h?.[6]), earnings: toStr(h?.[7]),
         mlOdds: toStr(h?.[8]),
         lastRace: mapRace(h?.[9]), priorRace: mapRace(h?.[10]),
       })));
+      setRaceInfo(infoObj);
+      setHorses(horsesArr);
+      setActiveRace(r.raceNumber);
+      setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: infoObj, horses: horsesArr } }));
       setStep("review");
       setLcdMsg("CHECK ENTRIES");
     } catch (e) {
@@ -524,6 +573,36 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   });
   const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
   const withRank = overlay.map((r, idx) => ({ ...r, ratingRank: idx + 1 }));
+
+  async function logWinner(winner) {
+    try {
+      const rows = overlay.map((o) => ({
+        track: cardMeta.track || null,
+        race_date: cardMeta.date || null,
+        race_no: num(raceInfo.raceNumber),
+        distance_f: num(raceInfo.distanceFurlongs),
+        surface: raceInfo.surface || null,
+        purse: num(raceInfo.purse),
+        horse: o.name,
+        post: num(o.post),
+        rating: o.rating,
+        model_pct: Math.round(o.pModel * 1000) / 10,
+        odds: o.odds,
+        is_winner: o.i === winner.i,
+      }));
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log", {
+        method: "POST",
+        headers: { apikey: supaKey, Authorization: "Bearer " + supaKey, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(rows),
+      });
+      if (!resp.ok) throw new Error("Supabase said HTTP " + resp.status + ": " + (await resp.text()).slice(0, 140));
+      setWinnerMode(false);
+      setLogMsg(`Logged race ${raceInfo.raceNumber}: ${winner.name} won — ${rows.length} rows saved.`);
+    } catch (e) {
+      setLogMsg("");
+      setError("Couldn't log the result. " + (e.message || e));
+    }
+  }
   const displayed = sortMode === "edge"
     ? [...withRank].sort((a, b) => ((b.edge ?? -999) - (a.edge ?? -999)) || (b.rating - a.rating))
     : withRank;
@@ -559,6 +638,34 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         {/* ===== Body ===== */}
         <div style={{ background: GREEN, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: "#EFE8D5" }}>
 
+          {raceIndex.length > 0 && step !== "start" && (
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
+              {raceIndex.map((r) => {
+                const isActive = activeRace === r.raceNumber;
+                return (
+                  <button key={r.raceNumber} onClick={() => switchTab(r)} disabled={!r.ok || busy}
+                    title={r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
+                    style={{
+                      flex: "0 0 auto", minWidth: 52, padding: "7px 10px", borderRadius: 8,
+                      border: isActive ? "1px solid #E3C98C" : "1px solid rgba(0,0,0,0.35)",
+                      background: !r.ok ? "#243B31" : isActive ? GOLD : GREEN_DARK,
+                      color: !r.ok ? "#6E8378" : isActive ? "#3A2F17" : "#EFE8D5",
+                      fontFamily: "Arial, sans-serif", fontWeight: 700, fontSize: 13,
+                      cursor: r.ok && !busy ? "pointer" : "default", textAlign: "center",
+                    }}>
+                    R{r.raceNumber}
+                    <span style={{ display: "block", fontSize: 9, fontWeight: 400, letterSpacing: "0.05em", opacity: 0.85 }}>
+                      {r.ok ? `${r.distanceFurlongs}f` : "skip"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {cardTitle && step !== "start" && (
+            <div style={{ ...labelFont, color: "#B9C8BB", marginBottom: 10 }}>{cardTitle}</div>
+          )}
+
           {error && (
             <div style={{ background: "#3E1F16", border: `1px solid ${RED}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
               {error}
@@ -586,6 +693,19 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                   {busy ? "Scanning…" : "📄 Upload card"}
                 </Key>
                 <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
+              </div>
+              <div style={{ maxWidth: 420, margin: "16px 0 0" }}>
+                <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 6 }}>Optional: Supabase results logging</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <input value={supaUrl} onChange={(e) => setSupaUrl(e.target.value)} placeholder="https://xxxx.supabase.co"
+                    style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                  <input type="password" value={supaKey} onChange={(e) => setSupaKey(e.target.value)} placeholder="Supabase anon key"
+                    style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                </div>
+                <p style={{ fontSize: 10, color: "#B9C8BB", margin: "6px 0 0", lineHeight: 1.5 }}>
+                  With these set, a "Log result" button appears after analysis — tap the winner and the full prediction
+                  snapshot is saved to your hra_race_log table for future model tuning.
+                </p>
               </div>
               <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
@@ -721,8 +841,8 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
                 return (
                   <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 8, overflow: "hidden", border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                    <button onClick={() => setExpanded(expanded === r.i ? null : r.i)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px 6px", background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
+                    <button onClick={() => (winnerMode ? logWinner(r) : setExpanded(expanded === r.i ? null : r.i))}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px 6px", background: winnerMode ? "rgba(227,201,140,0.06)" : "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left" }}>
                       <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 6, padding: "4px 8px", fontSize: 14, minWidth: 30, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
                         {r.ratingRank}
                       </span>
@@ -762,12 +882,24 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 );
               })}
 
+              {winnerMode && (
+                <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
+                  Race is official? Tap the winning horse above to log this race's predictions and result.
+                </div>
+              )}
+              {logMsg && (
+                <div style={{ background: "rgba(143,196,159,0.12)", border: "1px solid rgba(143,196,159,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
+                  ✓ {logMsg}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                 <Key wide red onClick={() => { setSortMode("edge"); setExpanded(null); }}>Re-analyze · sort by value</Key>
+                {supaUrl && supaKey && (
+                  <Key onClick={() => { setWinnerMode(!winnerMode); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log result"}</Key>
+                )}
                 {sortMode === "edge" && <Key onClick={() => setSortMode("rating")}>Sort by rating</Key>}
                 <Key onClick={() => setStep("review")}>Edit entries</Key>
-                {raceIndex.length > 0 && <Key onClick={() => { setStep("races"); setLcdMsg("SELECT RACE"); }}>Another race</Key>}
-                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); brisRef.current = null; setLcdMsg("READY"); setError(""); }}>New card</Key>
+                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null); setWinnerMode(false); setLogMsg(""); brisRef.current = null; setLcdMsg("READY"); setError(""); }}>New card</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 ★ = biggest positive edge. Numbered badges always show the machine's rating rank. Model % is an

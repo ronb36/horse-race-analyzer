@@ -32,6 +32,26 @@ The key is stored only in your browser's localStorage on your own site and is se
 
 Manual entry mode is also available if you'd rather punch the numbers in yourself, just like 1979.
 
+## Results logging (optional, for evolving the model)
+
+The app can log every analyzed race — ratings, model probabilities, the odds you entered, and the winner — to a Supabase table, building the dataset needed to eventually refit the 1979 weights. Create a table in your Supabase project with the SQL below, then paste your project URL and anon key into the app's start screen. After a race goes official, hit "Log result" and tap the winner.
+
+```sql
+create table if not exists hra_race_log (
+  id bigint generated always as identity primary key,
+  created_at timestamptz default now(),
+  track text, race_date text, race_no int,
+  distance_f numeric, surface text, purse numeric,
+  horse text, post int, rating numeric, model_pct numeric,
+  odds numeric, is_winner boolean
+);
+alter table hra_race_log enable row level security;
+create policy "anon insert" on hra_race_log for insert to anon with check (true);
+create policy "anon read" on hra_race_log for select to anon using (true);
+```
+
+Note the anon key is safe to expose in a browser, but these policies let anyone holding it read/insert rows in this table — fine for race logs; don't point it at a project holding sensitive data.
+
 ## Known limitations
 
 - The formula is Quirin-inspired, reconstructed from his published research (*Winning at the Races*, 1979) — the exact ROM of the original device was never published.
