@@ -23,7 +23,9 @@ The key is stored only in your browser's localStorage on your own site and is se
 
 ## Usage
 
-1. Download a Classic PPs PDF from [shop.drf.com](https://shop.drf.com) (single cards ~$4.95, includes Beyer Speed Figures), or use the free daily race at [drf.com/race-of-the-day](https://www.drf.com/race-of-the-day).
+**Recommended: Brisnet data files (exact, deterministic, no API key needed).** Create a free account at [brisnet.com](https://www.brisnet.com), buy a "Single Data File" for your track and date (a few dollars per card, under their handicapping data products), unzip the download, and upload the data file (.drf/.dr2 etc.) to the app. It parses locally in your browser — every lengths-behind value, speed rating, and morning-line price lands exactly as published, and repeated runs are identical. Field layout reference: Brisnet's ["Single File" format documentation](https://support.brisnet.com/hc/en-us/articles/360056092092).
+
+**Alternative: DRF PDFs (AI-read, needs your API key).** Download a Classic PPs PDF from [shop.drf.com](https://shop.drf.com) (single cards ~$4.95, includes Beyer Speed Figures), or use the free daily race at [drf.com/race-of-the-day](https://www.drf.com/race-of-the-day).
 2. Upload the PDF (or straight-on photos of the pages). The app lists every race; ones that don't meet the 1979 rules are greyed out with the reason.
 3. Tap a qualifying race. Review the extracted numbers — vision extraction of dense PP tables is good but not perfect, so check the lengths-behind values especially — then hit **Analyze**.
 4. Tap any horse in the results to see its component score breakdown. Keep the speed-figure toggle on **Beyer (modern)** for current DRF cards.

@@ -46,6 +46,95 @@ function parseOdds(v) {
   return Number.isFinite(f) ? f : null;
 }
 
+// ---------- Brisnet single-file data parser (deterministic — no AI involved) ----------
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function looksLikeBrisnet(text) {
+  const first = (text || "").split(/\r?\n/, 1)[0] || "";
+  return first.split(",").length > 300;
+}
+
+function parseBrisnetFile(text) {
+  const rows = text.split(/\r?\n/).filter((l) => l.trim().length).map(parseCSVLine);
+  const f = (row, n) => (row[n - 1] ?? "").trim();
+  const fn = (row, n) => { const x = parseFloat(f(row, n)); return Number.isFinite(x) ? x : null; };
+  const byRace = new Map();
+  for (const row of rows) {
+    if (row.length < 850) continue;
+    if (f(row, 5) === "S") continue; // scratched
+    const raceNo = fn(row, 3);
+    if (raceNo === null) continue;
+    if (!byRace.has(raceNo)) byRace.set(raceNo, []);
+    byRace.get(raceNo).push(row);
+  }
+  const first = rows.find((r) => r.length >= 850);
+  const dateRaw = first ? f(first, 2) : "";
+  const title = first
+    ? `${f(first, 1)} ${dateRaw.length === 8 ? dateRaw.slice(4, 6) + "/" + dateRaw.slice(6, 8) + "/" + dateRaw.slice(0, 4) : dateRaw}`
+    : "Brisnet card";
+  const races = [...byRace.keys()].sort((a, b) => a - b).map((no) => {
+    const rws = byRace.get(no);
+    const r0 = rws[0];
+    const yards = fn(r0, 6);
+    const type = f(r0, 9).toUpperCase();
+    const ageSex = f(r0, 10).toUpperCase();
+    return {
+      raceNumber: no,
+      distanceFurlongs: yards !== null ? Math.round((Math.abs(yards) / 220) * 100) / 100 : null,
+      surface: /T/i.test(f(r0, 7)) ? "turf" : "dirt",
+      purse: fn(r0, 12),
+      type: f(r0, 11) || type,
+      isMaiden: type === "S" || type === "M" || type === "MO",
+      is2yo: ageSex.slice(0, 2) === "AO",
+      horseCount: rws.length,
+    };
+  });
+  return { title, races, byRace };
+}
+
+function brisnetHorses(rws) {
+  const f = (row, n) => (row[n - 1] ?? "").trim();
+  const fn = (row, n) => { const x = parseFloat(f(row, n)); return Number.isFinite(x) ? x : null; };
+  const t = (v) => (v === null || v === undefined ? "" : String(v));
+  return rws.map((row) => {
+    const past = (slot) => {
+      if (!f(row, 256 + slot)) return { finishPosition: "", lengthsBehindFirstCall: "", lengthsBehindSecondCall: "", lengthsBehindFinish: "", speedRating: "" };
+      return {
+        finishPosition: t(fn(row, 616 + slot)),
+        lengthsBehindFirstCall: t(fn(row, 666 + slot)),
+        lengthsBehindSecondCall: t(fn(row, 686 + slot)),
+        lengthsBehindFinish: t(fn(row, 746 + slot)),
+        speedRating: t(fn(row, 846 + slot)),
+      };
+    };
+    let races = fn(row, 86), w = fn(row, 87), p = fn(row, 88), sh = fn(row, 89), earn = fn(row, 90);
+    if (!races) { races = fn(row, 97); w = fn(row, 98); p = fn(row, 99); sh = fn(row, 100); earn = fn(row, 101); }
+    const ml = fn(row, 44);
+    return {
+      name: f(row, 45) || "",
+      postPosition: t(fn(row, 4)),
+      daysSinceLastRace: t(fn(row, 224)),
+      racesThisYear: t(races), wins: t(w), places: t(p), shows: t(sh), earnings: t(earn),
+      mlOdds: ml !== null ? t(Math.round(ml * 100) / 100) : "",
+      lastRace: past(0), priorRace: past(1),
+    };
+  });
+}
+
 function ratePastRaceEarlySpeed(race) {
   if (!race) return null;
   const leb1 = num(race.lengthsBehindFirstCall);
@@ -204,6 +293,7 @@ function HorseRaceAnalyzer() {
   const [sortMode, setSortMode] = useState("rating"); // rating | edge
   const fileRef = useRef(null);
   const fileBlocksRef = useRef(null);
+  const brisRef = useRef(null);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -229,7 +319,7 @@ function HorseRaceAnalyzer() {
   }
 
   async function askClaude(promptText) {
-    if (!apiKey) throw new Error("Enter your Anthropic API key first (get one at console.anthropic.com). It stays in your browser.");
+    if (!apiKey) throw new Error("Enter your Anthropic API key first (get one at console.anthropic.com) — only needed for PDF/photo reading. Brisnet data files need no key.");
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -241,6 +331,7 @@ function HorseRaceAnalyzer() {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 8000,
+        temperature: 0,
         messages: [{ role: "user", content: [...fileBlocksRef.current, { type: "text", text: promptText }] }],
       }),
     });
@@ -273,6 +364,22 @@ function HorseRaceAnalyzer() {
     setBusy(true);
     setLcdMsg("SCANNING CARD...");
     try {
+      const filesArr = Array.from(fileList || []);
+      if (filesArr.length === 1 && (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(filesArr[0].name) || (filesArr[0].type || "").startsWith("text/"))) {
+        const rawText = await filesArr[0].text();
+        if (looksLikeBrisnet(rawText)) {
+          const parsedB = parseBrisnetFile(rawText);
+          brisRef.current = parsedB.byRace;
+          fileBlocksRef.current = null;
+          setCardTitle(parsedB.title + " · Brisnet data");
+          setRaceIndex(parsedB.races.map((race) => ({ ...race, ...qualify(race) })));
+          setStep("races");
+          setLcdMsg("SELECT RACE");
+          return;
+        }
+        throw new Error("That file doesn't look like a Brisnet single-file card (too few columns). Download the \"Single Data File\" product from brisnet.com, unzip it, and upload the data file inside.");
+      }
+      brisRef.current = null;
       fileBlocksRef.current = await filesToBlocks(fileList);
       const parsed = await askClaude(
         `List every race on this past-performance card. Respond with ONLY valid compact JSON, no markdown fences, no commentary:
@@ -303,6 +410,18 @@ Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5).
   async function pickRace(r) {
     if (!r.ok || busy) return;
     setError("");
+    if (brisRef.current && brisRef.current.has(r.raceNumber)) {
+      setRaceInfo({
+        raceNumber: String(r.raceNumber),
+        distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
+        purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
+        surface: r.surface,
+      });
+      setHorses(brisnetHorses(brisRef.current.get(r.raceNumber)));
+      setStep("review");
+      setLcdMsg("CHECK ENTRIES");
+      return;
+    }
     setBusy(true);
     setLcdMsg(`READING RACE ${r.raceNumber}...`);
     try {
@@ -419,12 +538,14 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           {step === "start" && (
             <div>
               <p style={{ fontSize: 14, lineHeight: 1.55, margin: "0 0 16px" }}>
-                Upload the full past-performance card (Daily Racing Form PDF or photos). The machine will scan it, show
-                you which races qualify under the 1979 rules, and read whichever one you pick. Or punch the numbers in yourself.
+                Best option: upload a Brisnet "Single Data File" (from brisnet.com — a few dollars per card). It parses
+                instantly, exactly, with no AI reading and no API key needed. Or upload a Daily Racing Form PDF or photos,
+                which the machine reads with AI vision (API key required). Either way it shows which races qualify under
+                the 1979 rules. Or punch the numbers in yourself.
               </p>
               <div style={{ maxWidth: 420, marginBottom: 14 }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (stored only in this browser)</span>
+                  <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (only for PDF/photo reading — stored in this browser)</span>
                   <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
                     style={{ background: LCD_BG, ...lcdFont, fontSize: 14, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", width: "100%", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
                 </label>
@@ -435,7 +556,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 </Key>
                 <Key wide onClick={startManual} disabled={busy}>⌨ Manual entry</Key>
               </div>
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.drf,.dr2,.dr3,.dr4,.dr5,.mcp,.csv,.txt,text/plain,text/csv"
                 multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
@@ -616,7 +737,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
                 {sortMode === "edge" && <Key onClick={() => setSortMode("rating")}>Sort by rating</Key>}
                 <Key onClick={() => setStep("review")}>Edit entries</Key>
                 {raceIndex.length > 0 && <Key onClick={() => { setStep("races"); setLcdMsg("SELECT RACE"); }}>Another race</Key>}
-                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); setLcdMsg("READY"); setError(""); }}>New card</Key>
+                <Key onClick={() => { setStep("start"); setHorses([]); setRaceIndex([]); brisRef.current = null; setLcdMsg("READY"); setError(""); }}>New card</Key>
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 ★ = biggest positive edge. Numbered badges always show the machine's rating rank. Model % is an
