@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v1.8.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v1.9.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -261,6 +261,10 @@ const emptyHorse = () => ({
   lastRace: emptyRace(), priorRace: emptyRace(),
 });
 
+function ymdToDisplay(ymd) {
+  return ymd && ymd.length === 8 ? `${ymd.slice(4, 6)}/${ymd.slice(6, 8)}/${ymd.slice(0, 4)}` : ymd || "";
+}
+
 function entriesDateToYmd(dateStr) {
   const m = String(dateStr || "").match(/([A-Za-z]+)\s+(\d{1,2})\w*,\s*(\d{4})/);
   if (!m) return "";
@@ -315,7 +319,7 @@ function qualify(r) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.9.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -766,6 +770,30 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     }
   }
 
+  async function viewEntries() {
+    if (!supaUrl || !supaKey) { scanFileRef.current && scanFileRef.current.click(); return; }
+    setError(""); setBusy(true); setLcdMsg("LOADING ENTRIES...");
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?select=track,race_date,entries&order=race_date.desc,track.asc&limit=40", {
+        headers: supaHeaders(),
+      });
+      if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
+      const rows = await resp.json();
+      setPostTimes((prev) => {
+        const next = { ...prev };
+        for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, r.postTime]));
+        return next;
+      });
+      setDayScan(rows.map((row) => ({ track: row.track, dateStr: ymdToDisplay(row.race_date), races: row.entries || [] })));
+      setScanNote("");
+      setStep("scan");
+      setLcdMsg(rows.length ? "ENTRIES ON FILE" : "NO ENTRIES YET");
+    } catch (e) {
+      setError("Couldn't load stored entries. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally { setBusy(false); }
+  }
+
   async function pdfFileToText(file) {
     if (typeof pdfjsLib === "undefined") throw new Error("PDF text engine didn't load — check your connection and refresh.");
     const buf = await file.arrayBuffer();
@@ -1093,14 +1121,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 the 1979 rules. Or punch the numbers in yourself.
               </p>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Key wide onClick={() => scanFileRef.current?.click()} disabled={busy}>{busy ? "Working…" : "🔍 Scan entries"}</Key>
+                <Key wide onClick={viewEntries} disabled={busy}>{busy ? "Working…" : "🔍 Entries"}</Key>
                 <Key wide onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload card</Key>
                 {supaUrl && supaKey && <Key wide onClick={fetchSavedCards} disabled={busy}>📼 Saved cards</Key>}
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 10, lineHeight: 1.5 }}>
-                Scan entries: save Brisnet's free entries page as a PDF for each track you're curious about, upload the
-                whole stack here, and the machine flags which tracks have races worth buying the data file for — post
-                times included.
+                Entries: your stored shopping list of scanned tracks (post times included), plus "+ Scan more" to add
+                tracks — save Brisnet's free entries page as a PDF per track and upload the stack. Re-scanning a track
+                refreshes its stored copy.
               </p>
               <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
               {savedCards && (
@@ -1131,16 +1159,21 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {scanNote}
                 </div>
               )}
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Today's shopping list</h2>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Entries — shopping list</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
               </p>
+              {dayScan.length === 0 && (
+                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                  Nothing on file yet — tap "+ Scan more" and upload saved entries-page PDFs.
+                </div>
+              )}
               {dayScan.map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
                 return (
                   <div key={ti} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                      <b style={{ fontSize: 14 }}>{t.track}</b>
+                      <b style={{ fontSize: 14 }}>{t.track}{t.dateStr ? <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · {t.dateStr}</span> : null}</b>
                       <span style={{ fontSize: 11, color: ok.length ? "#E3C98C" : "#8FA396" }}>
                         {t.error ? t.error : `${ok.length} of ${t.races.length} qualify${ok.length ? " — buy this card" : " — pass"}`}
                       </span>
