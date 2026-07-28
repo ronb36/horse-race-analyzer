@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.1";
+const APP_VERSION = "2.11.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -720,13 +720,13 @@ function HorseRaceAnalyzer() {
     setRaceData(dataMap);
     setActiveRace(null);
     saveCard(meta, title, list, dataMap);
-    const firstOk = list.find((r) => r.ok && dataMap[r.raceNumber]);
-    if (firstOk) {
-      const cached = dataMap[firstOk.raceNumber];
-      setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-      setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
-      setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
-    } else { setStep("races"); setLcdMsg("SELECT RACE"); }
+    // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
+    // with this card's strip previewed up top. Racing starts from Race Day.
+    setActiveRace(null);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    if (supaUrl && supaKey) { fetchSavedCards().then((rows) => setCardsDate(nearestUpcoming((rows || []).map((r) => r.race_date)))); }
+    setStep("cards");
+    setLcdMsg("CARD SAVED \u00b7 " + (meta.track || "").toUpperCase() + " " + ymdToDisplay(meta.date));
   }
 
   function switchTab(r) {
