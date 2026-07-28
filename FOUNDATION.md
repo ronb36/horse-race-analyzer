@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.8.0 · July 2026**
+**Version: 2.9.0 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -70,6 +70,8 @@ When a race opens — and again ~1.5 s after odds edits or scratches — the app
 
 Single-file static app (index.html) on GitHub Pages: React 18.3.1 (UMD), Babel standalone 7.26.4 (pinned — an unpinned Babel once broke the site), fflate 0.8.2. No build step, no server. Credentials (Anthropic API key, Supabase URL + anon key) live in browser localStorage behind the ⚙ SET drawer and are sent only to their respective services. The Claude-artifact variant (horse-race-analyzer.jsx) shares the same source minus keys/persistence.
 
+**Date convention:** `race_date` is stored as `YYYYMMDD` (e.g. `20260726`) — no dashes — uniformly across all four tables. String comparison sorts correctly in this format. Any SQL written against these tables must use it (a dashed date matches zero rows silently).
+
 **Supabase tables:**
 
 - `hra_race_log` — one row per horse per logged race: track, race_date, race_no, distance_f, surface, purse, horse, post, rating, model_pct, odds (as entered at logging time), is_winner. Written when the user taps "Log result" and selects the winner. This is the training/evaluation dataset.
@@ -91,6 +93,8 @@ The 1979 weights are the starting point, not the destination.
 Semantic-ish: **major** = model change (new weights/features — anything that changes ratings), **minor** = feature additions, **patch** = fixes/cosmetics. The version appears on the device faceplate and in this doc. Model-affecting changes must be recorded in the changelog so logged predictions remain interpretable (a v1 rating and a v2 rating are different animals).
 
 ### Changelog
+
+- **2.9.0 (2026-07-27)** [feature] — 🧾 Audit in Settings: every race date reconciled across all four tables — per track, eligible races on card vs. results logged (red list of unlogged race numbers), winners missing payout entry, unsettled tickets, tickets on non-eligible races, orphaned tickets with no card on file, plus a settled staked→returned line per clean track and the date's entries-scan count. Green ✓ CLOSED CLEAN when a date fully reconciles. Read-only across hra_cards/hra_race_log/hra_bets/hra_entries; cards fetched as raceIndex only (jsonb arrow select) to keep the payload light. §6 gains the YYYYMMDD race_date convention note. Sim fingerprint verified ae7d1b405c989c31.
 
 - **2.8.0 (2026-07-26)** [feature] — Tote payout capture: tapping the winner opens Win/Place/Show $ fields on that horse's line, second opens Place/Show, third opens Show (per-$2 tote prices, optional); Save writes pay_win/pay_place/pay_show onto hra_race_log rows and settles tickets at official prices (payout = stake/2 × price), falling back to odds-at-bet for WIN when prices aren't entered. pay_win back-computes true off odds, giving the recap closing-line data. Requires SQL: alter table hra_race_log add pay_win/pay_place/pay_show numeric. Sim fingerprint verified ae7d1b405c989c31.
 - **2.7.2 (2026-07-26)** [cosmetic] — Cards on File rows preview only: tapping a card loads its race strip up top (colors and post times) without entering racing; the strip shows no active highlight outside the race view, since nothing there is selectable. Sim fingerprint verified ae7d1b405c989c31.

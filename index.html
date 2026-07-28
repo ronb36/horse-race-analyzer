@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.8.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.9.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.9.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -479,6 +479,7 @@ function HorseRaceAnalyzer() {
   const [uploadCounts, setUploadCounts] = useState({ entries: null, cards: null });
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
+  const [auditView, setAuditView] = useState(null);
   const [resultPays, setResultPays] = useState({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1014,6 +1015,56 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         cards: cr.ok ? (await cr.json()).length : null,
       });
     } catch (e) { console.error("upload counts", e); }
+  }
+
+  async function loadAudit() {
+    if (!supaUrl || !supaKey) { setError("The Audit needs Supabase (tap ⚙ Set)."); return; }
+    setError(""); setBusy(true); setLcdMsg("RUNNING THE AUDIT...");
+    try {
+      const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
+      const [cardsR, logR, betsR, entR] = await Promise.all([
+        fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex&order=race_date.desc&limit=60", { headers: supaHeaders() }),
+        fetch(base + "hra_race_log?select=track,race_date,race_no,is_winner,pay_win&limit=4000", { headers: supaHeaders() }),
+        fetch(base + "hra_bets?select=track,race_date,race_no,settled,won,payout,amount&limit=1000", { headers: supaHeaders() }),
+        fetch(base + "hra_entries?select=track,race_date&limit=200", { headers: supaHeaders() }),
+      ]);
+      if (!cardsR.ok) throw new Error("cards HTTP " + cardsR.status);
+      const cards = await cardsR.json();
+      const logs = logR.ok ? await logR.json() : [];
+      const bets = betsR.ok ? await betsR.json() : [];
+      const ents = entR.ok ? await entR.json() : [];
+      const dates = [...new Set([...cards.map((c) => c.race_date), ...logs.map((l) => l.race_date), ...bets.map((b) => b.race_date)])]
+        .filter(Boolean).sort().reverse();
+      const view = dates.map((d) => {
+        const dayCardsA = cards.filter((c) => c.race_date === d);
+        const cardKeys = new Set(dayCardsA.map((c) => c.track));
+        const tracks = dayCardsA.map((c) => {
+          const elig = (c.idx || []).filter((r) => r.ok).map((r) => num(r.raceNumber)).filter((n) => n !== null);
+          const tLogs = logs.filter((l) => l.race_date === d && l.track === c.track);
+          const loggedNos = new Set(tLogs.map((l) => num(l.race_no)));
+          const unlogged = elig.filter((n) => !loggedNos.has(n));
+          const missingPay = [...new Set(tLogs.filter((l) => l.is_winner && l.pay_win === null).map((l) => num(l.race_no)))].sort((a, b) => a - b);
+          const tBets = bets.filter((b) => b.race_date === d && b.track === c.track);
+          const unsettled = tBets.filter((b) => !b.settled).length;
+          const stray = [...new Set(tBets.filter((b) => !elig.includes(num(b.race_no))).map((b) => num(b.race_no)))];
+          const settled = tBets.filter((b) => b.settled);
+          const staked = settled.reduce((s, b) => s + (num(b.amount) || 0), 0);
+          const returned = settled.reduce((s, b) => s + (num(b.payout) || 0), 0);
+          const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0;
+          return { track: c.track, elig: elig.length, logged: elig.filter((n) => loggedNos.has(n)).length,
+            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, clean };
+        });
+        const orphans = bets.filter((b) => b.race_date === d && !cardKeys.has(b.track));
+        const entCount = ents.filter((e) => e.race_date === d).length;
+        return { date: d, tracks, orphans: orphans.length, entCount, clean: tracks.every((t) => t.clean) && orphans.length === 0 && tracks.length > 0 };
+      });
+      setAuditView(view);
+      setStep("audit");
+      setLcdMsg("THE AUDIT");
+    } catch (e) {
+      setError("Couldn't run the audit. " + (e.message || e));
+      setLcdMsg("READY");
+    } finally { setBusy(false); }
   }
 
   async function fetchOwnedCards() {
@@ -1626,6 +1677,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
                       🃏 Cards Uploads{uploadCounts.cards !== null ? ` (${uploadCounts.cards})` : ""}
                     </Key>
+                    <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>
+                      🧾 Audit
+                    </Key>
                   </div>
                 </div>
               )}
@@ -1792,6 +1846,68 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
                 <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
+              </div>
+            </div>
+          )}
+
+          {/* ---------- AUDIT ---------- */}
+          {step === "audit" && auditView && (
+            <div>
+              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>The audit — books vs. track</h2>
+              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Every race date reconciled across cards, results, and tickets. Green means the day is closed clean.
+              </p>
+              {auditView.length === 0 && (
+                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB" }}>
+                  Nothing on the books yet.
+                </div>
+              )}
+              {auditView.map((day) => (
+                <div key={day.date} style={{ background: GREEN_DARK, borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: day.clean ? "1px solid rgba(122,163,122,0.6)" : "1px solid rgba(0,0,0,0.35)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+                    <b style={{ fontSize: 14, letterSpacing: "0.06em" }}>{day.date.length === 8 ? day.date.slice(4, 6) + "/" + day.date.slice(6, 8) + "/" + day.date.slice(0, 4) : day.date}</b>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: day.clean ? "#9CC79C" : GOLD }}>
+                      {day.clean ? "✓ CLOSED CLEAN" : "OPEN ITEMS"}
+                    </span>
+                  </div>
+                  {day.tracks.length === 0 && (
+                    <div style={{ fontSize: 12, color: "#E8B98A" }}>No card on file for this date — {day.orphans} ticket(s) and/or log rows with nothing to reconcile against.</div>
+                  )}
+                  {day.tracks.map((t) => (
+                    <div key={t.track} style={{ padding: "7px 0", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: 12, lineHeight: 1.6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <b>{t.track}</b>
+                        <span style={{ color: t.clean ? "#9CC79C" : "#B9C8BB" }}>
+                          {t.logged}/{t.elig} eligible races logged · {t.tickets} ticket{t.tickets === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {t.unlogged.length > 0 && (
+                        <div style={{ color: "#E8938A" }}>{t.unlogged.length} race{t.unlogged.length === 1 ? "" : "s"} unlogged: {t.unlogged.map((n) => "R" + n).join(", ")}</div>
+                      )}
+                      {t.missingPay.length > 0 && (
+                        <div style={{ color: "#E8B98A" }}>Winner missing payout: {t.missingPay.map((n) => "R" + n).join(", ")}</div>
+                      )}
+                      {t.unsettled > 0 && (
+                        <div style={{ color: "#E8938A" }}>{t.unsettled} ticket{t.unsettled === 1 ? "" : "s"} not settled</div>
+                      )}
+                      {t.stray.length > 0 && (
+                        <div style={{ color: "#E8938A" }}>Tickets on non-eligible races: {t.stray.map((n) => "R" + n).join(", ")}</div>
+                      )}
+                      {t.clean && t.tickets > 0 && (
+                        <div style={{ color: "#B9C8BB" }}>Settled: staked ${t.staked.toFixed(2)} → returned ${t.returned.toFixed(2)}</div>
+                      )}
+                    </div>
+                  ))}
+                  {day.orphans > 0 && day.tracks.length > 0 && (
+                    <div style={{ fontSize: 12, color: "#E8938A", paddingTop: 6 }}>{day.orphans} orphaned ticket(s) — no card on file for their track</div>
+                  )}
+                  {day.entCount > 0 && (
+                    <div style={{ fontSize: 10, color: "#7E9587", paddingTop: 4 }}>{day.entCount} entries scan{day.entCount === 1 ? "" : "s"} on file</div>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <Key onClick={() => { setAuditView(null); setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
               </div>
             </div>
           )}
