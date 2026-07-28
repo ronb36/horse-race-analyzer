@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.11.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -759,6 +759,38 @@ function HorseRaceAnalyzer() {
     setLcdMsg("SCANNING CARD...");
     try {
       const filesArr = Array.from(fileList || []);
+      // Multiple Brisnet files/ZIPs at once — load and save each; the last stays on screen
+      if (filesArr.length > 1) {
+        const cardTexts = [];
+        for (const f of filesArr) {
+          if (/\.zip$/i.test(f.name) || /zip/.test(f.type || "")) {
+            if (typeof fflate === "undefined") throw new Error("ZIP support didn't load. Unzip the files and upload the data files inside instead.");
+            const buf = new Uint8Array(await f.arrayBuffer());
+            const entries = fflate.unzipSync(buf);
+            const names = Object.keys(entries).filter((n) => !n.endsWith("/"));
+            let text = null, used = null;
+            for (const n of names) {
+              if (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(n)) { text = new TextDecoder("latin1").decode(entries[n]); used = n; break; }
+            }
+            if (text === null) {
+              for (const n of names) {
+                const t2 = new TextDecoder("latin1").decode(entries[n]);
+                if (looksLikeBrisnet(t2)) { text = t2; used = n; break; }
+              }
+            }
+            if (text === null || !looksLikeBrisnet(text)) throw new Error("No Brisnet data file found inside " + f.name + ". It contains: " + names.join(", "));
+            cardTexts.push({ text, label: used });
+          } else if (!/^(image\/|application\/pdf)/.test(f.type || "")) {
+            const t = await f.text();
+            if (looksLikeBrisnet(t)) { cardTexts.push({ text: t, label: f.name }); } else { cardTexts.length = 0; break; }
+          } else { cardTexts.length = 0; break; }
+        }
+        if (cardTexts.length === filesArr.length && cardTexts.length) {
+          for (const c of cardTexts) loadBrisnet(c.text, c.label);
+          setLcdMsg(cardTexts.length + " CARDS LOADED · ALL SAVED");
+          return;
+        }
+      }
       // Brisnet ZIP straight from the download — unzip in the browser
       if (filesArr.length === 1 && (/\.zip$/i.test(filesArr[0].name) || /zip/.test(filesArr[0].type || ""))) {
         if (typeof fflate === "undefined") throw new Error("ZIP support didn't load. Unzip the file and upload the data file inside it instead.");
@@ -993,7 +1025,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const rows = await resp.json();
       if (!rows.length) throw new Error("No saved cards yet — upload a Brisnet card first.");
       setDayCards(rows);
-      await buildRaceCard(rows, rows[0].race_date);
+      await buildRaceCard(rows, nearestUpcoming(rows.map((r) => r.race_date)) || rows[0].race_date);
       setStep("today");
       setLcdMsg("RACE DAY");
     } catch (e) {
