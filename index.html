@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.7</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.8</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.7";
+const APP_VERSION = "2.11.8";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -821,6 +821,11 @@ function HorseRaceAnalyzer() {
           loadBrisnet(rawText, filesArr[0].name);
           return;
         }
+        if (looksLikeEtd(rawText)) {
+          setError("That's a Brisnet entries file (.etd) \u2014 scanning it as entries instead.");
+          await handleScanFiles(fileList);
+          return;
+        }
         if (/\.(drf|dr[0-9]|mcp|csv|txt)$/i.test(filesArr[0].name)) {
           throw new Error("That file doesn't look like a Brisnet single-file card (too few columns). Buy the \"Single Data File\" product on brisnet.com and upload its ZIP or the data file inside.");
         }
@@ -830,7 +835,7 @@ function HorseRaceAnalyzer() {
         try {
           if (typeof pdfjsLib !== "undefined") {
             const probe = await pdfFileToText(filesArr[0]);
-            if (parseEntriesText(probe).races.length) {
+            if (parseEntriesText(scrubEntriesFooters(probe)).races.length) {
               await handleScanFiles(fileList);
               setScanNote("Those were free entries pages, not data cards — scanned them instead. Data cards go through 📄 Upload card.");
               return;
@@ -1122,6 +1127,89 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } finally { setBusy(false); }
   }
 
+
+
+  function looksLikeEtd(text) {
+    return /^\s*"[A-Z0-9]{2,5}","\d{8}"\s*,/.test(String(text)) && !looksLikeBrisnet(text);
+  }
+
+  function titleCaseWords(s) {
+    return String(s).toLowerCase().replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1));
+  }
+
+  function parseEtdEntries(text) {
+    // Brisnet entries data file (.etd): one row per entrant, ~99 fields, scratches
+    // already excluded. Fields (0-based): 0 track, 1 ymd, 2 race, 3 distance yards,
+    // 5 surface T/D, 6 purse, 7 type flag (S/M/MO maiden, per k-file vocabulary),
+    // 30 conditions text (semicolons for commas), 50 handicapper's selections.
+    const rows = String(text).split(/\r?\n/).filter((l) => l.trim().length).map(parseCSVLine);
+    const byRace = new Map();
+    for (const r of rows) {
+      if (r.length < 60) continue;
+      const no = parseInt(r[2], 10);
+      if (!Number.isFinite(no)) continue;
+      if (!byRace.has(no)) byRace.set(no, []);
+      byRace.get(no).push(r);
+    }
+    if (!byRace.size) return { track: "", trackCode: null, ymd: "", races: [] };
+    const first = byRace.values().next().value[0];
+    const trackCode = String(first[0] || "").toUpperCase().trim() || null;
+    const ymd = String(first[1] || "").trim();
+    const track = TRACK_ALIASES[trackCode] ? titleCaseWords(TRACK_ALIASES[trackCode]) : trackCode || "";
+    const squishE = (x) => String(x).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const races = [...byRace.entries()].sort((a, b) => a[0] - b[0]).map(([no, rs]) => {
+      const r = rs[0];
+      const cond = String(r[30] || "").replace(/;/g, ",");
+      const flag = String(r[7] || "").toUpperCase().trim();
+      const typeName = titleCaseWords((cond.split(".")[0] || "").trim()) || flag;
+      const S = squishE(cond.slice(0, 400));
+      const yards = parseFloat(r[3]);
+      return {
+        raceNumber: no,
+        type: typeName,
+        distanceFurlongs: Number.isFinite(yards) ? Math.round((yards / 220) * 100) / 100 : null,
+        surface: String(r[5]).toUpperCase() === "T" ? "turf" : "dirt",
+        purse: Number.isFinite(parseFloat(r[6])) ? parseFloat(r[6]) : null,
+        postTime: null,
+        fieldSize: rs.length,
+        isMaiden: /^(S|M|MO)$/.test(flag) || /^MAIDEN/i.test(cond.trim()),
+        is2yo: (S.includes("TWOYEAROLD") || S.includes("TWOYEARSOLD")) && !S.includes("ANDUPWARD"),
+        selections: String(r[50] || "").trim() || null,
+      };
+    });
+    return { track, trackCode, ymd, races };
+  }
+
+  async function mergeStoredPostTimes(key, ymd, races) {
+    // .etd carries no post times; if a PDF scan for the same track+date is on file,
+    // carry its post times (and scratch-watch) onto the fresh races.
+    if (!supaUrl || !supaKey || !races.some((r) => !r.postTime)) return races;
+    try {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?track=eq." + encodeURIComponent(key) + "&race_date=eq." + encodeURIComponent(ymd) + "&select=entries", { headers: supaHeaders() });
+      if (!resp.ok) return races;
+      const stored = ((await resp.json())[0] || {}).entries || [];
+      const byNo = Object.fromEntries(stored.map((s) => [s.raceNumber, s]));
+      return races.map((r) => {
+        const s = byNo[r.raceNumber];
+        return s ? { ...r, postTime: r.postTime || s.postTime || null, watch: (r.watch && r.watch.length ? r.watch : s.watch) || r.watch } : r;
+      });
+    } catch (e) { console.error("post-time merge", e); return races; }
+  }
+
+  function scrubEntriesFooters(text) {
+    // TwinSpires printed-page footers (URL · timestamp · Page N of M) can land inside a
+    // race block when a page break separates the race header from its type line —
+    // the parser then sees footer junk where MAIDEN CLAIMING should be (DMR R8 07/30).
+    // Keep the trackId token: canonical track codes ride in that same URL.
+    const tid = String(text).match(/[?&]trackId=([A-Za-z0-9]{2,5})/);
+    const cleaned = String(text)
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\b/g, " ")
+      .replace(/\bPage\s+\d+\s+of\s+\d+/gi, " ");
+    // one clean token at the end keeps the canonical code readable without polluting any race block
+    return tid ? cleaned + " ?trackId=" + tid[1] + " " : cleaned;
+  }
+
   async function fetchOwnedCards() {
     if (!supaUrl || !supaKey) return;
     try {
@@ -1232,13 +1320,16 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const found = [];
       for (const f of files) {
         const text = /pdf$/i.test(f.name) || f.type === "application/pdf" ? await pdfFileToText(f) : await f.text();
-        const parsed = parseEntriesText(text);
+        const isEtd = looksLikeEtd(text);
+        const parsed = isEtd ? parseEtdEntries(text) : parseEntriesText(scrubEntriesFooters(text));
         if (!parsed.races.length) { found.push({ track: f.name, dateStr: "", races: [], error: "No races recognized in this file." }); continue; }
-        const races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
         const key = (parsed.trackCode || parsed.track).toUpperCase();
+        const ymd0 = parsed.ymd || entriesDateToYmd(parsed.dateStr);
+        let races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
+        if (isEtd) races = await mergeStoredPostTimes(key, ymd0, races);
         setPostTimes((prev) => ({ ...prev, [key]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
-        saveEntries(key, parsed.track, entriesDateToYmd(parsed.dateStr), races);
-        found.push({ track: parsed.track, code: parsed.trackCode, ymd: entriesDateToYmd(parsed.dateStr), dateStr: parsed.dateStr, races });
+        saveEntries(key, parsed.track, ymd0, races);
+        found.push({ track: parsed.track, code: parsed.trackCode, ymd: ymd0, dateStr: parsed.dateStr || ymdToDisplay(ymd0), races });
       }
       const ocScan = await fetchOwnedCards();
       const errs = found.filter((f) => f.error);
