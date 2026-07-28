@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.9.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.10.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.10.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1024,7 +1024,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
       const [cardsR, logR, betsR, entR] = await Promise.all([
         fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex&order=race_date.desc&limit=60", { headers: supaHeaders() }),
-        fetch(base + "hra_race_log?select=track,race_date,race_no,is_winner,pay_win&limit=4000", { headers: supaHeaders() }),
+        fetch(base + "hra_race_log?select=track,race_date,race_no,is_winner,pay_win,rating,model_pct,odds&limit=4000", { headers: supaHeaders() }),
         fetch(base + "hra_bets?select=track,race_date,race_no,settled,won,payout,amount&limit=1000", { headers: supaHeaders() }),
         fetch(base + "hra_entries?select=track,race_date&limit=200", { headers: supaHeaders() }),
       ]);
@@ -1050,9 +1050,11 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           const settled = tBets.filter((b) => b.settled);
           const staked = settled.reduce((s, b) => s + (num(b.amount) || 0), 0);
           const returned = settled.reduce((s, b) => s + (num(b.payout) || 0), 0);
-          const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0;
-          return { track: c.track, elig: elig.length, logged: elig.filter((n) => loggedNos.has(n)).length,
-            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, clean };
+          const noRating = tLogs.filter((l) => l.rating === null || l.model_pct === null).length;
+          const noOdds = tLogs.filter((l) => l.odds === null || l.odds === "").length;
+          const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0 && noRating === 0 && noOdds === 0;
+          return { track: c.track, elig: elig.length, logged: elig.filter((n) => loggedNos.has(n)).length, rows: tLogs.length,
+            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, noRating, noOdds, clean };
         });
         const orphans = bets.filter((b) => b.race_date === d && !cardKeys.has(b.track));
         const entCount = ents.filter((e) => e.race_date === d).length;
@@ -1896,6 +1898,13 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       {t.clean && t.tickets > 0 && (
                         <div style={{ color: "#B9C8BB" }}>Settled: staked ${t.staked.toFixed(2)} → returned ${t.returned.toFixed(2)}</div>
                       )}
+                      {(t.noRating > 0 || t.noOdds > 0) ? (
+                        <div style={{ color: "#E8B98A" }}>
+                          Calibration gaps:{t.noRating > 0 ? ` ${t.noRating} row${t.noRating === 1 ? "" : "s"} missing rating/model %` : ""}{t.noRating > 0 && t.noOdds > 0 ? " ·" : ""}{t.noOdds > 0 ? ` ${t.noOdds} row${t.noOdds === 1 ? "" : "s"} missing odds` : ""}
+                        </div>
+                      ) : t.rows > 0 ? (
+                        <div style={{ color: "#7E9587", fontSize: 10 }}>Calibration-ready: {t.rows} log rows, all with rating, model %, and odds</div>
+                      ) : null}
                     </div>
                   ))}
                   {day.orphans > 0 && day.tracks.length > 0 && (

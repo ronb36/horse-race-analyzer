@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.9.0 · July 2026**
+**Version: 2.10.0 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -93,6 +93,8 @@ The 1979 weights are the starting point, not the destination.
 Semantic-ish: **major** = model change (new weights/features — anything that changes ratings), **minor** = feature additions, **patch** = fixes/cosmetics. The version appears on the device faceplate and in this doc. Model-affecting changes must be recorded in the changelog so logged predictions remain interpretable (a v1 rating and a v2 rating are different animals).
 
 ### Changelog
+
+- **2.10.0 (2026-07-27)** [feature] — Audit guards the calibration dataset: per track, every hra_race_log row is checked for the fields the fall refit needs (rating, model_pct, odds). Gaps show amber ("N rows missing odds") and count against CLOSED CLEAN; whole tracks show a quiet "Calibration-ready: N log rows" line. A date is now green only if it is both bookkeeping-clean and dataset-clean. Sim fingerprint verified ae7d1b405c989c31.
 
 - **2.9.0 (2026-07-27)** [feature] — 🧾 Audit in Settings: every race date reconciled across all four tables — per track, eligible races on card vs. results logged (red list of unlogged race numbers), winners missing payout entry, unsettled tickets, tickets on non-eligible races, orphaned tickets with no card on file, plus a settled staked→returned line per clean track and the date's entries-scan count. Green ✓ CLOSED CLEAN when a date fully reconciles. Read-only across hra_cards/hra_race_log/hra_bets/hra_entries; cards fetched as raceIndex only (jsonb arrow select) to keep the payload light. §6 gains the YYYYMMDD race_date convention note. Sim fingerprint verified ae7d1b405c989c31.
 
