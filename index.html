@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.3</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.2";
+const APP_VERSION = "2.11.3";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1050,12 +1050,21 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const ymd = todayYmd();
     try {
       const [er, cr] = await Promise.all([
-        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=gte." + ymd + "&select=id", { headers: supaHeaders() }),
-        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?race_date=gte." + ymd + "&select=id", { headers: supaHeaders() }),
+        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=gte." + ymd + "&select=race_date", { headers: supaHeaders() }),
+        fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?race_date=gte." + ymd + "&select=race_date", { headers: supaHeaders() }),
       ]);
+      const summarize = (rows) => {
+        const dates = rows.map((r) => r.race_date).filter(Boolean).sort();
+        if (!dates.length) return { label: "none ahead" };
+        const next = dates[0];
+        const nextCount = dates.filter((d) => d === next).length;
+        const laterDates = new Set(dates.filter((d) => d !== next)).size;
+        const md = next.length === 8 ? `${parseInt(next.slice(4, 6), 10)}/${parseInt(next.slice(6, 8), 10)}` : next;
+        return { label: `${md} (${nextCount})${laterDates ? ` +${laterDates}` : ""}` };
+      };
       setUploadCounts({
-        entries: er.ok ? (await er.json()).length : null,
-        cards: cr.ok ? (await cr.json()).length : null,
+        entries: er.ok ? summarize(await er.json()) : null,
+        cards: cr.ok ? summarize(await cr.json()) : null,
       });
     } catch (e) { console.error("upload counts", e); }
   }
@@ -1726,10 +1735,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Day setup — load the night before, then live on Race Day</div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
-                      🔍 Entry Uploads{uploadCounts.entries !== null ? ` (${uploadCounts.entries})` : ""}
+                      🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}
                     </Key>
                     <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
-                      🃏 Cards Uploads{uploadCounts.cards !== null ? ` (${uploadCounts.cards})` : ""}
+                      🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}
                     </Key>
                     <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>
                       🧾 Audit
