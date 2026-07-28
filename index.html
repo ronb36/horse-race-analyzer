@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.6</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.7</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.6";
+const APP_VERSION = "2.11.7";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -651,9 +651,9 @@ function HorseRaceAnalyzer() {
       setRaceData(hydrated);
       if (preview) {
         setActiveRace(null);
-        // step-neutral: preview paints the strip and stays on the caller's screen,
-        // restoring that screen's LCD label after the LOADING CARD... interlude
-        setLcdMsg(step === "scan" ? "ENTRIES ON FILE" : step === "cards" ? "CARDS ON FILE" : "READY");
+        // step-neutral: preview paints the strip and stays on the caller's screen;
+        // the caller names its own LCD label (step in closure is stale on screen entry)
+        setLcdMsg(typeof preview === "string" ? preview : "CARDS ON FILE");
         return;
       }
       setSavedCards(null);
@@ -725,7 +725,7 @@ function HorseRaceAnalyzer() {
     // with this card's strip previewed up top. Racing starts from Race Day.
     setActiveRace(null);
     setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
-    if (supaUrl && supaKey) { fetchSavedCards().then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows); }); }
+    if (supaUrl && supaKey) { fetchSavedCards().then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); }); }
     setStep("cards");
     setLcdMsg("CARD SAVED \u00b7 " + (meta.track || "").toUpperCase() + " " + ymdToDisplay(meta.date));
   }
@@ -1136,10 +1136,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     setCardTitle(""); setCardMeta({ track: "", date: "" });
   }
 
-  function bindStripToDate(d, rows) {
+  function bindStripToDate(d, rows, label) {
     if (!d) { clearStrip(); return; }
     const match = (rows || []).filter((r) => r.race_date === d).sort((x, y) => String(x.track).localeCompare(String(y.track)))[0];
-    if (match) { loadSavedCard(match.id, undefined, true); } else { clearStrip(); }
+    if (match) { loadSavedCard(match.id, undefined, label || true); } else { clearStrip(); }
   }
 
   const raceOriginRef = useRef("home");
@@ -1162,7 +1162,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   async function viewCards() {
-    if (supaUrl && supaKey) { const rows = await fetchSavedCards(); const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows); } else { setSavedCards([]); setCardsDate(null); }
+    if (supaUrl && supaKey) { const rows = await fetchSavedCards(); const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); } else { setSavedCards([]); setCardsDate(null); }
     setStep("cards");
     setLcdMsg("CARDS ON FILE");
   }
@@ -1189,7 +1189,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setDayScan(rows.map((row) => ({ track: row.track_name || row.track, code: row.track, ymd: row.race_date, dateStr: ymdToDisplay(row.race_date), races: row.entries || [] })));
       const d0 = nearestUpcoming(rows.map((r) => r.race_date));
       setEntriesDate(d0);
-      bindStripToDate(d0, oc);
+      bindStripToDate(d0, oc, "ENTRIES ON FILE");
       setScanNote("");
       setStep("scan");
       setLcdMsg(rows.length ? "ENTRIES ON FILE" : "NO ENTRIES YET");
@@ -1245,7 +1245,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const okScans = found.filter((f) => !f.error);
       if (supaUrl && supaKey && okScans.length) {
         await viewEntries();
-        if (okScans[0].ymd) { setEntriesDate(okScans[0].ymd); bindStripToDate(okScans[0].ymd, ocScan); }
+        if (okScans[0].ymd) { setEntriesDate(okScans[0].ymd); bindStripToDate(okScans[0].ymd, ocScan, "ENTRIES ON FILE"); }
         if (errs.length) setScanNote(errs.map((f) => f.track + ": " + f.error).join(" · "));
       } else {
         setDayScan(found);
@@ -1914,7 +1914,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 return dates.length > 1 ? (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
-                      <button key={d || "all"} onClick={() => { setCardsDate(d); bindStripToDate(d, savedCards); }}
+                      <button key={d || "all"} onClick={() => { setCardsDate(d); bindStripToDate(d, savedCards, "CARDS ON FILE"); }}
                         style={{ background: cardsDate === d ? "#E3C98C" : GREEN_DARK, color: cardsDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
@@ -2079,7 +2079,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 return dates.length > 1 ? (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
-                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards); }}
+                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
                         style={{ background: entriesDate === d ? "#E3C98C" : GREEN_DARK, color: entriesDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
