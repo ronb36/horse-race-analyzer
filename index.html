@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.8</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.12.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.11.8";
+const APP_VERSION = "2.12.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1203,9 +1203,14 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     // Keep the trackId token: canonical track codes ride in that same URL.
     const tid = String(text).match(/[?&]trackId=([A-Za-z0-9]{2,5})/);
     const cleaned = String(text)
+      // whole-footer span: URL through "Page N of M", tolerant of pdf.js splitting the
+      // URL and timestamp across lines ("...?use / r / USA&trackType..." / "19 / 07")
+      .replace(/https?:\/\/[\s\S]{0,500}?Page\s+\d+\s+of\s+\d+/gi, " ")
+      // fallbacks for footer pieces appearing alone
       .replace(/https?:\/\/\S+/g, " ")
-      .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\b/g, " ")
-      .replace(/\bPage\s+\d+\s+of\s+\d+/gi, " ");
+      .replace(/\bPage\s+\d+\s+of\s+\d+/gi, " ")
+      .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}\s*:?\s*\d{2}\b/g, " ")
+      .replace(/\S*&[A-Za-z]+=\S*/g, " ");
     // one clean token at the end keeps the canonical code readable without polluting any race block
     return tid ? cleaned + " ?trackId=" + tid[1] + " " : cleaned;
   }
