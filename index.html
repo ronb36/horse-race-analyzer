@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.10.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.11.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.10.0";
+const APP_VERSION = "2.11.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -480,6 +480,8 @@ function HorseRaceAnalyzer() {
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
   const [auditView, setAuditView] = useState(null);
+  const [entriesDate, setEntriesDate] = useState(null);
+  const [cardsDate, setCardsDate] = useState(null);
   const [resultPays, setResultPays] = useState({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
   const [scratchMode, setScratchMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -617,9 +619,12 @@ function HorseRaceAnalyzer() {
         headers: supaHeaders(),
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
-      setSavedCards(await resp.json());
+      const rows = await resp.json();
+      setSavedCards(rows);
+      return rows;
     } catch (e) {
       setError("Couldn't fetch saved cards. Check Supabase settings (⚙ SET). " + (e.message || e));
+      return [];
     }
   }
 
@@ -1002,6 +1007,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
   }
 
+  function nearestUpcoming(ymds) {
+    const today = todayYmd();
+    const up = [...new Set(ymds)].filter((d) => d && d >= today).sort();
+    return up.length ? up[0] : null;
+  }
+
   async function fetchUploadCounts() {
     if (!supaUrl || !supaKey) return;
     const ymd = todayYmd();
@@ -1097,7 +1108,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   async function viewCards() {
-    if (supaUrl && supaKey) { await fetchSavedCards(); } else { setSavedCards([]); }
+    if (supaUrl && supaKey) { const rows = await fetchSavedCards(); setCardsDate(nearestUpcoming((rows || []).map((r) => r.race_date))); } else { setSavedCards([]); setCardsDate(null); }
     setStep("cards");
     setLcdMsg("CARDS ON FILE");
   }
@@ -1122,6 +1133,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       });
       await fetchOwnedCards();
       setDayScan(rows.map((row) => ({ track: row.track_name || row.track, code: row.track, ymd: row.race_date, dateStr: ymdToDisplay(row.race_date), races: row.entries || [] })));
+      setEntriesDate(nearestUpcoming(rows.map((r) => r.race_date)));
       setScanNote("");
       setStep("scan");
       setLcdMsg(rows.length ? "ENTRIES ON FILE" : "NO ENTRIES YET");
@@ -1173,8 +1185,16 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         found.push({ track: parsed.track, code: parsed.trackCode, ymd: entriesDateToYmd(parsed.dateStr), dateStr: parsed.dateStr, races });
       }
       await fetchOwnedCards();
-      setDayScan(found);
-      setStep("scan");
+      const errs = found.filter((f) => f.error);
+      const okScans = found.filter((f) => !f.error);
+      if (supaUrl && supaKey && okScans.length) {
+        await viewEntries();
+        if (okScans[0].ymd) setEntriesDate(okScans[0].ymd);
+        if (errs.length) setScanNote(errs.map((f) => f.track + ": " + f.error).join(" · "));
+      } else {
+        setDayScan(found);
+        setStep("scan");
+      }
       setLcdMsg(found.length + " TRACK" + (found.length === 1 ? "" : "S") + " SCANNED");
     } catch (e) {
       setError("Scan failed. " + (e.message || e));
@@ -1833,12 +1853,25 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
+              {(() => {
+                const dates = [...new Set((savedCards || []).map((c) => c.race_date))].filter(Boolean).sort().reverse();
+                return dates.length > 1 ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    {[null, ...dates].map((d) => (
+                      <button key={d || "all"} onClick={() => setCardsDate(d)}
+                        style={{ background: cardsDate === d ? "#E3C98C" : GREEN_DARK, color: cardsDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {d ? ymdToDisplay(d) : "All"}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               {(!savedCards || savedCards.length === 0) && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
                   Nothing saved yet — tap "Upload Cards" below with a Brisnet data file.
                 </div>
               )}
-              {(savedCards || []).map((c) => (
+              {(savedCards || []).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
                 <button key={c.id} onClick={() => loadSavedCard(c.id, undefined, true)} disabled={busy}
                   style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
                   <b>✓ {c.title || (c.track + " " + c.race_date)}</b>
@@ -1985,12 +2018,25 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
               </p>
+              {(() => {
+                const dates = [...new Set(dayScan.map((t) => t.ymd))].filter(Boolean).sort().reverse();
+                return dates.length > 1 ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    {[null, ...dates].map((d) => (
+                      <button key={d || "all"} onClick={() => setEntriesDate(d)}
+                        style={{ background: entriesDate === d ? "#E3C98C" : GREEN_DARK, color: entriesDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {d ? ymdToDisplay(d) : "All"}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               {dayScan.length === 0 && (
                 <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
                   Nothing on file yet — tap "Upload Entries" with saved entries-page PDFs.
                 </div>
               )}
-              {dayScan.map((t, ti) => {
+              {dayScan.filter((t) => !entriesDate || !t.ymd || t.ymd === entriesDate).map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
                 const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && (t.code ? c.track === t.code : trackMatches(c.track, t.track)))) || null;
                 return (

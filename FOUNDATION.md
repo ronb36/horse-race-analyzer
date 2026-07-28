@@ -1,6 +1,6 @@
 # Horse Race Analyzer — Foundation & Model
 
-**Version: 2.10.0 · July 2026**
+**Version: 2.11.0 · July 2026**
 
 *For the columnist who called Clyde the Winner.*
 
@@ -93,6 +93,8 @@ The 1979 weights are the starting point, not the destination.
 Semantic-ish: **major** = model change (new weights/features — anything that changes ratings), **minor** = feature additions, **patch** = fixes/cosmetics. The version appears on the device faceplate and in this doc. Model-affecting changes must be recorded in the changelog so logged predictions remain interpretable (a v1 rating and a v2 rating are different animals).
 
 ### Changelog
+
+- **2.11.0 (2026-07-27)** [feature][cosmetic] — Date chips on Entries and Cards on File (All + one per date, newest first), defaulting to the nearest upcoming race date so night-before planning opens on tomorrow while Sunday stays one tap back. After a scan, the Entries screen now shows the full merged stored list filtered to the just-scanned date — fixing the "second upload overwrote the first" illusion (both scans were always saved; only the fresh batch was displayed). Scan-error notes survive the merge. Sim fingerprint verified ae7d1b405c989c31.
 
 - **2.10.0 (2026-07-27)** [feature] — Audit guards the calibration dataset: per track, every hra_race_log row is checked for the fields the fall refit needs (rating, model_pct, odds). Gaps show amber ("N rows missing odds") and count against CLOSED CLEAN; whole tracks show a quiet "Calibration-ready: N log rows" line. A date is now green only if it is both bookkeeping-clean and dataset-clean. Sim fingerprint verified ae7d1b405c989c31.
 
