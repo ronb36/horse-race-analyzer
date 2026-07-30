@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.3</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.14.2";
+const APP_VERSION = "2.14.3";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1606,11 +1606,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   async function hydrateLoggedRaces(track, ymd) {
     if (!supaUrl || !supaKey || !track || !ymd) return;
     try {
-      const q = `track=eq.${track}&race_date=eq.${ymd}&select=race_no`;
+      const q = `track=eq.${track}&race_date=eq.${ymd}&select=race_no,horse,finish_pos`;
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log?" + q, { headers: supaHeaders() });
       if (!resp.ok) return;
       const map = {};
-      for (const r of await resp.json()) { const n = num(r.race_no); if (n !== null) map[n] = true; }
+      for (const r of await resp.json()) {
+        const n = num(r.race_no);
+        if (n === null) continue;
+        if (!map[n]) map[n] = { finish: [] };
+        const fp = num(r.finish_pos);
+        if (fp && fp >= 1 && fp <= 3) map[n].finish[fp - 1] = r.horse;
+      }
       setLoggedRaces(map);
     } catch (e) { console.error("logged races hydrate", e); }
   }
@@ -1869,7 +1875,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         settledLocal.push({ ...b, settled: true, won, payout });
       }
       setRaceBets((prev) => ({ ...prev, [rn]: settledLocal }));
-      setLoggedRaces((prev) => ({ ...prev, [rn]: true }));
+      setLoggedRaces((prev) => ({ ...prev, [rn]: { finish: finishPicks.map((i) => (overlay.find((o) => o.i === i) || {}).name).filter(Boolean) } }));
       if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
       setWinnerMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
       setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
@@ -2702,6 +2708,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               </div>
 
+              {raceDone && !winnerMode && (() => {
+                const fin = (loggedRaces[num(raceInfo.raceNumber)] || {}).finish || [];
+                return (
+                  <div style={{ background: "rgba(122,163,122,0.12)", border: "1px solid rgba(122,163,122,0.55)", borderRadius: 8, padding: "8px 12px", fontSize: 12, margin: "4px 0 10px", color: "#CFDCCF" }}>
+                    <b style={{ color: "#9CC79C", letterSpacing: "0.08em" }}>RACE OFFICIAL</b>
+                    {fin.length > 0 && <span> \u00b7 {fin.map((h, i) => `${i + 1} ${h}`).join("  \u00b7  ")}</span>}
+                    <span style={{ display: "block", fontSize: 11, opacity: 0.8, marginTop: 2 }}>Logged to the record. Use Cancel Results to clear and log it again.</span>
+                  </div>
+                );
+              })()}
               {winnerMode && (
                 <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
                   {/T/i.test(raceInfo.surface || "") && (
@@ -2839,7 +2855,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </Key>
                 )}
                 {supaUrl && supaKey && (
-                  <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                  {raceDone && !winnerMode
+                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
+                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>}
                 )}
               </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
