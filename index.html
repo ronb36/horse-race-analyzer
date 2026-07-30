@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.13.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.13.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.13.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -493,7 +493,7 @@ function HorseRaceAnalyzer() {
   const [dayCards, setDayCards] = useState(null);
   const [scanNote, setScanNote] = useState("");
   const [ownedCards, setOwnedCards] = useState([]);
-  const [postTimes, setPostTimes] = useState({}); // TRACKNAME -> { raceNo: "2:55PM" }
+  const [postTimes, setPostTimes] = useState({}); // "TRACK|YYYYMMDD" -> { raceNo: {t,sel,watch} }
   const [claudeRec, setClaudeRec] = useState(null);
   const [claudeThinking, setClaudeThinking] = useState(false);
   const [claudeErr, setClaudeErr] = useState(null);
@@ -1008,7 +1008,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setPostTimes((prev) => {
         const next = { ...prev };
         for (const row of rows) {
-          next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
+          next[String(row.track).toUpperCase() + "|" + ymd] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
         }
         return next;
       });
@@ -1025,13 +1025,19 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     return hh * 60 + parseInt(m[2], 10);
   }
 
-  function extrasFor(code, raceNo, ptMap) {
+  function extrasFor(code, ymd, raceNo, ptMap) {
     const C = String(code || "").toUpperCase();
-    if (ptMap[C] && ptMap[C][raceNo] !== undefined) {
-      const v = ptMap[C][raceNo];
+    const D = String(ymd || "");
+    const exact = ptMap[C + "|" + D];
+    if (exact && exact[raceNo] !== undefined) {
+      const v = exact[raceNo];
       return typeof v === "string" ? { t: v } : (v || { t: null });
     }
-    for (const [name, times] of Object.entries(ptMap)) {
+    for (const [key, times] of Object.entries(ptMap)) {
+      const bar = key.indexOf("|");
+      const name = bar < 0 ? key : key.slice(0, bar);
+      const kd = bar < 0 ? "" : key.slice(bar + 1);
+      if (kd && D && kd !== D) continue; // never borrow another date's post times
       if (trackMatches(C, name) && times[raceNo] !== undefined) {
         const v = times[raceNo];
         return typeof v === "string" ? { t: v } : (v || { t: null });
@@ -1046,7 +1052,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const er = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_entries?race_date=eq." + day + "&select=track,entries", { headers: supaHeaders() });
       if (er.ok) {
         for (const row of await er.json()) {
-          ptMap[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
+          ptMap[String(row.track).toUpperCase() + "|" + day] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
         }
         setPostTimes(ptMap);
       }
@@ -1066,7 +1072,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const racesOff = new Set((((row.card && row.card.cancelledRaces) || [])).map(Number));
       for (const r of (row.card && row.card.raceIndex) || []) {
         if (!r.ok) continue;
-        const ex = extrasFor(row.track, r.raceNumber, ptMap);
+        const ex = extrasFor(row.track, day, r.raceNumber, ptMap);
         const k = row.track + "|" + r.raceNumber;
         const cachedHorses = row.card && row.card.raceData && row.card.raceData[r.raceNumber] && row.card.raceData[r.raceNumber].horses;
         const live = cachedHorses ? cachedHorses.filter((h) => !h.scratched).length : r.horseCount;
@@ -1083,6 +1089,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     items.sort((a, b) => a.sortKey - b.sortKey || String(a.track).localeCompare(String(b.track)) || a.raceNumber - b.raceNumber);
     const dates = [...new Set(rows.map((r) => r.race_date))];
     setDayView({ ymd: day, date: ymdToDisplay(day), dates, items });
+    bindStripToDate(day, rows, "RACE DAY"); // the strip must never show a different day than the list
   }
 
   async function viewToday() {
@@ -1348,7 +1355,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           o !== r && o.race_date === r.race_date && String(o.track).length <= 4 && trackMatches(o.track, r.track))));
       setPostTimes((prev) => {
         const next = { ...prev };
-        for (const row of rows) next[String(row.track).toUpperCase()] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
+        for (const row of rows) next[String(row.track).toUpperCase() + "|" + row.race_date] = Object.fromEntries((row.entries || []).map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }]));
         return next;
       });
       const oc = await fetchOwnedCards();
@@ -1405,7 +1412,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const ymd0 = parsed.ymd || entriesDateToYmd(parsed.dateStr);
         let races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
         if (isEtd) races = await mergeStoredPostTimes(key, ymd0, races);
-        setPostTimes((prev) => ({ ...prev, [key]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
+        setPostTimes((prev) => ({ ...prev, [key + "|" + ymd0]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
         saveEntries(key, parsed.track, ymd0, races);
         found.push({ track: parsed.track, code: parsed.trackCode, ymd: ymd0, dateStr: parsed.dateStr || ymdToDisplay(ymd0), races });
       }
@@ -1433,10 +1440,16 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   function getRaceExtras(raceNo) {
     const code = (cardMeta.track || "").toUpperCase();
     if (!code) return null;
+    const D = String(cardMeta.date || "");
     let v = null;
-    if (postTimes[code]) v = postTimes[code][raceNo] || null;
+    const exact = postTimes[code + "|" + D];
+    if (exact) v = exact[raceNo] || null;
     else {
-      for (const [name, times] of Object.entries(postTimes)) {
+      for (const [key, times] of Object.entries(postTimes)) {
+        const bar = key.indexOf("|");
+        const name = bar < 0 ? key : key.slice(0, bar);
+        const kd = bar < 0 ? "" : key.slice(bar + 1);
+        if (kd && D && kd !== D) continue; // a card only ever shows its own date's times
         if (trackMatches(code, name)) { v = times[raceNo] || null; break; }
       }
     }
