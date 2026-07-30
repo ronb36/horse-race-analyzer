@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.12.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.13.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.12.1";
+const APP_VERSION = "2.13.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -480,6 +480,8 @@ function HorseRaceAnalyzer() {
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
   const [auditView, setAuditView] = useState(null);
+  const [cardFlags, setCardFlags] = useState({ cancelled: false, cancelledRaces: [] });
+  const cardFlagsRef = useRef({ cancelled: false, cancelledRaces: [] });
   const [entriesDate, setEntriesDate] = useState(null);
   const [cardsDate, setCardsDate] = useState(null);
   const [resultPays, setResultPays] = useState({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
@@ -601,7 +603,8 @@ function HorseRaceAnalyzer() {
         body: JSON.stringify([{
           title, track: meta.track, race_date: meta.date,
           updated_at: new Date().toISOString(),
-          card: { raceIndex: index, raceData: dataMap, cardMeta: meta, cardTitle: title },
+          card: { raceIndex: index, raceData: dataMap, cardMeta: meta, cardTitle: title,
+            cancelled: !!cardFlagsRef.current.cancelled, cancelledRaces: cardFlagsRef.current.cancelledRaces || [] },
           raw_file: rawFileRef.current,
         }]),
       });
@@ -612,10 +615,67 @@ function HorseRaceAnalyzer() {
     }
   }
 
+  function applyCardFlags(next) {
+    const clean = { cancelled: !!next.cancelled, cancelledRaces: (next.cancelledRaces || []).map(Number).filter((n) => Number.isFinite(n)) };
+    cardFlagsRef.current = clean;
+    setCardFlags(clean);
+  }
+
+  // Cancellation lives inside the existing hra_cards.card jsonb (no schema change).
+  // "Cancelled" means these races did not run — distinct from a race passed on,
+  // which still owes a logged result for calibration.
+  async function writeCardStatus(cardId, mutate) {
+    const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?id=eq." + cardId;
+    const g = await fetch(base + "&select=card,track,race_date", { headers: supaHeaders() });
+    if (!g.ok) throw new Error("HTTP " + g.status);
+    const row = (await g.json())[0] || {};
+    const card = row.card || {};
+    const next = mutate({ cancelled: !!card.cancelled, cancelledRaces: (card.cancelledRaces || []).map(Number) });
+    const p = await fetch(base, {
+      method: "PATCH",
+      headers: { ...supaHeaders(), Prefer: "return=minimal" },
+      body: JSON.stringify({ card: { ...card, cancelled: next.cancelled, cancelledRaces: next.cancelledRaces }, updated_at: new Date().toISOString() }),
+    });
+    if (!p.ok) throw new Error("HTTP " + p.status + ": " + (await p.text()).slice(0, 120));
+    if ((cardMeta.track || "") === row.track && (cardMeta.date || "") === row.race_date) applyCardFlags(next);
+    return next;
+  }
+
+  async function toggleCardCancelled(row, on) {
+    if (!supaUrl || !supaKey) { setError("That needs Supabase (tap \u2699 Set)."); return; }
+    setError(""); setBusy(true);
+    try {
+      await writeCardStatus(row.id, (f) => ({ ...f, cancelled: !!on }));
+      const rows = await fetchSavedCards();
+      setLcdMsg(on ? "NO RACING \u00b7 CARD CANCELLED" : "CARD RESTORED");
+      bindStripToDate(cardsDate, rows, on ? "NO RACING \u00b7 CARD CANCELLED" : "CARDS ON FILE");
+    } catch (e) {
+      setError("Couldn't update the card status. " + (e.message || e));
+    } finally { setBusy(false); }
+  }
+
+  async function toggleRaceCancelled(item, on) {
+    if (!supaUrl || !supaKey) { setError("That needs Supabase (tap \u2699 Set)."); return; }
+    setError(""); setBusy(true);
+    try {
+      const no = Number(item.raceNumber);
+      await writeCardStatus(item.cardId, (f) => ({
+        ...f,
+        cancelledRaces: on ? [...new Set([...f.cancelledRaces, no])] : f.cancelledRaces.filter((n) => n !== no),
+      }));
+      setBusy(false);
+      await viewToday();
+      setLcdMsg(on ? "R" + no + " DID NOT RUN" : "R" + no + " RESTORED");
+    } catch (e) {
+      setError("Couldn't update the race status. " + (e.message || e));
+      setBusy(false);
+    }
+  }
+
   async function fetchSavedCards() {
     setError("");
     try {
-      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,title,track,race_date,updated_at&order=updated_at.desc&limit=25", {
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,title,track,race_date,updated_at,cancelled:card->cancelled&order=updated_at.desc&limit=25", {
         headers: supaHeaders(),
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + (await resp.text()).slice(0, 120));
@@ -642,6 +702,7 @@ function HorseRaceAnalyzer() {
       brisRef.current = null; fileBlocksRef.current = null;
       setCardTitle(card.cardTitle || "");
       setCardMeta(card.cardMeta || { track: "", date: "" });
+      applyCardFlags({ cancelled: !!card.cancelled, cancelledRaces: card.cancelledRaces || [] });
       if (card.cardMeta && card.cardMeta.date) loadEntriesForDate(card.cardMeta.date);
       setRaceIndex(card.raceIndex || []);
       const hydrated = {};
@@ -720,6 +781,7 @@ function HorseRaceAnalyzer() {
     }
     setRaceData(dataMap);
     setActiveRace(null);
+    applyCardFlags({ cancelled: false, cancelledRaces: [] }); // a fresh upload is a re-prep
     saveCard(meta, title, list, dataMap);
     // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
     // with this card's strip previewed up top. Racing starts from Race Day.
@@ -1000,6 +1062,8 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } catch (e3) { console.error(e3); }
     const items = [];
     for (const row of rows.filter((r) => r.race_date === day)) {
+      const cardOff = !!(row.card && row.card.cancelled);
+      const racesOff = new Set((((row.card && row.card.cancelledRaces) || [])).map(Number));
       for (const r of (row.card && row.card.raceIndex) || []) {
         if (!r.ok) continue;
         const ex = extrasFor(row.track, r.raceNumber, ptMap);
@@ -1012,6 +1076,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           horseCount: live, scrCount: cachedHorses ? cachedHorses.length - live : 0,
           postTime: ex.t, sortKey: postTimeToMinutes(ex.t),
           bets: betMap[k] || [], run: !!runMap[k],
+          cancelled: cardOff || racesOff.has(Number(r.raceNumber)), cardOff,
         });
       }
     }
@@ -1081,7 +1146,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     try {
       const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
       const [cardsR, logR, betsR, entR] = await Promise.all([
-        fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex&order=race_date.desc&limit=60", { headers: supaHeaders() }),
+        fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex,cx:card->cancelled,cxr:card->cancelledRaces&order=race_date.desc&limit=60", { headers: supaHeaders() }),
         fetch(base + "hra_race_log?select=track,race_date,race_no,is_winner,pay_win,rating,model_pct,odds&limit=4000", { headers: supaHeaders() }),
         fetch(base + "hra_bets?select=track,race_date,race_no,settled,won,payout,amount&limit=1000", { headers: supaHeaders() }),
         fetch(base + "hra_entries?select=track,race_date&limit=200", { headers: supaHeaders() }),
@@ -1097,7 +1162,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const dayCardsA = cards.filter((c) => c.race_date === d);
         const cardKeys = new Set(dayCardsA.map((c) => c.track));
         const tracks = dayCardsA.map((c) => {
-          const elig = (c.idx || []).filter((r) => r.ok).map((r) => num(r.raceNumber)).filter((n) => n !== null);
+          const cardOff = !!c.cx;
+          const racesOff = new Set(((c.cxr) || []).map(Number));
+          const eligAll = (c.idx || []).filter((r) => r.ok).map((r) => num(r.raceNumber)).filter((n) => n !== null);
+          // races that did not run owe nothing: excluded from the reconciliation
+          const notRun = cardOff ? eligAll : eligAll.filter((n) => racesOff.has(n));
+          const elig = cardOff ? [] : eligAll.filter((n) => !racesOff.has(n));
           const tLogs = logs.filter((l) => l.race_date === d && l.track === c.track);
           const loggedNos = new Set(tLogs.map((l) => num(l.race_no)));
           const unlogged = elig.filter((n) => !loggedNos.has(n));
@@ -1112,11 +1182,14 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           const noOdds = tLogs.filter((l) => l.odds === null || l.odds === "").length;
           const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0 && noRating === 0 && noOdds === 0;
           return { track: c.track, elig: elig.length, logged: elig.filter((n) => loggedNos.has(n)).length, rows: tLogs.length,
-            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, noRating, noOdds, clean };
+            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, noRating, noOdds, clean,
+            cardOff, notRun };
         });
         const orphans = bets.filter((b) => b.race_date === d && !cardKeys.has(b.track));
         const entCount = ents.filter((e) => e.race_date === d).length;
-        return { date: d, tracks, orphans: orphans.length, entCount, clean: tracks.every((t) => t.clean) && orphans.length === 0 && tracks.length > 0 };
+        const allOff = tracks.length > 0 && tracks.every((t) => t.cardOff);
+        return { date: d, tracks, orphans: orphans.length, entCount, allOff,
+          clean: tracks.every((t) => t.clean) && orphans.length === 0 && tracks.length > 0 };
       });
       setAuditView(view);
       setStep("audit");
@@ -2024,11 +2097,20 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {(savedCards || []).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
-                <button key={c.id} onClick={() => loadSavedCard(c.id, undefined, true)} disabled={busy}
-                  style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 6, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left" }}>
-                  <b>✓ {c.title || (c.track + " " + c.race_date)}</b>
-                  <span style={{ color: "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>{(c.updated_at || "").slice(0, 10)}</span>
-                </button>
+                <div key={c.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <button onClick={() => loadSavedCard(c.id, undefined, "CARDS ON FILE")} disabled={busy}
+                    style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left", opacity: c.cancelled ? 0.55 : 1 }}>
+                    <b>{c.cancelled ? "\u25e6" : "\u2713"} {c.title || (c.track + " " + c.race_date)}</b>
+                    <span style={{ color: c.cancelled ? "#E8B98A" : "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>
+                      {c.cancelled ? "no racing" : (c.updated_at || "").slice(0, 10)}
+                    </span>
+                  </button>
+                  <button onClick={() => toggleCardCancelled(c, !c.cancelled)} disabled={busy}
+                    title={c.cancelled ? "Restore this card" : "Mark this card cancelled \u2014 no racing"}
+                    style={{ width: 44, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: c.cancelled ? "#9CC79C" : "#E8938A", cursor: "pointer", fontSize: 15, fontWeight: 700 }}>
+                    {c.cancelled ? "\u21ba" : "\u2715"}
+                  </button>
+                </div>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
                 <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
@@ -2050,11 +2132,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {auditView.map((day) => (
-                <div key={day.date} style={{ background: GREEN_DARK, borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: day.clean ? "1px solid rgba(122,163,122,0.6)" : "1px solid rgba(0,0,0,0.35)" }}>
+                <div key={day.date} style={{ background: GREEN_DARK, borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: day.allOff ? "1px solid rgba(185,200,187,0.35)" : day.clean ? "1px solid rgba(122,163,122,0.6)" : "1px solid rgba(0,0,0,0.35)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
                     <b style={{ fontSize: 14, letterSpacing: "0.06em" }}>{day.date.length === 8 ? day.date.slice(4, 6) + "/" + day.date.slice(6, 8) + "/" + day.date.slice(0, 4) : day.date}</b>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: day.clean ? "#9CC79C" : GOLD }}>
-                      {day.clean ? "✓ CLOSED CLEAN" : "OPEN ITEMS"}
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: day.allOff ? "#B9C8BB" : day.clean ? "#9CC79C" : GOLD }}>
+                      {day.allOff ? "\u25e6 NO RACING" : day.clean ? "\u2713 CLOSED CLEAN" : "OPEN ITEMS"}
                     </span>
                   </div>
                   {day.tracks.length === 0 && (
@@ -2063,11 +2145,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {day.tracks.map((t) => (
                     <div key={t.track} style={{ padding: "7px 0", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: 12, lineHeight: 1.6 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <b>{t.track}</b>
-                        <span style={{ color: t.clean ? "#9CC79C" : "#B9C8BB" }}>
-                          {t.logged}/{t.elig} eligible races logged · {t.tickets} ticket{t.tickets === 1 ? "" : "s"}
+                        <b style={{ opacity: t.cardOff ? 0.6 : 1 }}>{t.track}</b>
+                        <span style={{ color: t.cardOff ? "#B9C8BB" : t.clean ? "#9CC79C" : "#B9C8BB" }}>
+                          {t.cardOff ? "card cancelled \u2014 no racing" : `${t.logged}/${t.elig} eligible races logged \u00b7 ${t.tickets} ticket${t.tickets === 1 ? "" : "s"}`}
                         </span>
                       </div>
+                      {!t.cardOff && t.notRun.length > 0 && (
+                        <div style={{ color: "#B9C8BB" }}>Did not run: {t.notRun.map((n) => "R" + n).join(", ")}</div>
+                      )}
                       {t.unlogged.length > 0 && (
                         <div style={{ color: "#E8938A" }}>{t.unlogged.length} race{t.unlogged.length === 1 ? "" : "s"} unlogged: {t.unlogged.map((n) => "R" + n).join(", ")}</div>
                       )}
@@ -2129,8 +2214,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               {dayView.items.map((it, ii) => (
-                <button key={ii} onClick={() => { raceOriginRef.current = "today"; loadSavedCard(it.cardId, it.raceNumber); }} disabled={busy}
-                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", marginBottom: 5, borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", textAlign: "left", fontSize: 13 }}>
+                <div key={ii} style={{ display: "flex", gap: 6, marginBottom: 5 }}>
+                <button onClick={() => { raceOriginRef.current = "today"; loadSavedCard(it.cardId, it.raceNumber); }} disabled={busy || it.cancelled}
+                  style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: GREEN_DARK, color: "#EFE8D5", cursor: it.cancelled ? "default" : "pointer", textAlign: "left", fontSize: 13, opacity: it.cancelled ? 0.5 : 1 }}>
                   <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 7px", fontSize: 12, minWidth: 62, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
                     {it.postTime || "—"}
                   </span>
@@ -2139,6 +2225,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}{it.scrCount ? ` · ${it.scrCount} scr` : ""}</span>
                   {(() => {
                     const bets = it.bets || [];
+                    if (it.cancelled) return <span style={{ fontSize: 11, color: "#E8B98A", whiteSpace: "nowrap" }}>{it.cardOff ? "Card cancelled" : "No race"}</span>;
                     if (it.run) {
                       if (!bets.length) return <span style={{ fontSize: 11, color: "#8FA396", whiteSpace: "nowrap" }}>Race Run ✓</span>;
                       const settled = bets.filter((b) => b.settled);
@@ -2151,6 +2238,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     return null;
                   })()}
                 </button>
+                {!it.cardOff && (
+                  <button onClick={() => toggleRaceCancelled(it, !it.cancelled)} disabled={busy}
+                    title={it.cancelled ? "Restore this race" : "Mark this race as not run"}
+                    style={{ width: 40, borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: GREEN_DARK, color: it.cancelled ? "#9CC79C" : "#8FA396", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
+                    {it.cancelled ? "\u21ba" : "\u2715"}
+                  </button>
+                )}
+                </div>
               ))}
               <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                 <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
