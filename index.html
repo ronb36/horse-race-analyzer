@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.13.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.13.2";
+const APP_VERSION = "2.14.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -481,6 +481,7 @@ function HorseRaceAnalyzer() {
   const [slipsDate, setSlipsDate] = useState(null);
   const [auditView, setAuditView] = useState(null);
   const [cardFlags, setCardFlags] = useState({ cancelled: false, cancelledRaces: [] });
+  const [offTurf, setOffTurf] = useState(false);
   const cardFlagsRef = useRef({ cancelled: false, cancelledRaces: [] });
   const [entriesDate, setEntriesDate] = useState(null);
   const [cardsDate, setCardsDate] = useState(null);
@@ -725,7 +726,7 @@ function HorseRaceAnalyzer() {
       if (firstOk) {
         const cached = hydrated[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
         scheduleAsk(400);
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
@@ -747,7 +748,7 @@ function HorseRaceAnalyzer() {
     setHorses(hs);
     setActiveRace(r.raceNumber);
     setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
     setStep("results");
     setLcdMsg("RACE " + r.raceNumber);
     scheduleAsk(400);
@@ -786,7 +787,7 @@ function HorseRaceAnalyzer() {
     // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
     // with this card's strip previewed up top. Racing starts from Race Day.
     setActiveRace(null);
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
     if (supaUrl && supaKey) { fetchSavedCards().then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); }); }
     setStep("cards");
     setLcdMsg("CARD SAVED \u00b7 " + (meta.track || "").toUpperCase() + " " + ymdToDisplay(meta.date));
@@ -801,7 +802,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -1773,7 +1774,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         race_date: cardMeta.date || null,
         race_no: num(raceInfo.raceNumber),
         distance_f: num(raceInfo.distanceFurlongs),
-        surface: raceInfo.surface || null,
+        // a race taken off the turf is logged on the surface it was run on, and marked,
+        // so the fall refit can exclude or study cards that mis-specified it
+        surface: offTurf ? "dirt (off turf)" : (raceInfo.surface || null),
         purse: num(raceInfo.purse),
         horse: o.name,
         post: num(o.post),
@@ -1844,7 +1847,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         race_date: cardMeta.date || null,
         race_no: num(raceInfo.raceNumber),
         distance_f: num(raceInfo.distanceFurlongs),
-        surface: raceInfo.surface || null,
+        // a race taken off the turf is logged on the surface it was run on, and marked,
+        // so the fall refit can exclude or study cards that mis-specified it
+        surface: offTurf ? "dirt (off turf)" : (raceInfo.surface || null),
         purse: num(raceInfo.purse),
         horse: o.name,
         post: num(o.post),
@@ -2657,6 +2662,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
               {winnerMode && (
                 <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
+                  {/T/i.test(raceInfo.surface || "") && (
+                    <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(227,201,140,0.35)" }}>
+                      <button onClick={() => setOffTurf(!offTurf)}
+                        style={{ background: offTurf ? GOLD : "transparent", color: offTurf ? "#3A2F17" : "#EFE8D5", border: "1px solid rgba(227,201,140,0.6)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {offTurf ? "\u2713 " : ""}Ran off the turf
+                      </button>
+                      <span style={{ fontSize: 11, color: "#CFDCCF", marginLeft: 8 }}>
+                        {offTurf
+                          ? "Logging as dirt (off turf) \u2014 the card said turf, so these ratings were built on turf form."
+                          : "Card says turf. Tap if the stewards moved it to the main track."}
+                      </span>
+                    </div>
+                  )}
                   {finishPicks.length === 0 && "Race is official? Tap the WINNER above."}
                   {finishPicks.length === 1 && "Now tap SECOND place."}
                   {finishPicks.length === 2 && "Now tap THIRD place."}
