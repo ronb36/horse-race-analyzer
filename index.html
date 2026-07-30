@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.4</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.5</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.14.4";
+const APP_VERSION = "2.14.5";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -2737,10 +2737,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {finishPicks.length === 1 && "Now tap SECOND place."}
                   {finishPicks.length === 2 && "Now tap THIRD place."}
                   {finishPicks.length >= 3 && (
-                    <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <span>Top three set — tote payouts on each line (optional), then save.</span>
-                      <Key onClick={saveResults}>Save results</Key>
-                    </span>
+                    <span>Top three set — tote payouts on each line (optional), then Save Results below.</span>
                   )}
                 </div>
               )}
@@ -2839,7 +2836,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Tap a horse to scratch it (tap again to restore). Chances re-spread over the remaining field.
                 </div>
               )}
-              {logMsg && (
+              {logMsg && !raceDone && (
                 <div style={{ background: "rgba(143,196,159,0.12)", border: "1px solid rgba(143,196,159,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
                   ✓ {logMsg}
                 </div>
@@ -2857,6 +2854,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 {supaUrl && supaKey && (
                   raceDone && !winnerMode
                     ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
+                    : winnerMode && finishPicks.length >= 3
+                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
                     : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
                 )}
               </div>
