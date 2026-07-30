@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.14.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.14.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -704,6 +704,7 @@ function HorseRaceAnalyzer() {
       setCardTitle(card.cardTitle || "");
       setCardMeta(card.cardMeta || { track: "", date: "" });
       applyCardFlags({ cancelled: !!card.cancelled, cancelledRaces: card.cancelledRaces || [] });
+      hydrateLoggedRaces((card.cardMeta || {}).track, (card.cardMeta || {}).date);
       if (card.cardMeta && card.cardMeta.date) loadEntriesForDate(card.cardMeta.date);
       setRaceIndex(card.raceIndex || []);
       const hydrated = {};
@@ -783,6 +784,7 @@ function HorseRaceAnalyzer() {
     setRaceData(dataMap);
     setActiveRace(null);
     applyCardFlags({ cancelled: false, cancelledRaces: [] }); // a fresh upload is a re-prep
+    hydrateLoggedRaces(meta.track, meta.date);
     saveCard(meta, title, list, dataMap);
     // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
     // with this card's strip previewed up top. Racing starts from Race Day.
@@ -1597,6 +1599,46 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     } finally {
       if (seq === askSeqRef.current) setClaudeThinking(false);
     }
+  }
+
+  // loggedRaces was session-only, so a page reload made a logged race look unlogged
+  // and re-loggable — duplicate rows in the calibration set. Hydrate from the table.
+  async function hydrateLoggedRaces(track, ymd) {
+    if (!supaUrl || !supaKey || !track || !ymd) return;
+    try {
+      const q = `track=eq.${track}&race_date=eq.${ymd}&select=race_no`;
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log?" + q, { headers: supaHeaders() });
+      if (!resp.ok) return;
+      const map = {};
+      for (const r of await resp.json()) { const n = num(r.race_no); if (n !== null) map[n] = true; }
+      setLoggedRaces(map);
+    } catch (e) { console.error("logged races hydrate", e); }
+  }
+
+  async function cancelResults() {
+    const rn = num(raceInfo.raceNumber);
+    if (rn === null || !supaUrl || !supaKey) return;
+    if (!window.confirm("Delete the logged result for race " + rn + "? Tickets on this race go back to unsettled so you can log it again.")) return;
+    setBusy(true); setError(""); setLogMsg("");
+    try {
+      const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
+      const q = `track=eq.${cardMeta.track}&race_date=eq.${cardMeta.date}&race_no=eq.${rn}`;
+      const d = await fetch(base + "hra_race_log?" + q, { method: "DELETE", headers: { ...supaHeaders(), Prefer: "return=minimal" } });
+      if (!d.ok) throw new Error("HTTP " + d.status + ": " + (await d.text()).slice(0, 120));
+      // un-settle this race's tickets so they can settle again on the next save
+      await fetch(base + "hra_bets?" + q, {
+        method: "PATCH",
+        headers: { ...supaHeaders(), Prefer: "return=minimal" },
+        body: JSON.stringify({ settled: false, won: null, payout: null }),
+      });
+      setLoggedRaces((prev) => { const next = { ...prev }; delete next[rn]; return next; });
+      setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setWinnerMode(false);
+      await fetchBetsForRace(rn);
+      setLogMsg("Result cleared \u2014 log it again when ready.");
+      setLcdMsg("RESULT CLEARED \u00b7 R" + rn);
+    } catch (e) {
+      setError("Couldn't clear the result. " + (e.message || e));
+    } finally { setBusy(false); }
   }
 
   async function fetchBetsForRace(raceNo) {
@@ -2721,8 +2763,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", color: "#A33327", border: "2px solid #A33327", borderRadius: 3, padding: "6px 10px", transform: "rotate(-2deg)", display: "inline-block", marginBottom: 10 }}>
                         RACE OFFICIAL — WINDOW CLOSED
                       </div>
-                      <div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Done</button>
+                        <button onClick={() => { setBetSlipOpen(false); cancelResults(); }} disabled={busy}
+                          style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#A33327", border: "1px solid #A33327" }}>
+                          Cancel results
+                        </button>
                       </div>
                     </div>
                   ) : !slipStamped ? (
