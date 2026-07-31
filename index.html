@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.15.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -514,6 +514,7 @@ function HorseRaceAnalyzer() {
   const scanFileRef = useRef(null);
   const persistTimerRef = useRef(null);
   const oddsSnapRef = useRef(null);
+  const betsCardRef = useRef(null);
 
   async function filesToBlocks(fileList) {
     const files = Array.from(fileList || []);
@@ -727,7 +728,7 @@ function HorseRaceAnalyzer() {
       if (firstOk) {
         const cached = hydrated[firstOk.raceNumber];
         setRaceInfo(cached.raceInfo); setHorses(cached.horses); setActiveRace(firstOk.raceNumber);
-        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
+        setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
         setStep("results"); setLcdMsg("RACE " + firstOk.raceNumber);
         scheduleAsk(400);
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
@@ -749,7 +750,7 @@ function HorseRaceAnalyzer() {
     setHorses(hs);
     setActiveRace(r.raceNumber);
     setRaceData((prev) => ({ ...prev, [r.raceNumber]: { raceInfo: info, horses: hs } }));
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
     setStep("results");
     setLcdMsg("RACE " + r.raceNumber);
     scheduleAsk(400);
@@ -789,7 +790,7 @@ function HorseRaceAnalyzer() {
     // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
     // with this card's strip previewed up top. Racing starts from Race Day.
     setActiveRace(null);
-    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
+    setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
     if (supaUrl && supaKey) { fetchSavedCards().then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); }); }
     setStep("cards");
     setLcdMsg("CARD SAVED \u00b7 " + (meta.track || "").toUpperCase() + " " + ymdToDisplay(meta.date));
@@ -804,7 +805,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null); setOffTurf(false);
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -1333,7 +1334,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
 
   function goHome() {
     setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null);
-    setWinnerMode(false); setScratchMode(false); setLogMsg(""); setClaudeRec(null); setClaudeErr(null);
+    setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false);
     brisRef.current = null; setLcdMsg("READY"); setError("");
   }
 
@@ -1941,6 +1942,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
+  // 2.15.1: raceBets is keyed by race number alone, so a settled ticket on 07/30 R7 rode
+  // into 07/31 R7 — SLIPS (n), the LCD result line and raceDone all read that key, and the
+  // fetch guard below (=== undefined) meant the new day never fetched its own empty set.
+  // One guard on the card key empties the map on any card change, whichever path got here.
+  const betsCardKey = (cardMeta.track || "") + "|" + (cardMeta.date || "");
+  if (betsCardRef.current !== betsCardKey) {
+    betsCardRef.current = betsCardKey;
+    askSeqRef.current++;
+    if (Object.keys(raceBets).length) setRaceBets({});
+  }
   if (step === "results" && activeRace !== null && raceBets[activeRace] === undefined && supaUrl && supaKey) {
     setRaceBets((prev) => ({ ...prev, [activeRace]: [] }));
     fetchBetsForRace(activeRace);
