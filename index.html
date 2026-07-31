@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.15.1";
+const APP_VERSION = "2.15.2";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -2073,12 +2073,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- START ---------- */}
           {step === "start" && !showSettings && (
             <div>
-              <p style={{ fontSize: 14, lineHeight: 1.55, margin: "0 0 16px" }}>
-                Best option: upload a Brisnet "Single Data File" (from brisnet.com — a few dollars per card). It parses
-                instantly, exactly, with no AI reading and no API key needed. Or upload a Daily Racing Form PDF or photos,
-                which the machine reads with AI vision (API key required — tap ⚙ Set in the bottom row). Either way it shows which races qualify under
-                the 1979 rules. Or punch the numbers in yourself.
-              </p>
+              <div style={{ textAlign: "center", margin: "10px 0 26px" }}>
+                <div style={{ height: 1, maxWidth: 220, margin: "0 auto 20px", background: "#8FA396", opacity: 0.45 }} />
+                <div style={{ fontSize: 15, lineHeight: 1.6, fontStyle: "italic", color: "#CFDCCF" }}>
+                  For the columnist they called Clyde the Winner.
+                </div>
+                <div style={{ fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase", color: "#8FA396", marginTop: 12 }}>
+                  The Berkeley Gazette · Golden Gate Fields · 1970s
+                </div>
+              </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>{busy ? "Working…" : "📅 Race Day"}</Key>}
                 <div style={{ flex: 1 }} />
@@ -2086,7 +2089,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
 
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
-                Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more. Large PDFs can take a minute to scan.
+                Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more.
               </p>
             </div>
           )}
