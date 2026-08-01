@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.3</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.15.2";
+const APP_VERSION = "2.15.3";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -1158,7 +1158,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
       const [cardsR, logR, betsR, entR] = await Promise.all([
         fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex,cx:card->cancelled,cxr:card->cancelledRaces&order=race_date.desc&limit=60", { headers: supaHeaders() }),
-        fetch(base + "hra_race_log?select=track,race_date,race_no,is_winner,pay_win,rating,model_pct,odds&limit=4000", { headers: supaHeaders() }),
+        fetch(base + "hra_race_log?select=track,race_date,race_no,horse,is_winner,pay_win,rating,model_pct,odds&limit=4000", { headers: supaHeaders() }),
         fetch(base + "hra_bets?select=track,race_date,race_no,settled,won,payout,amount&limit=1000", { headers: supaHeaders() }),
         fetch(base + "hra_entries?select=track,race_date&limit=200", { headers: supaHeaders() }),
       ]);
@@ -1191,9 +1191,16 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
           const returned = settled.reduce((s, b) => s + (num(b.payout) || 0), 0);
           const noRating = tLogs.filter((l) => l.rating === null || l.model_pct === null).length;
           const noOdds = tLogs.filter((l) => l.odds === null || l.odds === "").length;
-          const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0 && noRating === 0 && noOdds === 0;
+          // 2.15.3: duplicate horse-rows per race. Invisible to the eligible-vs-logged count
+          // (thirty rows read as "logged" exactly like ten), but they double a race's weight
+          // in any refit. Caused by a delete that silently removed nothing before re-logging.
+          const seen = {};
+          tLogs.forEach((l) => { const k = num(l.race_no) + "|" + (l.horse || ""); seen[k] = (seen[k] || 0) + 1; });
+          const dupRaces = [...new Set(Object.keys(seen).filter((k) => seen[k] > 1).map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b);
+          const dupRows = Object.keys(seen).reduce((s, k) => s + (seen[k] > 1 ? seen[k] - 1 : 0), 0);
+          const clean = unlogged.length === 0 && missingPay.length === 0 && unsettled === 0 && stray.length === 0 && noRating === 0 && noOdds === 0 && dupRaces.length === 0;
           return { track: c.track, elig: elig.length, logged: elig.filter((n) => loggedNos.has(n)).length, rows: tLogs.length,
-            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, noRating, noOdds, clean,
+            unlogged, missingPay, tickets: tBets.length, unsettled, stray, staked, returned, noRating, noOdds, dupRaces, dupRows, clean,
             cardOff, notRun };
         });
         const orphans = bets.filter((b) => b.race_date === d && !cardKeys.has(b.track));
@@ -1630,8 +1637,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     try {
       const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
       const q = `track=eq.${cardMeta.track}&race_date=eq.${cardMeta.date}&race_no=eq.${rn}`;
-      const d = await fetch(base + "hra_race_log?" + q, { method: "DELETE", headers: { ...supaHeaders(), Prefer: "return=minimal" } });
+      const d = await fetch(base + "hra_race_log?" + q, { method: "DELETE", headers: { ...supaHeaders(), Prefer: "return=representation" } });
       if (!d.ok) throw new Error("HTTP " + d.status + ": " + (await d.text()).slice(0, 120));
+      // 2.15.3: without this check a policy-less delete reports success, leaves the rows,
+      // and the next log writes a duplicate set into the calibration file.
+      const removed = await d.json();
+      if (!Array.isArray(removed) || removed.length === 0) {
+        throw new Error("nothing was deleted — check the delete policy on hra_race_log. Re-logging now would duplicate rows.");
+      }
       // un-settle this race's tickets so they can settle again on the next save
       await fetch(base + "hra_bets?" + q, {
         method: "PATCH",
@@ -1740,9 +1753,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     try {
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?id=eq." + b.id, {
         method: "DELETE",
-        headers: { ...supaHeaders(), Prefer: "return=minimal" },
+        headers: { ...supaHeaders(), Prefer: "return=representation" },
       });
       if (!resp.ok) throw new Error("HTTP " + resp.status);
+      // 2.15.3: a missing RLS delete policy returns a cheerful 204 having removed nothing.
+      // Ask for the deleted rows back and treat an empty result as the failure it is,
+      // rather than dropping the ticket from local state and looking cancelled until the
+      // next fetch brings it back.
+      const gone = await resp.json();
+      if (!Array.isArray(gone) || gone.length === 0) {
+        throw new Error("the database accepted the request but removed nothing — check the delete policy on hra_bets.");
+      }
       const rn = num(raceInfo.raceNumber);
       setRaceBets((prev) => ({ ...prev, [rn]: (prev[rn] || []).filter((x) => x.id !== b.id) }));
     } catch (e) { setError("Couldn't cancel that ticket. " + (e.message || e)); }
@@ -2083,7 +2104,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                {supaUrl && supaKey && <Key wide onClick={viewToday} disabled={busy}>{busy ? "Working…" : "📅 Race Day"}</Key>}
+                {supaUrl && supaKey
+                  ? <Key wide onClick={viewToday} disabled={busy}>{busy ? "Working…" : "📅 Race Day"}</Key>
+                  : <div style={{ fontSize: 12, color: "#E8B98A", lineHeight: 1.5, maxWidth: 380 }}>
+                      Add your Supabase URL and key in ⚙ Set to load race days. Credentials live in this browser only, so each device needs them once.
+                    </div>}
                 <div style={{ flex: 1 }} />
                 <Key onClick={() => { setShowSettings(true); fetchUploadCounts(); }}>⚙ Set</Key>
               </div>
@@ -2264,6 +2289,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       )}
                       {t.clean && t.tickets > 0 && (
                         <div style={{ color: "#B9C8BB" }}>Settled: staked ${t.staked.toFixed(2)} → returned ${t.returned.toFixed(2)}</div>
+                      )}
+                      {t.dupRaces && t.dupRaces.length > 0 && (
+                        <div style={{ color: "#E8938A" }}>
+                          Duplicate log rows: {t.dupRows} extra on race{t.dupRaces.length === 1 ? " " : "s "}{t.dupRaces.join(", ")} — the refit would count {t.dupRaces.length === 1 ? "it" : "them"} twice
+                        </div>
                       )}
                       {(t.noRating > 0 || t.noOdds > 0) ? (
                         <div style={{ color: "#E8B98A" }}>
