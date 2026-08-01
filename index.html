@@ -1875,8 +1875,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       for (const b of bets) {
         if (!b.id) { settledLocal.push(b); continue; }
         const pos = top.indexOf(b.horse);
-        const won = b.bet_type === "WIN" ? pos === 0 : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0;
-        let payout = won ? null : 0;
+        // scratched after the ticket was punched: refund the stake rather than book a loss
+        const scr = overlay.some((o) => o.name === b.horse && o.scratched);
+        const won = scr ? false : (b.bet_type === "WIN" ? pos === 0 : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0);
+        let payout = scr ? b.amount : (won ? null : 0);
         if (won) {
           const official = b.bet_type === "WIN" ? payNum(resultPays.w1)
             : b.bet_type === "PLACE" ? (pos === 0 ? payNum(resultPays.p1) : payNum(resultPays.p2))
@@ -1946,6 +1948,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   }
   const raceExtras = getRaceExtras(num(raceInfo.raceNumber)) || { t: null, sel: null, watch: [] };
   const raceWatch = raceExtras.watch || [];
+  // 2.17.0: a scratched horse voids the ticket at the window and the money comes back.
+  // Recorded without a schema change — a losing ticket always pays 0, so a settled,
+  // non-winning ticket whose payout equals its stake can only be a refund.
+  const isRefund = (b) => !!b && !!b.settled && !b.won && b.payout !== null && b.payout !== undefined && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0;
   const raceDone = !!loggedRaces[num(raceInfo.raceNumber)] || (raceBets[num(raceInfo.raceNumber)] || []).some((b) => b.settled);
   const officialLine = (() => {
     const rn = num(raceInfo.raceNumber);
@@ -1955,8 +1961,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     if (settled.length) {
       const back = settled.reduce((s, b) => s + (num(b.payout) || 0), 0);
       const staked = settled.reduce((s, b) => s + (num(b.amount) || 0), 0);
-      if (back > 0) return "TICKET WON $" + back.toFixed(2);
-      return "TICKET LOST \u2212$" + staked.toFixed(2);
+      if (settled.every(isRefund)) return "TICKET REFUNDED $" + staked.toFixed(2);
+      if (settled.some((b) => b.won)) return "TICKET WON $" + back.toFixed(2);
+      return "TICKET LOST \u2212$" + (staked - back).toFixed(2);
     }
     return win ? "OFFICIAL: " + win : "RACE OFFICIAL";
   })();
