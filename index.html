@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.15.3</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.16.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.15.3";
+const APP_VERSION = "2.16.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
@@ -2600,9 +2600,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               )}
               <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 500 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8", textAlign: "center" }}>
-                    <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span>
+                <div style={{ minWidth: 526 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8", textAlign: "center" }}>
+                    <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                   {displayed.map((r, di) => {
                     const isBest = bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0;
@@ -2611,11 +2611,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     const cell = { fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
                       <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode || scratchMode ? "rgba(227,201,140,0.06)" : "none" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(227,201,140,0.06)" : "none" }}>
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
-                          <button onClick={() => (scratchMode ? toggleScratch(r.i) : winnerMode ? (!dim && pickFinish(r)) : setExpanded(expanded === r.i ? null : r.i))}
+                          <button onClick={() => (winnerMode ? (!dim && pickFinish(r)) : setExpanded(expanded === r.i ? null : r.i))}
                             tabIndex={-1}
                             style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
                             {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.post} · </span>}
@@ -2673,21 +2673,41 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           <span style={cell}>{r.pModel !== null ? (r.pModel * 100).toFixed(0) + "%" : "—"}</span>
                           <span style={cell}>{r.pPlace !== null ? (r.pPlace * 100).toFixed(0) + "%" : "—"}</span>
                           <span style={cell}>{r.pShow !== null ? (r.pShow * 100).toFixed(0) + "%" : "—"}</span>
+                          {/* 2.16.0: scratch lives on the row, like the cancel on a Race Day line.
+                              Reversible, so a Scratch Watch horse that stays in can be put back. */}
+                          <button onClick={(e) => { e.stopPropagation(); toggleScratch(r.i); }} disabled={winnerMode}
+                            title={dim ? "Restore this horse" : "Scratch this horse"}
+                            style={{ background: "none", border: "none", color: dim ? "#8FC49F" : "#8FA396", cursor: winnerMode ? "default" : "pointer", fontSize: 13, padding: "2px 4px", opacity: winnerMode ? 0.25 : 1, lineHeight: 1 }}>
+                            {dim ? "\u21ba" : "\u2715"}
+                          </button>
                         </div>
                         {winnerMode && finishPicks.includes(r.i) && (() => {
                           const pos = finishPicks.indexOf(r.i);
-                          const fields = pos === 0 ? [["w1", "Win $"], ["p1", "Place $"], ["s1", "Show $"]]
-                            : pos === 1 ? [["p2", "Place $"], ["s2", "Show $"]]
-                            : [["s3", "Show $"]];
+                          // 2.15.4: the tote board reads in columns — $2 Win, $2 Place, $2 Show —
+                          // and a horse that ran second has an empty Win column, not a Place figure
+                          // shifted left under the Win header. Fixed slots, blanks where no pool paid.
+                          const slots = [pos === 0 ? "w1" : null, pos === 0 ? "p1" : pos === 1 ? "p2" : null,
+                            pos === 0 ? "s1" : pos === 1 ? "s2" : "s3"];
                           return (
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 10px 8px 68px", background: "rgba(227,201,140,0.06)" }}>
-                              <span style={{ fontSize: 10, color: "#D8CBA8", fontWeight: 700, letterSpacing: "0.08em", minWidth: 30 }}>{["1ST", "2ND", "3RD"][pos]}</span>
-                              {fields.map(([k, ph]) => (
-                                <input key={k} value={resultPays[k]} onChange={(e) => setResultPays((prev) => ({ ...prev, [k]: e.target.value }))}
-                                  placeholder={ph} inputMode="decimal" onClick={(e) => e.stopPropagation()}
-                                  style={{ background: LCD_BG, ...lcdFont, fontSize: 11, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 74, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
-                              ))}
-                              <span style={{ fontSize: 10, color: "#8FA396" }}>per $2, from the tote board — optional</span>
+                            <div style={{ padding: "4px 10px 8px 68px", background: "rgba(227,201,140,0.06)" }}>
+                              {pos === 0 && (
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
+                                  <span style={{ minWidth: 34 }} />
+                                  {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
+                                    <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8FA396", fontWeight: 700 }}>{hd}</span>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <span style={{ fontSize: 10, color: "#D8CBA8", fontWeight: 700, letterSpacing: "0.08em", minWidth: 34 }}>{["1ST", "2ND", "3RD"][pos]}</span>
+                                {slots.map((k, si) => (k === null
+                                  ? <span key={"blank" + si} style={{ width: 74 }} />
+                                  : <input key={k} value={resultPays[k]} onChange={(e) => setResultPays((prev) => ({ ...prev, [k]: e.target.value }))}
+                                      inputMode="decimal" onClick={(e) => e.stopPropagation()}
+                                      style={{ background: LCD_BG, ...lcdFont, fontSize: 11, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 74, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
+                                ))}
+                                {pos === 2 && <span style={{ fontSize: 10, color: "#8FA396" }}>per $2, from the tote board — optional</span>}
+                              </div>
                             </div>
                           );
                         })()}
@@ -2776,7 +2796,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
               {winnerMode && (
                 <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
-                  {/T/i.test(raceInfo.surface || "") && (
+                  {/turf/i.test(raceInfo.surface || "") && (
                     <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(227,201,140,0.35)" }}>
                       <button onClick={() => setOffTurf(!offTurf)}
                         style={{ background: offTurf ? GOLD : "transparent", color: offTurf ? "#3A2F17" : "#EFE8D5", border: "1px solid rgba(227,201,140,0.6)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -2887,11 +2907,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   )}
                 </div>
               )}
-              {scratchMode && (
-                <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
-                  Tap a horse to scratch it (tap again to restore). Chances re-spread over the remaining field.
-                </div>
-              )}
               {logMsg && !raceDone && (
                 <div style={{ background: "rgba(143,196,159,0.12)", border: "1px solid rgba(143,196,159,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
                   ✓ {logMsg}
@@ -2899,7 +2914,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                 <Key onClick={backFromRace}>Back</Key>
-                <Key onClick={() => { setScratchMode(!scratchMode); setWinnerMode(false); }}>{scratchMode ? "Done scratching" : "Scratch"}</Key>
                 <Key onClick={() => oddsSnapRef.current?.click()} disabled={busy}>{busy ? "Reading…" : "📸 Odds"}</Key>
                 <div style={{ flex: 1 }} />
                 {supaUrl && supaKey && (
