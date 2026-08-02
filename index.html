@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.3</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.4</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,10 +414,11 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.3";
+const APP_VERSION = "2.17.4";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const GREEN_DARK = "#0E2820";
+const KEYROW = { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", position: "sticky", top: 0, zIndex: 6, background: GREEN, padding: "10px 0 12px", margin: "0 0 14px", borderBottom: "1px solid rgba(255,255,255,0.10)" };
 const LCD_BG = "#96A08D";
 const LCD_INK = "#2A3328";
 const RED = "#B5442C";
@@ -2060,7 +2061,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
           <input ref={oddsSnapRef} type="file" accept="image/*" multiple onChange={(e) => handleOddsSnap(e.target.files)} style={{ display: "none" }} />
 
-          {raceIndex.length > 0 && step !== "start" && (
+          {raceIndex.length > 0 && step !== "start" && step !== "audit" && (
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
               {raceIndex.map((r) => {
                 const isActive = step === "results" && activeRace === r.raceNumber;
@@ -2129,6 +2130,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- SLIPS ---------- */}
           {step === "slips" && slipsView && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Betting slips — the table</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every ticket, face up. Live tickets can be cancelled; settled tickets are history.
@@ -2194,15 +2198,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                 ) : null;
               })()}
-              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- CARDS ---------- */}
           {step === "cards" && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
+                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
+              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
@@ -2241,16 +2246,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </button>
                 </div>
               ))}
-              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- AUDIT ---------- */}
           {step === "audit" && auditView && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setAuditView(null); setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
+              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>The audit — books vs. track</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every race date reconciled across cards, results, and tickets. Green means the day is closed clean.
@@ -2319,15 +2323,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   )}
                 </div>
               ))}
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                <Key onClick={() => { setAuditView(null); setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- TODAY ---------- */}
           {step === "today" && dayView && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
+              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Race Day — {dayView.date}</h2>
               <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px", lineHeight: 1.5 }}>
                 Eligible races from your uploaded cards, in post-time order. Tap one to open it.
@@ -2382,15 +2386,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 )}
                 </div>
               ))}
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- DAY SCAN ---------- */}
           {step === "scan" && dayScan && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
+                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
+              </div>
               {scanNote && (
                 <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
                   {scanNote}
@@ -2454,16 +2459,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                 );
               })}
-              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- RACE PICKER ---------- */}
           {step === "races" && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); setError(""); }}>Back</Key>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
                   {cardTitle || "Card"} — pick a race
@@ -2494,15 +2498,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </button>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); setError(""); }}>Back</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- REVIEW ---------- */}
           {step === "review" && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
+                <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
+                <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} — check the entries` : "Check the entries"}
@@ -2561,17 +2567,29 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </div>
               ))}
 
-              <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-                <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
-                <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
-                <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
-              </div>
             </div>
           )}
 
           {/* ---------- RESULTS ---------- */}
           {step === "results" && (
             <div>
+              <div style={KEYROW}>
+                <Key onClick={backFromRace}>Back</Key>
+                <Key onClick={() => oddsSnapRef.current?.click()} disabled={busy}>{busy ? "Reading…" : "📸 Odds"}</Key>
+                <div style={{ flex: 1 }} />
+                {supaUrl && supaKey && (
+                  <Key onClick={openBetSlip} disabled={busy}>
+                    {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
+                  </Key>
+                )}
+                {supaUrl && supaKey && (
+                  raceDone && !winnerMode
+                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
+                    : winnerMode && finishPicks.length >= 3
+                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
+                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                )}
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
@@ -2920,23 +2938,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   ✓ {logMsg}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
-                <Key onClick={backFromRace}>Back</Key>
-                <Key onClick={() => oddsSnapRef.current?.click()} disabled={busy}>{busy ? "Reading…" : "📸 Odds"}</Key>
-                <div style={{ flex: 1 }} />
-                {supaUrl && supaKey && (
-                  <Key onClick={openBetSlip} disabled={busy}>
-                    {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
-                  </Key>
-                )}
-                {supaUrl && supaKey && (
-                  raceDone && !winnerMode
-                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
-                    : winnerMode && finishPicks.length >= 3
-                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
-                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
-                )}
-              </div>
               <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
                 the machine would set. ODDS = the live board — the only thing you type. VALUE = WIN% × (ODDS+1) − 1.
