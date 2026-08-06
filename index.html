@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.10</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.11</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.10";
+const APP_VERSION = "2.17.11";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -433,7 +433,8 @@ function Key({ children, onClick, disabled, wide, red }) {
       style={{
         background: disabled ? "#3E5A4D" : red ? RED : GREEN, color: "#EFE8D5",
         border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999,
-        padding: wide ? "12px 22px" : "9px 16px",
+        padding: wide ? "0 24px" : "0 16px", minHeight: 44,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
         fontFamily: "Arial, sans-serif", fontSize: 12, fontWeight: 700,
         letterSpacing: "0.1em", textTransform: "uppercase",
         boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 3px rgba(0,0,0,0.35)",
