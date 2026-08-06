@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.8</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.9</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.8";
+const APP_VERSION = "2.17.9";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2059,6 +2059,24 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             ))}
           </div>
         )}
+          {step === "start" && showSettings && (
+              <div style={KEYROW}>
+                <Key onClick={() => setShowSettings(false)}>Back</Key>
+                {supaUrl && supaKey && (
+                  <React.Fragment>
+                    <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
+                      🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}
+                    </Key>
+                    <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
+                      🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}
+                    </Key>
+                    <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>
+                      🧾 Audit
+                    </Key>
+                  </React.Fragment>
+                )}
+              </div>
+          )}
           {step === "start" && !showSettings && (
               <div style={KEYROW}>
                 {supaUrl && supaKey
@@ -2154,26 +2172,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 After each race goes official, hit "Log result" and tap the winner — the full prediction snapshot is saved
                 to your hra_race_log table for future model tuning. The Anthropic key is only needed for PDF/photo reading.
               </p>
-              {supaUrl && supaKey && (
-                <div style={{ margin: "14px 0" }}>
-                  <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 8 }}>Day setup — load the night before, then live on Race Day</div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
-                      🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}
-                    </Key>
-                    <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
-                      🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}
-                    </Key>
-                    <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>
-                      🧾 Audit
-                    </Key>
-                  </div>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <Key onClick={() => setShowSettings(false)}>Back</Key>
-                <span style={{ fontSize: 11, color: "#6B6353" }}>Values save as you type — nothing to submit.</span>
-              </div>
+              <div style={{ fontSize: 11, color: "#6B6353", marginTop: 4 }}>Values save as you type — nothing to submit. Day-setup keys are on the keypad above.</div>
             </div>
           )}
 
@@ -2206,7 +2205,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => setSlipsDate(d)}
-                        style={{ background: slipsDate === d ? "#8A6D2F" : GREEN_DARK, color: slipsDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: slipsDate === d ? GREEN_DARK : "#EAE3CF", color: slipsDate === d ? "#F3EDDD" : "#4A4437", border: slipsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2277,7 +2276,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setCardsDate(d); bindStripToDate(d, savedCards, "CARDS ON FILE"); }}
-                        style={{ background: cardsDate === d ? "#8A6D2F" : GREEN_DARK, color: cardsDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: cardsDate === d ? GREEN_DARK : "#EAE3CF", color: cardsDate === d ? "#F3EDDD" : "#4A4437", border: cardsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2393,7 +2392,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                   {dayView.dates.map((d) => (
                     <button key={d} onClick={() => buildRaceCard(dayCards || [], d)} disabled={busy}
-                      style={{ background: d === dayView.ymd ? "#8A6D2F" : GREEN_DARK, color: d === dayView.ymd ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      style={{ background: d === dayView.ymd ? GREEN_DARK : "#EAE3CF", color: d === dayView.ymd ? "#F3EDDD" : "#4A4437", border: d === dayView.ymd ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       {ymdToDisplay(d)}
                     </button>
                   ))}
@@ -2460,7 +2459,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
-                        style={{ background: entriesDate === d ? "#8A6D2F" : GREEN_DARK, color: entriesDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: entriesDate === d ? GREEN_DARK : "#EAE3CF", color: entriesDate === d ? "#F3EDDD" : "#4A4437", border: entriesDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
