@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.6</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.7</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,9 +414,11 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.6";
+const APP_VERSION = "2.17.7";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
+const PAPER = "#F3EDDD";
+const INK = "#2E2A20";
 const GREEN_DARK = "#0E2820";
 const KEYROW = { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "6px 0 6px" };
 const LCD_BG = "#96A08D";
@@ -1995,7 +1997,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         {/* ===== Device faceplate ===== */}
         <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", boxShadow: "0 6px 18px rgba(0,0,0,0.3)" }}>
           <div style={{ width: 18, background: GREEN_DARK }} />
-          <div style={{ flex: 1, background: GOLD, padding: "16px 14px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, background: GOLD, padding: "14px 14px 8px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <div aria-live="polite"
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
@@ -2008,13 +2011,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · v{APP_VERSION}</div>
             </div>
-          </div>
-          <div style={{ width: 18, background: GREEN_DARK }} />
-        </div>
-
-        {/* ===== Device lower deck — race keys + keypad (hardware; never scrolls) ===== */}
-        <div style={{ background: GREEN, borderRadius: 10, marginTop: 12, padding: "12px 14px 8px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: "#EFE8D5", flex: "none" }}>
-        {raceIndex.length > 0 && step !== "start" && step !== "audit" && (
+            </div>
+        {(raceIndex.length > 0 && step !== "audit") ? (
           <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
             {raceIndex.map((r) => {
               const isActive = step === "results" && activeRace === r.raceNumber;
@@ -2026,8 +2024,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   title={offR ? (cardFlags.cancelled ? "Card cancelled — no racing" : "Did not run") : r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
                   style={{
                     flex: "0 0 auto", minWidth: 52, padding: "7px 10px", borderRadius: 8,
-                    border: isActive ? "1px solid #E3C98C" : "1px solid rgba(0,0,0,0.35)",
-                    background: !live ? "#243B31" : isActive ? GOLD : GREEN_DARK,
+                    border: isActive ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.35)",
+                    background: !live ? "rgba(14,40,32,0.55)" : isActive ? LCD_BG : GREEN_DARK,
                     color: !live ? "#6E8378" : isActive ? "#3A2F17" : "#EFE8D5",
                     fontFamily: "Arial, sans-serif", fontWeight: 700, fontSize: 13,
                     cursor: live && !busy ? "pointer" : "default", textAlign: "center",
@@ -2040,6 +2038,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </button>
               );
             })}
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 6, overflowX: "hidden", paddingBottom: 10, marginBottom: 8 }}>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} style={{ flex: "0 0 auto", minWidth: 52, height: 42, borderRadius: 8,
+                border: "1px solid rgba(58,47,23,0.35)", background: "rgba(58,47,23,0.14)",
+                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.25)" }} />
+            ))}
           </div>
         )}
           {step === "start" && !showSettings && (
@@ -2111,33 +2117,35 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 )}
               </div>
           )}
+          </div>
+          <div style={{ width: 18, background: GREEN_DARK }} />
         </div>
 
         {/* ===== Body ===== */}
-        <div style={{ background: GREEN, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: "#EFE8D5", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ background: PAPER, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
           {showSettings && (
-            <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, marginBottom: 16 }}>
-              <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 10 }}>Settings — stored only in this browser</div>
+            <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+              <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 10 }}>Settings — stored only in this browser</div>
               <label style={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 420 }}>
-                <span style={{ ...labelFont, color: "#D8CBA8" }}>Anthropic API key (PDF reading + the race advisor)</span>
+                <span style={{ ...labelFont, color: "#7A6A45" }}>Anthropic API key (PDF reading + the race advisor)</span>
                 <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..."
                   style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
               </label>
-              <div style={{ ...labelFont, color: "#D8CBA8", margin: "12px 0 6px" }}>Supabase results logging</div>
+              <div style={{ ...labelFont, color: "#7A6A45", margin: "12px 0 6px" }}>Supabase results logging</div>
               <div style={{ display: "grid", gap: 8, maxWidth: 420 }}>
                 <input value={supaUrl} onChange={(e) => setSupaUrl(e.target.value)} placeholder="https://xxxx.supabase.co"
                   style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
                 <input type="password" value={supaKey} onChange={(e) => setSupaKey(e.target.value)} placeholder="Supabase anon key (not service_role)"
                   style={{ background: LCD_BG, ...lcdFont, fontSize: 13, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
               </div>
-              <p style={{ fontSize: 10, color: "#B9C8BB", margin: "8px 0 10px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 10, color: "#6B6353", margin: "8px 0 10px", lineHeight: 1.5 }}>
                 After each race goes official, hit "Log result" and tap the winner — the full prediction snapshot is saved
                 to your hra_race_log table for future model tuning. The Anthropic key is only needed for PDF/photo reading.
               </p>
               {supaUrl && supaKey && (
                 <div style={{ margin: "14px 0" }}>
-                  <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Day setup — load the night before, then live on Race Day</div>
+                  <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 8 }}>Day setup — load the night before, then live on Race Day</div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
                       🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}
@@ -2153,7 +2161,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <Key onClick={() => setShowSettings(false)}>Back</Key>
-                <span style={{ fontSize: 11, color: "#B9C8BB" }}>Values save as you type — nothing to submit.</span>
+                <span style={{ fontSize: 11, color: "#6B6353" }}>Values save as you type — nothing to submit.</span>
               </div>
             </div>
           )}
@@ -2164,11 +2172,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           <input ref={oddsSnapRef} type="file" accept="image/*" multiple onChange={(e) => handleOddsSnap(e.target.files)} style={{ display: "none" }} />
 
           {cardTitle && step !== "start" && (
-            <div style={{ ...labelFont, color: "#B9C8BB", marginBottom: 10 }}>{cardTitle}</div>
+            <div style={{ ...labelFont, color: "#6B6353", marginBottom: 10 }}>{cardTitle}</div>
           )}
 
           {error && (
-            <div style={{ background: "#3E1F16", border: `1px solid ${RED}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
+            <div style={{ background: "#F4D9D2", border: `1px solid ${RED}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
               {error}
             </div>
           )}
@@ -2177,16 +2185,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "start" && !showSettings && (
             <div>
               <div style={{ textAlign: "center", margin: "10px 0 26px" }}>
-                <div style={{ height: 1, maxWidth: 220, margin: "0 auto 20px", background: "#8FA396", opacity: 0.45 }} />
-                <div style={{ fontSize: 15, lineHeight: 1.6, fontStyle: "italic", color: "#CFDCCF" }}>
+                <div style={{ height: 1, maxWidth: 220, margin: "0 auto 20px", background: "#8B8168", opacity: 0.45 }} />
+                <div style={{ fontSize: 15, lineHeight: 1.6, fontStyle: "italic", color: "#4A4437" }}>
                   For the columnist they called Clyde the Winner.
                 </div>
-                <div style={{ fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase", color: "#8FA396", marginTop: 12 }}>
+                <div style={{ fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase", color: "#8B8168", marginTop: 12 }}>
                   The Berkeley Gazette · Golden Gate Fields · 1970s
                 </div>
               </div>
 
-              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 16, lineHeight: 1.5 }}>
                 Qualifying races: thoroughbreds 3 and up, no maidens, 6 furlongs or more.
               </p>
             </div>
@@ -2196,7 +2204,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "slips" && slipsView && (
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Betting slips — the table</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every ticket, face up. Live tickets can be cancelled; settled tickets are history.
               </p>
               {(() => {
@@ -2205,7 +2213,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => setSlipsDate(d)}
-                        style={{ background: slipsDate === d ? "#E3C98C" : GREEN_DARK, color: slipsDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: slipsDate === d ? "#8A6D2F" : GREEN_DARK, color: slipsDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2213,7 +2221,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 ) : null;
               })()}
               {slipsView.length === 0 && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
                   No tickets yet — punch one from a race with 🎟 Bet.
                 </div>
               )}
@@ -2254,7 +2262,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 const pendingPayout = settled.filter((b) => b.won && (b.payout === null || b.payout === undefined)).length;
                 const net = returned - settled.reduce((a, b) => a + Number(b.amount || 0), 0);
                 return shown.length > 0 ? (
-                  <div style={{ fontSize: 12, color: "#CFDCCF", marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: "#4A4437", marginBottom: 12 }}>
                     Staked ${staked.toFixed(2)} · Returned ${returned.toFixed(2)} · Net on settled {net >= 0 ? "+" : ""}${net.toFixed(2)}
                     {pendingPayout ? ` · ${pendingPayout} winner${pendingPayout > 1 ? "s" : ""} awaiting payout entry` : ""}
                   </div>
@@ -2267,7 +2275,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "cards" && (
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 12px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
               {(() => {
@@ -2276,7 +2284,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setCardsDate(d); bindStripToDate(d, savedCards, "CARDS ON FILE"); }}
-                        style={{ background: cardsDate === d ? "#E3C98C" : GREEN_DARK, color: cardsDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: cardsDate === d ? "#8A6D2F" : GREEN_DARK, color: cardsDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2284,22 +2292,22 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 ) : null;
               })()}
               {(!savedCards || savedCards.length === 0) && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
                   Nothing saved yet — tap "Upload Cards" below with a Brisnet data file.
                 </div>
               )}
               {(savedCards || []).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
                 <div key={c.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                   <button onClick={() => loadSavedCard(c.id, undefined, "CARDS ON FILE")} disabled={busy}
-                    style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: "#EFE8D5", cursor: "pointer", fontSize: 13, textAlign: "left", opacity: c.cancelled ? 0.55 : 1 }}>
+                    style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: "#EAE3CF", color: "#2E2A20", cursor: "pointer", fontSize: 13, textAlign: "left", opacity: c.cancelled ? 0.55 : 1 }}>
                     <b>{c.cancelled ? "\u25e6" : "\u2713"} {c.title || (c.track + " " + c.race_date)}</b>
-                    <span style={{ color: c.cancelled ? "#E8B98A" : "#B9C8BB", fontSize: 11, whiteSpace: "nowrap" }}>
+                    <span style={{ color: c.cancelled ? "#9C5F1E" : "#6B6353", fontSize: 11, whiteSpace: "nowrap" }}>
                       {c.cancelled ? "no racing" : (c.updated_at || "").slice(0, 10)}
                     </span>
                   </button>
                   <button onClick={() => toggleCardCancelled(c, !c.cancelled)} disabled={busy}
                     title={c.cancelled ? "Restore this card" : "Mark this card cancelled \u2014 no racing"}
-                    style={{ width: 44, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK, color: c.cancelled ? "#9CC79C" : "#E8938A", cursor: "pointer", fontSize: 15, fontWeight: 700 }}>
+                    style={{ width: 44, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: "#EAE3CF", color: c.cancelled ? "#2F7A46" : "#A83226", cursor: "pointer", fontSize: 15, fontWeight: 700 }}>
                     {c.cancelled ? "\u21ba" : "\u2715"}
                   </button>
                 </div>
@@ -2311,58 +2319,58 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "audit" && auditView && (
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>The audit — books vs. track</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every race date reconciled across cards, results, and tickets. Green means the day is closed clean.
               </p>
               {auditView.length === 0 && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB" }}>
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353" }}>
                   Nothing on the books yet.
                 </div>
               )}
               {auditView.map((day) => (
-                <div key={day.date} style={{ background: GREEN_DARK, borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: day.allOff ? "1px solid rgba(185,200,187,0.35)" : day.clean ? "1px solid rgba(122,163,122,0.6)" : "1px solid rgba(0,0,0,0.35)" }}>
+                <div key={day.date} style={{ background: "#EAE3CF", borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: day.allOff ? "1px solid rgba(0,0,0,0.15)" : day.clean ? "1px solid rgba(122,163,122,0.6)" : "1px solid rgba(0,0,0,0.35)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
                     <b style={{ fontSize: 14, letterSpacing: "0.06em" }}>{day.date.length === 8 ? day.date.slice(4, 6) + "/" + day.date.slice(6, 8) + "/" + day.date.slice(0, 4) : day.date}</b>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: day.allOff ? "#B9C8BB" : day.clean ? "#9CC79C" : GOLD }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: day.allOff ? "#6B6353" : day.clean ? "#2F7A46" : GOLD }}>
                       {day.allOff ? "\u25e6 NO RACING" : day.clean ? "\u2713 CLOSED CLEAN" : "OPEN ITEMS"}
                     </span>
                   </div>
                   {day.tracks.length === 0 && (
-                    <div style={{ fontSize: 12, color: "#E8B98A" }}>No card on file for this date — {day.orphans} ticket(s) and/or log rows with nothing to reconcile against.</div>
+                    <div style={{ fontSize: 12, color: "#9C5F1E" }}>No card on file for this date — {day.orphans} ticket(s) and/or log rows with nothing to reconcile against.</div>
                   )}
                   {day.tracks.map((t) => (
-                    <div key={t.track} style={{ padding: "7px 0", borderTop: "1px solid rgba(255,255,255,0.08)", fontSize: 12, lineHeight: 1.6 }}>
+                    <div key={t.track} style={{ padding: "7px 0", borderTop: "1px solid rgba(0,0,0,0.09)", fontSize: 12, lineHeight: 1.6 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <b style={{ opacity: t.cardOff ? 0.6 : 1 }}>{t.track}</b>
-                        <span style={{ color: t.cardOff ? "#B9C8BB" : t.clean ? "#9CC79C" : "#B9C8BB" }}>
+                        <span style={{ color: t.cardOff ? "#6B6353" : t.clean ? "#2F7A46" : "#6B6353" }}>
                           {t.cardOff ? "card cancelled \u2014 no racing" : `${t.logged}/${t.elig} eligible races logged \u00b7 ${t.tickets} ticket${t.tickets === 1 ? "" : "s"}`}
                         </span>
                       </div>
                       {!t.cardOff && t.notRun.length > 0 && (
-                        <div style={{ color: "#B9C8BB" }}>Did not run: {t.notRun.map((n) => "R" + n).join(", ")}</div>
+                        <div style={{ color: "#6B6353" }}>Did not run: {t.notRun.map((n) => "R" + n).join(", ")}</div>
                       )}
                       {t.unlogged.length > 0 && (
-                        <div style={{ color: "#E8938A" }}>{t.unlogged.length} race{t.unlogged.length === 1 ? "" : "s"} unlogged: {t.unlogged.map((n) => "R" + n).join(", ")}</div>
+                        <div style={{ color: "#A83226" }}>{t.unlogged.length} race{t.unlogged.length === 1 ? "" : "s"} unlogged: {t.unlogged.map((n) => "R" + n).join(", ")}</div>
                       )}
                       {t.missingPay.length > 0 && (
-                        <div style={{ color: "#E8B98A" }}>Winner missing payout: {t.missingPay.map((n) => "R" + n).join(", ")}</div>
+                        <div style={{ color: "#9C5F1E" }}>Winner missing payout: {t.missingPay.map((n) => "R" + n).join(", ")}</div>
                       )}
                       {t.unsettled > 0 && (
-                        <div style={{ color: "#E8938A" }}>{t.unsettled} ticket{t.unsettled === 1 ? "" : "s"} not settled</div>
+                        <div style={{ color: "#A83226" }}>{t.unsettled} ticket{t.unsettled === 1 ? "" : "s"} not settled</div>
                       )}
                       {t.stray.length > 0 && (
-                        <div style={{ color: "#E8938A" }}>Tickets on non-eligible races: {t.stray.map((n) => "R" + n).join(", ")}</div>
+                        <div style={{ color: "#A83226" }}>Tickets on non-eligible races: {t.stray.map((n) => "R" + n).join(", ")}</div>
                       )}
                       {t.clean && t.tickets > 0 && (
-                        <div style={{ color: "#B9C8BB" }}>Settled: staked ${t.staked.toFixed(2)} → returned ${t.returned.toFixed(2)}</div>
+                        <div style={{ color: "#6B6353" }}>Settled: staked ${t.staked.toFixed(2)} → returned ${t.returned.toFixed(2)}</div>
                       )}
                       {t.dupRaces && t.dupRaces.length > 0 && (
-                        <div style={{ color: "#E8938A" }}>
+                        <div style={{ color: "#A83226" }}>
                           Duplicate log rows: {t.dupRows} extra on race{t.dupRaces.length === 1 ? " " : "s "}{t.dupRaces.join(", ")} — the refit would count {t.dupRaces.length === 1 ? "it" : "them"} twice
                         </div>
                       )}
                       {(t.noRating > 0 || t.noOdds > 0) ? (
-                        <div style={{ color: "#E8B98A" }}>
+                        <div style={{ color: "#9C5F1E" }}>
                           Calibration gaps:{t.noRating > 0 ? ` ${t.noRating} row${t.noRating === 1 ? "" : "s"} missing rating/model %` : ""}{t.noRating > 0 && t.noOdds > 0 ? " ·" : ""}{t.noOdds > 0 ? ` ${t.noOdds} row${t.noOdds === 1 ? "" : "s"} missing odds` : ""}
                         </div>
                       ) : t.rows > 0 ? (
@@ -2371,7 +2379,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     </div>
                   ))}
                   {day.orphans > 0 && day.tracks.length > 0 && (
-                    <div style={{ fontSize: 12, color: "#E8938A", paddingTop: 6 }}>{day.orphans} orphaned ticket(s) — no card on file for their track</div>
+                    <div style={{ fontSize: 12, color: "#A83226", paddingTop: 6 }}>{day.orphans} orphaned ticket(s) — no card on file for their track</div>
                   )}
                   {day.entCount > 0 && (
                     <div style={{ fontSize: 10, color: "#7E9587", paddingTop: 4 }}>{day.entCount} entries scan{day.entCount === 1 ? "" : "s"} on file</div>
@@ -2385,54 +2393,54 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "today" && dayView && (
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Race Day — {dayView.date}</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 10px", lineHeight: 1.5 }}>
                 Eligible races from your uploaded cards, in post-time order. Tap one to open it.
               </p>
               {dayView.dates.length > 1 && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                   {dayView.dates.map((d) => (
                     <button key={d} onClick={() => buildRaceCard(dayCards || [], d)} disabled={busy}
-                      style={{ background: d === dayView.ymd ? "#E3C98C" : GREEN_DARK, color: d === dayView.ymd ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      style={{ background: d === dayView.ymd ? "#8A6D2F" : GREEN_DARK, color: d === dayView.ymd ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       {ymdToDisplay(d)}
                     </button>
                   ))}
                 </div>
               )}
               {dayView.items.length === 0 && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
                   No eligible races on this date's cards.
                 </div>
               )}
               {dayView.items.map((it, ii) => (
                 <div key={ii} style={{ display: "flex", gap: 6, marginBottom: 5 }}>
                 <button onClick={() => { raceOriginRef.current = "today"; loadSavedCard(it.cardId, it.raceNumber); }} disabled={busy || it.cancelled}
-                  style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: GREEN_DARK, color: "#EFE8D5", cursor: it.cancelled ? "default" : "pointer", textAlign: "left", fontSize: 13, opacity: it.cancelled ? 0.5 : 1 }}>
+                  style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: "#EAE3CF", color: "#2E2A20", cursor: it.cancelled ? "default" : "pointer", textAlign: "left", fontSize: 13, opacity: it.cancelled ? 0.5 : 1 }}>
                   <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 7px", fontSize: 12, minWidth: 62, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
                     {it.postTime || "—"}
                   </span>
                   <b style={{ minWidth: 66 }}>{it.track} R{it.raceNumber}</b>
-                  <span style={{ minWidth: 66, color: "#CFDCCF" }}>{it.distanceFurlongs}f {it.surface}</span>
+                  <span style={{ minWidth: 66, color: "#4A4437" }}>{it.distanceFurlongs}f {it.surface}</span>
                   <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.type}{it.horseCount ? ` · ${it.horseCount} horses` : ""}{it.scrCount ? ` · ${it.scrCount} scr` : ""}</span>
                   {(() => {
                     const bets = it.bets || [];
-                    if (it.cancelled) return <span style={{ fontSize: 11, color: "#E8B98A", whiteSpace: "nowrap" }}>{it.cardOff ? "Card cancelled" : "No race"}</span>;
+                    if (it.cancelled) return <span style={{ fontSize: 11, color: "#9C5F1E", whiteSpace: "nowrap" }}>{it.cardOff ? "Card cancelled" : "No race"}</span>;
                     if (it.run) {
-                      if (!bets.length) return <span style={{ fontSize: 11, color: "#8FA396", whiteSpace: "nowrap" }}>Race Run ✓</span>;
+                      if (!bets.length) return <span style={{ fontSize: 11, color: "#8B8168", whiteSpace: "nowrap" }}>Race Run ✓</span>;
                       const settled = bets.filter((b) => b.settled);
                       const net = settled.reduce((a, b) => a + Number(b.payout || 0) - Number(b.amount || 0), 0);
                       const pend = settled.some((b) => b.won && (b.payout === null || b.payout === undefined));
-                      if (settled.length && settled.every((b) => !b.won && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0)) return <span style={{ fontSize: 11, fontWeight: 700, color: "#B9C8BB", whiteSpace: "nowrap" }}>Refunded · scratched</span>;
-                      if (settled.some((b) => b.won)) return <span style={{ fontSize: 11, fontWeight: 700, color: "#8FC49F", whiteSpace: "nowrap" }}>{pend ? "Won · payout?" : `Won ${net >= 0 ? "+" : "−"}$${Math.abs(net).toFixed(2)}`}</span>;
+                      if (settled.length && settled.every((b) => !b.won && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0)) return <span style={{ fontSize: 11, fontWeight: 700, color: "#6B6353", whiteSpace: "nowrap" }}>Refunded · scratched</span>;
+                      if (settled.some((b) => b.won)) return <span style={{ fontSize: 11, fontWeight: 700, color: "#2F7A46", whiteSpace: "nowrap" }}>{pend ? "Won · payout?" : `Won ${net >= 0 ? "+" : "−"}$${Math.abs(net).toFixed(2)}`}</span>;
                       return <span style={{ fontSize: 11, fontWeight: 700, color: "#D08770", whiteSpace: "nowrap" }}>Lost −${Math.abs(net).toFixed(2)}</span>;
                     }
-                    if (bets.length) return <span style={{ fontSize: 11, fontWeight: 700, color: "#E3C98C", whiteSpace: "nowrap" }}>Bet Placed ({bets.length})</span>;
+                    if (bets.length) return <span style={{ fontSize: 11, fontWeight: 700, color: "#8A6D2F", whiteSpace: "nowrap" }}>Bet Placed ({bets.length})</span>;
                     return null;
                   })()}
                 </button>
                 {!it.cardOff && (
                   <button onClick={() => toggleRaceCancelled(it, !it.cancelled)} disabled={busy}
                     title={it.cancelled ? "Restore this race" : "Mark this race as not run"}
-                    style={{ width: 40, borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: GREEN_DARK, color: it.cancelled ? "#9CC79C" : "#8FA396", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
+                    style={{ width: 40, borderRadius: 8, border: "1px solid rgba(0,0,0,0.3)", background: "#EAE3CF", color: it.cancelled ? "#2F7A46" : "#8B8168", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
                     {it.cancelled ? "\u21ba" : "\u2715"}
                   </button>
                 )}
@@ -2445,12 +2453,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "scan" && dayScan && (
             <div>
               {scanNote && (
-                <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ background: "rgba(138,109,47,0.12)", border: "1px solid rgba(138,109,47,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
                   {scanNote}
                 </div>
               )}
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Entries — shopping list</h2>
-              <p style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 14px", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
               </p>
               {(() => {
@@ -2459,7 +2467,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
-                        style={{ background: entriesDate === d ? "#E3C98C" : GREEN_DARK, color: entriesDate === d ? "#3A2F17" : "#CFDCCF", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: entriesDate === d ? "#8A6D2F" : GREEN_DARK, color: entriesDate === d ? "#3A2F17" : "#4A4437", border: "1px solid rgba(0,0,0,0.35)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2467,7 +2475,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 ) : null;
               })()}
               {dayScan.length === 0 && (
-                <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 14, fontSize: 13, color: "#B9C8BB", marginBottom: 10 }}>
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
                   Nothing on file yet — tap "Upload Entries" with saved entries-page PDFs.
                 </div>
               )}
@@ -2475,20 +2483,20 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 const ok = (t.races || []).filter((r) => r.ok);
                 const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && (t.code ? c.track === t.code : trackMatches(c.track, t.track)))) || null;
                 return (
-                  <div key={ti} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                  <div key={ti} style={{ background: "#EAE3CF", borderRadius: 8, padding: 12, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                      <b style={{ fontSize: 14 }}>{t.track}{t.dateStr ? <span style={{ fontWeight: 400, color: "#B9C8BB", fontSize: 12 }}> · {t.dateStr}</span> : null}</b>
-                      <span style={{ fontSize: 11, color: owned ? "#8FC49F" : ok.length ? "#E3C98C" : "#8FA396" }}>
+                      <b style={{ fontSize: 14 }}>{t.track}{t.dateStr ? <span style={{ fontWeight: 400, color: "#6B6353", fontSize: 12 }}> · {t.dateStr}</span> : null}</b>
+                      <span style={{ fontSize: 11, color: owned ? "#2F7A46" : ok.length ? "#8A6D2F" : "#8B8168" }}>
                         {t.error ? t.error : owned ? (
                           <span>
                             {ok.length} of {t.races.length} qualify —{" "}
-                            <span style={{ color: "#8FC49F", fontWeight: 700, fontSize: 11 }}>✓ card on file</span>
+                            <span style={{ color: "#2F7A46", fontWeight: 700, fontSize: 11 }}>✓ card on file</span>
                           </span>
                         ) : ok.length ? (
                           <span>
                             {ok.length} of {t.races.length} qualify —{" "}
                             <a href="https://www.brisnet.com/product/data-files" target="_blank" rel="noopener noreferrer"
-                              style={{ color: "#E3C98C", fontWeight: 700, textDecoration: "underline" }}>
+                              style={{ color: "#8A6D2F", fontWeight: 700, textDecoration: "underline" }}>
                               buy this card ↗
                             </a>
                           </span>
@@ -2496,7 +2504,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       </span>
                     </div>
                     {(t.races || []).map((r) => (
-                      <div key={r.raceNumber} style={{ display: "flex", gap: 10, fontSize: 12, padding: "3px 0", color: r.ok ? "#EFE8D5" : "#6E8378", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                      <div key={r.raceNumber} style={{ display: "flex", gap: 10, fontSize: 12, padding: "3px 0", color: r.ok ? "#2E2A20" : "#6E8378", borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
                         <span style={{ minWidth: 30, fontWeight: 700 }}>R{r.raceNumber}</span>
                         <span style={{ minWidth: 62 }}>{r.postTime || "—"}</span>
                         <span style={{ minWidth: 70 }}>{r.distanceFurlongs}f {r.surface}</span>
@@ -2517,14 +2525,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
                   {cardTitle || "Card"} — pick a race
                 </h2>
-                <span style={{ fontSize: 11, color: "#B9C8BB" }}>Greyed races don't meet the 1979 rules.</span>
+                <span style={{ fontSize: 11, color: "#6B6353" }}>Greyed races don't meet the 1979 rules.</span>
               </div>
               <div style={{ marginTop: 12 }}>
                 {raceIndex.map((r) => (
                   <button key={r.raceNumber} onClick={() => pickRace(r)} disabled={!r.ok || busy}
                     style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
                       marginBottom: 8, borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", textAlign: "left",
-                      background: r.ok ? GREEN_DARK : "#243B31", color: r.ok ? "#EFE8D5" : "#8FA396",
+                      background: r.ok ? GREEN_DARK : "#243B31", color: r.ok ? "#2E2A20" : "#8B8168",
                       cursor: r.ok && !busy ? "pointer" : "default", opacity: busy ? 0.7 : 1 }}>
                     <span style={{ ...lcdFont, background: r.ok ? LCD_BG : "#7C857A", borderRadius: 6, padding: "4px 9px", fontSize: 15, minWidth: 34, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }}>
                       {r.raceNumber}
@@ -2533,7 +2541,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       <span style={{ fontWeight: 700, fontSize: 13 }}>
                         {r.distanceFurlongs}f {r.surface} · {r.type}
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: r.ok ? "#B9C8BB" : "#7E948A", marginTop: 2 }}>
+                      <span style={{ display: "block", fontSize: 11, color: r.ok ? "#6B6353" : "#7E948A", marginTop: 2 }}>
                         {r.ok
                           ? `Purse $${Number(r.purse || 0).toLocaleString()}${r.horseCount ? ` · ${r.horseCount} horses` : ""} — tap to analyze`
                           : `Skipped: ${r.reason}`}
@@ -2553,16 +2561,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} — check the entries` : "Check the entries"}
                 </h2>
-                <span style={{ fontSize: 11, color: "#B9C8BB" }}>Reading a racing form is hard — fix anything the machine got wrong.</span>
+                <span style={{ fontSize: 11, color: "#6B6353" }}>Reading a racing form is hard — fix anything the machine got wrong.</span>
               </div>
 
-              <div style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 12 }}>
-                <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 8 }}>Today's race</div>
+              <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 12, marginTop: 12 }}>
+                <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 8 }}>Today's race</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
                   <Field label="Distance (furlongs)" value={raceInfo.distanceFurlongs} onChange={(v) => setRaceInfo({ ...raceInfo, distanceFurlongs: v })} />
                   <Field label="Purse ($)" value={raceInfo.purse} onChange={(v) => setRaceInfo({ ...raceInfo, purse: v })} />
                   <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <span style={{ ...labelFont, color: "#D8CBA8" }}>Speed figure scale</span>
+                    <span style={{ ...labelFont, color: "#7A6A45" }}>Speed figure scale</span>
                     <select value={speedScale} onChange={(e) => setSpeedScale(e.target.value)}
                       style={{ background: LCD_BG, ...lcdFont, fontSize: 14, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 6, padding: "8px 9px" }}>
                       <option value="beyer">Beyer (modern)</option>
@@ -2573,12 +2581,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
 
               {horses.map((h, i) => (
-                <div key={i} style={{ background: GREEN_DARK, borderRadius: 8, padding: 12, marginTop: 12 }}>
+                <div key={i} style={{ background: "#EAE3CF", borderRadius: 8, padding: 12, marginTop: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <input value={h.name} placeholder={`Horse ${i + 1} name`} onChange={(e) => updateHorse(i, "name", e.target.value)}
-                      style={{ background: "transparent", border: "none", borderBottom: "1px solid #4A6B5A", color: "#EFE8D5", fontSize: 15, fontWeight: 700, padding: "2px 0", width: "60%" }} />
+                      style={{ background: "transparent", border: "none", borderBottom: "1px solid #4A6B5A", color: "#2E2A20", fontSize: 15, fontWeight: 700, padding: "2px 0", width: "60%" }} />
                     <button onClick={() => setHorses(horses.filter((_, j) => j !== i))}
-                      style={{ background: "none", border: "none", color: "#B9C8BB", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+                      style={{ background: "none", border: "none", color: "#6B6353", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
                       remove
                     </button>
                   </div>
@@ -2594,7 +2602,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                   {["lastRace", "priorRace"].map((rk) => (
                     <div key={rk} style={{ marginTop: 10 }}>
-                      <div style={{ ...labelFont, color: "#D8CBA8", marginBottom: 6 }}>{rk === "lastRace" ? "Last race" : "Race before that"}</div>
+                      <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 6 }}>{rk === "lastRace" ? "Last race" : "Race before that"}</div>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))", gap: 8 }}>
                         <Field label="Finish posn" value={h[rk].finishPosition} onChange={(v) => updateHorse(i, `${rk}.finishPosition`, v)} />
                         <Field label="L.E.B. 1st call" value={h[rk].lengthsBehindFirstCall} onChange={(v) => updateHorse(i, `${rk}.lengthsBehindFirstCall`, v)} />
@@ -2619,22 +2627,22 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </h2>
               </div>
               {!loggedRaces[num(raceInfo.raceNumber)] && (claudeRec || claudeThinking || claudeErr) && (
-                <div style={{ background: "rgba(227,201,140,0.08)", border: "1px solid rgba(227,201,140,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
+                <div style={{ background: "rgba(138,109,47,0.08)", border: "1px solid rgba(138,109,47,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
                   {claudeErr && !claudeRec && !claudeThinking ? (
-                    <span style={{ color: "#B9C8BB" }}>
+                    <span style={{ color: "#6B6353" }}>
                       🤖 {claudeErr}{" "}
                       <button onClick={() => { setClaudeErr(null); scheduleAsk(0); }}
-                        style={{ background: "none", border: "none", padding: 0, color: "#E3C98C", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>
+                        style={{ background: "none", border: "none", padding: 0, color: "#8A6D2F", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>
                         Re-read
                       </button>
                     </span>
                   ) : !claudeRec && claudeThinking ? (
-                    <span style={{ color: "#B9C8BB" }}>🤖 Reading the board…</span>
+                    <span style={{ color: "#6B6353" }}>🤖 Reading the board…</span>
                   ) : (
                     <span>
                       {claudeRec.context && <span style={{ display: "block" }}>{claudeRec.context}</span>}
                       {claudeRec.why && <span style={{ display: "block", marginTop: 4 }}>🤖 {claudeRec.why}{claudeThinking ? " …" : ""}</span>}
-                      <span style={{ display: "block", fontSize: 10, color: "#B9C8BB", marginTop: 5 }}>
+                      <span style={{ display: "block", fontSize: 10, color: "#6B6353", marginTop: 5 }}>
                         Claude's read of the machine's numbers — refreshes as the board changes. An interpretation, not betting advice.
                       </span>
                     </span>
@@ -2644,33 +2652,33 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
 
               {raceExtras.sel && (
-                <div style={{ fontSize: 11, color: "#B9C8BB", margin: "0 0 10px" }}>
+                <div style={{ fontSize: 11, color: "#6B6353", margin: "0 0 10px" }}>
                   Track handicapper's picks: {raceExtras.sel}
                 </div>
               )}
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 526 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#D8CBA8", textAlign: "center" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#7A6A45", textAlign: "center" }}>
                     <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                   {displayed.map((r, di) => {
                     const isBest = !loggedRaces[num(raceInfo.raceNumber)] && bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0 && ["WIN", "PLACE", "SHOW"].includes(verdict.action);
-                    const edgeColor = r.edge === null ? "#8FA396" : r.edge > 0.1 ? "#E3C98C" : r.edge > 0 ? "#CFDCCF" : "#8FA396";
+                    const edgeColor = r.edge === null ? "#8B8168" : r.edge > 0.1 ? "#8A6D2F" : r.edge > 0 ? "#4A4437" : "#8B8168";
                     const dim = r.scratched;
-                    const cell = { fontSize: 12, color: "#CFDCCF", fontVariantNumeric: "tabular-nums", textAlign: "center" };
+                    const cell = { fontSize: 12, color: "#4A4437", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
-                      <div key={r.i} style={{ background: GREEN_DARK, borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(227,201,140,0.6)" : "1px solid transparent" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(227,201,140,0.06)" : "none" }}>
+                      <div key={r.i} style={{ background: "#EAE3CF", borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(138,109,47,0.6)" : "1px solid transparent" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(138,109,47,0.06)" : "none" }}>
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
                           <button onClick={() => (winnerMode ? (!dim && pickFinish(r)) : setExpanded(expanded === r.i ? null : r.i))}
                             tabIndex={-1}
-                            style={{ background: "none", border: "none", color: "#EFE8D5", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
-                            {r.post && <span style={{ fontWeight: 400, color: "#B9C8BB" }}>{r.post} · </span>}
+                            style={{ background: "none", border: "none", color: "#2E2A20", cursor: "pointer", textAlign: "left", padding: 0, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: dim ? "line-through" : "none" }}>
+                            {r.post && <span style={{ fontWeight: 400, color: "#6B6353" }}>{r.post} · </span>}
                             {r.name}{isBest ? " ★" : ""}
                             {winnerMode && finishPicks.includes(r.i) && (
-                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#8FC49F", borderRadius: 4, padding: "1px 5px" }}>
+                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#2F7A46", borderRadius: 4, padding: "1px 5px" }}>
                                 {["1ST", "2ND", "3RD"][finishPicks.indexOf(r.i)]}
                               </span>
                             )}
@@ -2678,16 +2686,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                               const fin = (loggedRaces[num(raceInfo.raceNumber)] || {}).finish || [];
                               const fi = fin.findIndex((h) => String(h).toUpperCase() === String(r.name).toUpperCase());
                               return fi >= 0 ? (
-                                <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#8FC49F", borderRadius: 4, padding: "1px 5px" }}>
+                                <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#2F7A46", borderRadius: 4, padding: "1px 5px" }}>
                                   {["1ST", "2ND", "3RD"][fi]}
                                 </span>
                               ) : null;
                             })()}
                             {!loggedRaces[num(raceInfo.raceNumber)] && raceWatch.some((w) => w.horse.toUpperCase() === String(r.name).toUpperCase()) && (
-                              <span title="Brisnet Scratch Watch — likely scratch" style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: "#3A2F17", background: "#E3C98C", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>SW</span>
+                              <span title="Brisnet Scratch Watch — likely scratch" style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: "#3A2F17", background: "#8A6D2F", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>SW</span>
                             )}
                           </button>
-                          <span style={{ ...cell, color: dim ? "#8FA396" : "#EFE8D5", fontWeight: 700 }}>
+                          <span style={{ ...cell, color: dim ? "#8B8168" : "#2E2A20", fontWeight: 700 }}>
                             {r.fair !== null ? decimalToBoard(r.fair) : "—"}
                           </span>
                           {dim ? <span style={cell}>—</span> : (
@@ -2726,7 +2734,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                               Reversible, so a Scratch Watch horse that stays in can be put back. */}
                           <button onClick={(e) => { e.stopPropagation(); toggleScratch(r.i); }} disabled={winnerMode}
                             title={dim ? "Restore this horse" : "Scratch this horse"}
-                            style={{ background: "none", border: "none", color: dim ? "#8FC49F" : "#8FA396", cursor: winnerMode ? "default" : "pointer", fontSize: 13, padding: "2px 4px", opacity: winnerMode ? 0.25 : 1, lineHeight: 1 }}>
+                            style={{ background: "none", border: "none", color: dim ? "#2F7A46" : "#8B8168", cursor: winnerMode ? "default" : "pointer", fontSize: 13, padding: "2px 4px", opacity: winnerMode ? 0.25 : 1, lineHeight: 1 }}>
                             {dim ? "\u21ba" : "\u2715"}
                           </button>
                         </div>
@@ -2738,24 +2746,24 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           const slots = [pos === 0 ? "w1" : null, pos === 0 ? "p1" : pos === 1 ? "p2" : null,
                             pos === 0 ? "s1" : pos === 1 ? "s2" : "s3"];
                           return (
-                            <div style={{ padding: "4px 10px 8px 68px", background: "rgba(227,201,140,0.06)" }}>
+                            <div style={{ padding: "4px 10px 8px 68px", background: "rgba(138,109,47,0.06)" }}>
                               {pos === 0 && (
                                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
                                   <span style={{ minWidth: 34 }} />
                                   {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
-                                    <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8FA396", fontWeight: 700 }}>{hd}</span>
+                                    <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{hd}</span>
                                   ))}
                                 </div>
                               )}
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <span style={{ fontSize: 10, color: "#D8CBA8", fontWeight: 700, letterSpacing: "0.08em", minWidth: 34 }}>{["1ST", "2ND", "3RD"][pos]}</span>
+                                <span style={{ fontSize: 10, color: "#7A6A45", fontWeight: 700, letterSpacing: "0.08em", minWidth: 34 }}>{["1ST", "2ND", "3RD"][pos]}</span>
                                 {slots.map((k, si) => (k === null
                                   ? <span key={"blank" + si} style={{ width: 74 }} />
                                   : <input key={k} value={resultPays[k]} onChange={(e) => setResultPays((prev) => ({ ...prev, [k]: e.target.value }))}
                                       inputMode="decimal" onClick={(e) => e.stopPropagation()}
                                       style={{ background: LCD_BG, ...lcdFont, fontSize: 11, border: "1px solid rgba(0,0,0,0.4)", borderRadius: 5, padding: "4px 6px", width: 74, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)" }} />
                                 ))}
-                                {pos === 2 && <span style={{ fontSize: 10, color: "#8FA396" }}>per $2, from the tote board — optional</span>}
+                                {pos === 2 && <span style={{ fontSize: 10, color: "#8B8168" }}>per $2, from the tote board — optional</span>}
                               </div>
                             </div>
                           );
@@ -2764,17 +2772,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           const h = horses[r.i] || {};
                           const fd = (d) => (d && d.length === 8 ? `${parseInt(d.slice(4, 6), 10)}/${parseInt(d.slice(6, 8), 10)}/${d.slice(2, 4)}` : d || "");
                           return (
-                            <div style={{ padding: "0 12px 10px 12px", fontSize: 12, color: "#CFDCCF" }}>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px", padding: "2px 0 8px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                                {h.trainer && <span><span style={{ color: "#8FA396" }}>Trainer</span> {h.trainer}</span>}
-                                {h.jockey && <span><span style={{ color: "#8FA396" }}>Jockey</span> {h.jockey}</span>}
-                                {h.runStyle && <span><span style={{ color: "#8FA396" }}>Style</span> {h.runStyle}{h.quirinPts ? ` (${h.quirinPts} Quirin pts)` : ""}</span>}
-                                {h.primePower && <span><span style={{ color: "#8FA396" }}>Prime Power</span> {h.primePower}</span>}
-                                {h.sire && <span><span style={{ color: "#8FA396" }}>Breeding</span> {h.sire} — {h.dam}{h.bredIn ? ` (${h.bredIn})` : ""}</span>}
+                            <div style={{ padding: "0 12px 10px 12px", fontSize: 12, color: "#4A4437" }}>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 18px", padding: "2px 0 8px", borderBottom: "1px solid rgba(0,0,0,0.09)" }}>
+                                {h.trainer && <span><span style={{ color: "#8B8168" }}>Trainer</span> {h.trainer}</span>}
+                                {h.jockey && <span><span style={{ color: "#8B8168" }}>Jockey</span> {h.jockey}</span>}
+                                {h.runStyle && <span><span style={{ color: "#8B8168" }}>Style</span> {h.runStyle}{h.quirinPts ? ` (${h.quirinPts} Quirin pts)` : ""}</span>}
+                                {h.primePower && <span><span style={{ color: "#8B8168" }}>Prime Power</span> {h.primePower}</span>}
+                                {h.sire && <span><span style={{ color: "#8B8168" }}>Breeding</span> {h.sire} — {h.dam}{h.bredIn ? ` (${h.bredIn})` : ""}</span>}
                               </div>
                               {h.history && h.history.length > 0 && (
-                                <div style={{ padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                                  <div style={{ display: "grid", gridTemplateColumns: "64px 44px 60px 70px 40px", gap: 8, ...labelFont, color: "#8FA396", paddingBottom: 3 }}>
+                                <div style={{ padding: "8px 0", borderBottom: "1px solid rgba(0,0,0,0.09)" }}>
+                                  <div style={{ display: "grid", gridTemplateColumns: "64px 44px 60px 70px 40px", gap: 8, ...labelFont, color: "#8B8168", paddingBottom: 3 }}>
                                     <span>Date</span><span>Trk</span><span>Dist</span><span>Finish</span><span style={{ textAlign: "right" }}>Fig</span>
                                   </div>
                                   {h.history.map((pr, k) => (
@@ -2815,20 +2823,20 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                                 return (
                                   <div style={{ paddingTop: 6 }}>
                                     {warns.length > 0 && (
-                                      <div style={{ background: "rgba(227,201,140,0.10)", border: "1px solid rgba(227,201,140,0.4)", borderRadius: 6, padding: "8px 10px", fontSize: 11, lineHeight: 1.5, marginBottom: 8, color: "#E8DAB0" }}>
+                                      <div style={{ background: "rgba(138,109,47,0.10)", border: "1px solid rgba(138,109,47,0.4)", borderRadius: 6, padding: "8px 10px", fontSize: 11, lineHeight: 1.5, marginBottom: 8, color: "#E8DAB0" }}>
                                         {warns.map((w, wi) => <span key={wi} style={{ display: "block" }}>⚠ {w}</span>)}
                                       </div>
                                     )}
                                     {Object.entries(r.components).map(([k, v]) => (
-                                      <div key={k} style={{ padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                      <div key={k} style={{ padding: "3px 0", borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
                                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                                           <span>{COMPONENT_LABELS[k]}</span>
                                           <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(v * 10) / 10}</span>
                                         </div>
-                                        <div style={{ fontSize: 10, color: "#8FA396" }}>{caps[k]}</div>
+                                        <div style={{ fontSize: 10, color: "#8B8168" }}>{caps[k]}</div>
                                       </div>
                                     ))}
-                                    <div style={{ fontSize: 10, color: "#8FA396", paddingTop: 5 }}>
+                                    <div style={{ fontSize: 10, color: "#8B8168", paddingTop: 5 }}>
                                       The rating scores only the two most recent races; older lines above are context.
                                     </div>
                                   </div>
@@ -2844,14 +2852,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
 
               {winnerMode && (
-                <div style={{ background: "rgba(227,201,140,0.12)", border: "1px solid rgba(227,201,140,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
+                <div style={{ background: "rgba(138,109,47,0.12)", border: "1px solid rgba(138,109,47,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
                   {/turf/i.test(raceInfo.surface || "") && (
-                    <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(227,201,140,0.35)" }}>
+                    <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid rgba(138,109,47,0.35)" }}>
                       <button onClick={() => setOffTurf(!offTurf)}
-                        style={{ background: offTurf ? GOLD : "transparent", color: offTurf ? "#3A2F17" : "#EFE8D5", border: "1px solid rgba(227,201,140,0.6)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: offTurf ? GOLD : "transparent", color: offTurf ? "#3A2F17" : "#2E2A20", border: "1px solid rgba(138,109,47,0.6)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {offTurf ? "\u2713 " : ""}Ran off the turf
                       </button>
-                      <span style={{ fontSize: 11, color: "#CFDCCF", marginLeft: 8 }}>
+                      <span style={{ fontSize: 11, color: "#4A4437", marginLeft: 8 }}>
                         {offTurf
                           ? "Logging as dirt (off turf) \u2014 the card said turf, so these ratings were built on turf form."
                           : "Card says turf. Tap if the stewards moved it to the main track."}
@@ -2961,13 +2969,13 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   ✓ {logMsg}
                 </div>
               )}
-              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 16, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 16, lineHeight: 1.55 }}>
                 Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
                 the machine would set. ODDS = the live board — the only thing you type. VALUE = WIN% × (ODDS+1) − 1.
                 WIN / PLC / SHW = chance to finish 1st, top two, or top three. Tap a horse's name for details; use
                 Scratch for late scratches.
               </p>
-              <p style={{ fontSize: 11, color: "#B9C8BB", marginTop: 8, lineHeight: 1.55 }}>
+              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 8, lineHeight: 1.55 }}>
                 ★ = the machine's bet (shown only when the verdict is a bet). Numbered badges always show the machine's rating rank. Model % is an
                 approximation from the ratings, not a calibrated probability, and the track keeps 15–20% of the pool —
                 treat edges as signals to investigate, not sure things. In the words of the original manual: some
