@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.12</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.13</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.12";
+const APP_VERSION = "2.17.13";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2154,7 +2154,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         </div>
 
         {/* ===== Body ===== */}
-        <div style={{ background: PAPER, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ background: PAPER, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
@@ -2517,7 +2517,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "races" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
                   {cardTitle || "Card"} — pick a race
                 </h2>
                 <span style={{ fontSize: 11, color: "#6B6353" }}>Greyed races don't meet the 1979 rules.</span>
@@ -2553,7 +2553,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "review" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} — check the entries` : "Check the entries"}
                 </h2>
                 <span style={{ fontSize: 11, color: "#6B6353" }}>Reading a racing form is hard — fix anything the machine got wrong.</span>
@@ -2617,10 +2617,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "results" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
+                <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
                 </h2>
               </div>
+              {(raceInfo.distanceFurlongs || raceInfo.surface || raceInfo.purse) && (
+                <div style={{ fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "#4A4437", margin: "2px 0 8px", borderBottom: "1px solid rgba(0,0,0,0.35)", paddingBottom: 5 }}>
+                  {[raceInfo.distanceFurlongs ? `${raceInfo.distanceFurlongs} furlongs` : null, raceInfo.surface || null, raceInfo.purse ? `purse $${Number(raceInfo.purse).toLocaleString()}` : null].filter(Boolean).join(" · ")}
+                </div>
+              )}
               {!loggedRaces[num(raceInfo.raceNumber)] && (claudeRec || claudeThinking || claudeErr) && (
                 <div style={{ background: "rgba(138,109,47,0.08)", border: "1px solid rgba(138,109,47,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
                   {claudeErr && !claudeRec && !claudeThinking ? (
@@ -2653,7 +2658,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 526 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 4px", ...labelFont, color: "#7A6A45", textAlign: "center" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 5px", ...labelFont, color: "#2E2A20", textAlign: "center", borderBottom: "3px double rgba(0,0,0,0.55)", marginBottom: 2 }}>
                     <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                   {displayed.map((r, di) => {
@@ -2662,7 +2667,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     const dim = r.scratched;
                     const cell = { fontSize: 12, color: "#4A4437", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
-                      <div key={r.i} style={{ background: "#EAE3CF", borderRadius: 8, marginBottom: 5, overflow: "hidden", opacity: dim ? 0.45 : 1, border: isBest ? "1px solid rgba(138,109,47,0.6)" : "1px solid transparent" }}>
+                      <div key={r.i} style={{ background: isBest ? "rgba(138,109,47,0.12)" : "none", borderRadius: 0, marginBottom: 0, opacity: dim ? 0.45 : 1, borderBottom: "1px solid rgba(0,0,0,0.16)" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(138,109,47,0.06)" : "none" }}>
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
