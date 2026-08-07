@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.13</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.14</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.13";
+const APP_VERSION = "2.17.14";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2133,9 +2133,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {step === "results" && (
               <div style={KEYROW}>
                 <Key onClick={backFromRace}>Back</Key>
-                <Key onClick={() => oddsSnapRef.current?.click()} disabled={busy}>{busy ? "Reading…" : "📸 Odds"}</Key>
                 <div style={{ flex: 1 }} />
-                {supaUrl && supaKey && (
+                {supaUrl && supaKey && (((raceBets[num(raceInfo.raceNumber)] || []).length > 0) || !(["WIN", "PLACE", "SHOW"].includes(verdict.action) && !loggedRaces[num(raceInfo.raceNumber)])) && (
                   <Key onClick={openBetSlip} disabled={busy}>
                     {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
                   </Key>
@@ -2658,8 +2657,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               <div style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 526 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 5px", ...labelFont, color: "#2E2A20", textAlign: "center", borderBottom: "3px double rgba(0,0,0,0.55)", marginBottom: 2 }}>
-                    <span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
+                  <div style={{ display: "grid", gridTemplateColumns: "34px 58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 5px", ...labelFont, color: "#2E2A20", textAlign: "center", borderBottom: "3px double rgba(0,0,0,0.55)", marginBottom: 2 }}>
+                    <span /><span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                   {displayed.map((r, di) => {
                     const isBest = !loggedRaces[num(raceInfo.raceNumber)] && bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0 && ["WIN", "PLACE", "SHOW"].includes(verdict.action);
@@ -2668,7 +2667,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     const cell = { fontSize: 12, color: "#4A4437", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
                       <div key={r.i} style={{ background: isBest ? "rgba(138,109,47,0.12)" : "none", borderRadius: 0, marginBottom: 0, opacity: dim ? 0.45 : 1, borderBottom: "1px solid rgba(0,0,0,0.16)" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(138,109,47,0.06)" : "none" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "34px 58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(138,109,47,0.06)" : "none" }}>
+                          {supaUrl && supaKey && isBest && !winnerMode ? (
+                            <button onClick={(e) => { e.stopPropagation(); openBetSlip(); }} title={`Bet ${r.name}`}
+                              style={{ background: RED, color: "#F3EDDD", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 6, padding: "5px 0", fontSize: 13, cursor: "pointer", fontWeight: 700, lineHeight: 1 }}>🎟</button>
+                          ) : <span />}
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
                             {dim ? "SCR" : r.rating.toFixed(1)}
                           </span>
@@ -2701,7 +2704,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           {dim ? <span style={cell}>—</span> : (
                             <input value={horses[r.i]?.mlOdds ?? ""} onChange={(e) => { updateHorse(r.i, "mlOdds", e.target.value); scheduleAsk(1500); }}
                               ref={(el) => { oddsRefs.current[di] = el; }}
-                              onFocus={(e) => { e.target.dataset.fresh = "1"; }}
+                              onFocus={(e) => { const t = e.target; t.dataset.fresh = "1"; setTimeout(() => { try { t.select(); } catch (_) {} }, 0); }}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === "Tab") {
                                   e.preventDefault();
