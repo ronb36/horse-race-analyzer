@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.11</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.12</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.11";
+const APP_VERSION = "2.17.12";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -790,12 +790,14 @@ function HorseRaceAnalyzer() {
     setActiveRace(null);
     applyCardFlags({ cancelled: false, cancelledRaces: [] }); // a fresh upload is a re-prep
     hydrateLoggedRaces(meta.track, meta.date);
-    saveCard(meta, title, list, dataMap);
+    const savedP = saveCard(meta, title, list, dataMap);
     // Uploads are setup, not racing (doctrine since 2.7.1): land on Cards on File
     // with this card's strip previewed up top. Racing starts from Race Day.
     setActiveRace(null);
     setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
-    if (supaUrl && supaKey) { fetchSavedCards().then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); }); }
+    // Refresh the list only after the upsert settles — fetching immediately raced the save,
+    // and the fresh card was missing from the rows (found 2026-08-07, SAR 08/07 invisible after upload).
+    if (supaUrl && supaKey) { savedP.then(() => fetchSavedCards()).then((rows) => { const d0 = nearestUpcoming((rows || []).map((r) => r.race_date)); setCardsDate(d0); bindStripToDate(d0, rows, "CARDS ON FILE"); }); }
     setStep("cards");
     setLcdMsg("CARD SAVED \u00b7 " + (meta.track || "").toUpperCase() + " " + ymdToDisplay(meta.date));
   }
