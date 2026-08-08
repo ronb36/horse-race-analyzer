@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.19</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.20</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.19";
+const APP_VERSION = "2.17.20";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2086,8 +2086,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
             )}
             <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
-            {step === "cards" && <Key grow onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload</Key>}
-            {step === "scan" && <Key grow onClick={() => scanFileRef.current?.click()}>📄 Upload</Key>}
           </div>
           {(step === "review" || step === "results") && (
           <div style={KEYROW}>
@@ -2236,7 +2234,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- CARDS ---------- */}
           {step === "cards" && (
             <div>
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "0 0 4px" }}>
+                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>Cards on file</h2>
+                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
+              </div>
               <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
@@ -2421,7 +2422,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {scanNote}
                 </div>
               )}
-              <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Entries — shopping list</h2>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "0 0 4px" }}>
+                <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>Entries — shopping list</h2>
+                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
+              </div>
               <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
               </p>
