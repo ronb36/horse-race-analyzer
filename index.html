@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.18</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.19</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.18";
+const APP_VERSION = "2.17.19";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2029,8 +2029,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
             </div>
         {(raceIndex.length > 0 && step !== "audit") ? (
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
-            {raceIndex.filter((r) => r.ok).map((r) => {
+          <div style={{ display: "flex", gap: 6, paddingBottom: 10, marginBottom: 8 }}>
+            {(() => { const qual = raceIndex.filter((r) => r.ok); const blanks = Math.max(0, 10 - qual.length); return (<React.Fragment>
+            {qual.map((r) => {
               const isActive = step === "results" && activeRace === r.raceNumber;
               // a race that didn't run is dead on the strip too, whatever the card says
               const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(Number(r.raceNumber));
@@ -2039,7 +2040,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <button key={r.raceNumber} onClick={() => { if (!live) return; if (step === "results") switchTab(r); else if (step === "today") { raceOriginRef.current = "today"; switchTab(r); } }} disabled={!live || busy || (step !== "results" && step !== "today")}
                   title={offR ? (cardFlags.cancelled ? "Card cancelled — no racing" : "Did not run") : r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
                   style={{
-                    flex: "0 0 auto", minWidth: 52, padding: "7px 10px", borderRadius: 8,
+                    flex: "1 1 0", minWidth: 0, padding: "7px 4px", borderRadius: 8,
                     border: isActive ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.35)",
                     background: !live ? "rgba(14,40,32,0.55)" : isActive ? LCD_BG : GREEN_DARK,
                     color: !live ? "#6E8378" : isActive ? "#3A2F17" : "#EFE8D5",
@@ -2054,11 +2055,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 </button>
               );
             })}
+            {Array.from({ length: blanks }, (_, i) => (
+              <div key={"b" + i} style={{ flex: "1 1 0", minWidth: 0, height: 42, borderRadius: 8,
+                border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)" }} />
+            ))}
+            </React.Fragment>); })()}
           </div>
         ) : (
           <div style={{ display: "flex", gap: 6, overflowX: "hidden", paddingBottom: 10, marginBottom: 8 }}>
             {Array.from({ length: 10 }, (_, i) => (
-              <div key={i} style={{ flex: "0 0 auto", minWidth: 52, height: 42, borderRadius: 8,
+              <div key={i} style={{ flex: "1 1 0", minWidth: 0, height: 42, borderRadius: 8,
                 border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK,
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)" }} />
             ))}
@@ -2071,6 +2078,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <Key grow active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>📅 Race Day</Key>
                 <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
                 <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
+                <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
               </React.Fragment>
             ) : (
               <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, flex: 1 }}>
@@ -2078,6 +2086,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
             )}
             <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
+            {step === "cards" && <Key grow onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload</Key>}
+            {step === "scan" && <Key grow onClick={() => scanFileRef.current?.click()}>📄 Upload</Key>}
           </div>
           {(step === "review" || step === "results") && (
           <div style={KEYROW}>
@@ -2115,11 +2125,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
-              {supaUrl && supaKey && (
-                <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
-                  <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
-                </div>
-              )}
               <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 10 }}>Settings — stored only in this browser</div>
               <label style={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 420 }}>
                 <span style={{ ...labelFont, color: "#7A6A45" }}>Anthropic API key (PDF reading + the race advisor)</span>
@@ -2247,7 +2252,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       </button>
                     ))}
                   </div>
-                  <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload</Key>
                   </div>
                 );
               })()}
@@ -2433,7 +2437,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       </button>
                     ))}
                   </div>
-                  <Key onClick={() => scanFileRef.current?.click()}>📄 Upload</Key>
                   </div>
                 );
               })()}
