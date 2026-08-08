@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.16</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.17</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.16";
+const APP_VERSION = "2.17.17";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2076,11 +2076,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </div>
             )}
             <Key active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
-            {(showSettings || step === "audit") && supaUrl && supaKey && (
-              <Key active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
-            )}
-            {step === "cards" && <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>}
-            {step === "scan" && <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>}
             {step === "review" && (
               <React.Fragment>
                 <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
@@ -2114,6 +2109,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+              {supaUrl && supaKey && (
+                <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
+                  <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
+                </div>
+              )}
               <div style={{ ...labelFont, color: "#7A6A45", marginBottom: 10 }}>Settings — stored only in this browser</div>
               <label style={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 420 }}>
                 <span style={{ ...labelFont, color: "#7A6A45" }}>Anthropic API key (PDF reading + the race advisor)</span>
@@ -2225,6 +2225,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- CARDS ---------- */}
           {step === "cards" && (
             <div>
+              <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
+                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
+              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
               <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
@@ -2403,6 +2406,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- DAY SCAN ---------- */}
           {step === "scan" && dayScan && (
             <div>
+              <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
+                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
+              </div>
               {scanNote && (
                 <div style={{ background: "rgba(138,109,47,0.12)", border: "1px solid rgba(138,109,47,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
                   {scanNote}
