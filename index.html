@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.20</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.21</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.20";
+const APP_VERSION = "2.17.21";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2087,31 +2087,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             )}
             <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
           </div>
-          {(step === "review" || step === "results") && (
+          {step === "review" && (
           <div style={KEYROW}>
-            {step === "review" && (
-              <React.Fragment>
-                <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
-                <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
-              </React.Fragment>
-            )}
-            {step === "results" && (
-              <React.Fragment>
-                <div style={{ flex: 1 }} />
-                {supaUrl && supaKey && (((raceBets[num(raceInfo.raceNumber)] || []).length > 0) || !(["WIN", "PLACE", "SHOW"].includes(verdict.action) && !loggedRaces[num(raceInfo.raceNumber)])) && (
-                  <Key onClick={openBetSlip} disabled={busy}>
-                    {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
-                  </Key>
-                )}
-                {supaUrl && supaKey && (
-                  raceDone && !winnerMode
-                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
-                    : winnerMode && finishPicks.length >= 3
-                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
-                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
-                )}
-              </React.Fragment>
-            )}
+            <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
+            <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
           </div>
           )}
           </div>
@@ -2595,6 +2574,20 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
                   {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
                 </h2>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {supaUrl && supaKey && (((raceBets[num(raceInfo.raceNumber)] || []).length > 0) || !(["WIN", "PLACE", "SHOW"].includes(verdict.action) && !loggedRaces[num(raceInfo.raceNumber)])) && (
+                  <Key onClick={openBetSlip} disabled={busy}>
+                    {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
+                  </Key>
+                )}
+                {supaUrl && supaKey && (
+                  raceDone && !winnerMode
+                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
+                    : winnerMode && finishPicks.length >= 3
+                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
+                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                )}
+                </div>
               </div>
               {(raceInfo.distanceFurlongs || raceInfo.surface || raceInfo.purse) && (
                 <div style={{ fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "#4A4437", margin: "2px 0 8px", borderBottom: "1px solid rgba(0,0,0,0.35)", paddingBottom: 5 }}>
