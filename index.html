@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.15</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.16</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.15";
+const APP_VERSION = "2.17.16";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -427,12 +427,12 @@ const RED = "#B5442C";
 const lcdFont = { fontFamily: "'Courier New', monospace", fontWeight: 700, color: LCD_INK, letterSpacing: "0.06em" };
 const labelFont = { fontFamily: "Arial, Helvetica, sans-serif", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" };
 
-function Key({ children, onClick, disabled, wide, red }) {
+function Key({ children, onClick, disabled, wide, red, active }) {
   return (
     <button onClick={onClick} disabled={disabled}
       style={{
-        background: disabled ? "#3E5A4D" : red ? RED : GREEN, color: "#EFE8D5",
-        border: "1px solid rgba(0,0,0,0.45)", borderRadius: 999,
+        background: disabled ? "#3E5A4D" : active ? LCD_BG : red ? RED : GREEN, color: active ? "#3A2F17" : "#EFE8D5",
+        border: active ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.45)", borderRadius: 999,
         padding: wide ? "0 24px" : "0 16px", minHeight: 44,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         fontFamily: "Arial, sans-serif", fontSize: 12, fontWeight: 700,
@@ -2062,77 +2062,33 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             ))}
           </div>
         )}
-          {step === "start" && showSettings && (
-              <div style={KEYROW}>
-                <Key onClick={() => setShowSettings(false)}>Back</Key>
-                {supaUrl && supaKey && (
-                  <React.Fragment>
-                    <Key onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>
-                      🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}
-                    </Key>
-                    <Key onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>
-                      🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}
-                    </Key>
-                    <Key onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>
-                      🧾 Audit
-                    </Key>
-                  </React.Fragment>
-                )}
+          {/* ===== The keypad — every mode, always. No menus in 1979. ===== */}
+          <div style={KEYROW}>
+            {supaUrl && supaKey ? (
+              <React.Fragment>
+                <Key active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>📅 Race Day</Key>
+                <Key active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
+                <Key active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
+              </React.Fragment>
+            ) : (
+              <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, maxWidth: 380 }}>
+                Add your Supabase URL and key in ⚙ Set to load race days. Credentials live in this browser only, so each device needs them once.
               </div>
-          )}
-          {step === "start" && !showSettings && (
-              <div style={KEYROW}>
-                {supaUrl && supaKey
-                  ? <Key wide onClick={viewToday} disabled={busy}>{busy ? "Working…" : "📅 Race Day"}</Key>
-                  : <div style={{ fontSize: 12, color: "#E8B98A", lineHeight: 1.5, maxWidth: 380 }}>
-                      Add your Supabase URL and key in ⚙ Set to load race days. Credentials live in this browser only, so each device needs them once.
-                    </div>}
-                <div style={{ flex: 1 }} />
-                <Key onClick={() => { setShowSettings(true); fetchUploadCounts(); }}>⚙ Set</Key>
-              </div>
-          )}
-          {step === "slips" && slipsView && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
-              </div>
-          )}
-          {step === "cards" && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
-              </div>
-          )}
-          {step === "audit" && auditView && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setAuditView(null); setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-              </div>
-          )}
-          {step === "today" && dayView && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); }}>Back</Key>
-              </div>
-          )}
-          {step === "scan" && dayScan && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setStep("start"); setShowSettings(true); fetchUploadCounts(); setLcdMsg("READY"); }}>Back</Key>
-                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
-              </div>
-          )}
-          {step === "races" && (
-              <div style={KEYROW}>
-                <Key onClick={() => { setStep("start"); setLcdMsg("READY"); setError(""); }}>Back</Key>
-              </div>
-          )}
-          {step === "review" && (
-              <div style={KEYROW}>
+            )}
+            <Key active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
+            {(showSettings || step === "audit") && supaUrl && supaKey && (
+              <Key active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
+            )}
+            {step === "cards" && <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>}
+            {step === "scan" && <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>}
+            {step === "review" && (
+              <React.Fragment>
                 <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
                 <Key wide red onClick={() => { setStep("results"); setExpanded(null); }} disabled={!horses.length}>Analyze</Key>
-                <Key onClick={() => { setStep(raceIndex.length ? "races" : "start"); setLcdMsg(raceIndex.length ? "SELECT RACE" : "READY"); }}>Back</Key>
-              </div>
-          )}
-          {step === "results" && (
-              <div style={KEYROW}>
-                <Key onClick={backFromRace}>Back</Key>
+              </React.Fragment>
+            )}
+            {step === "results" && (
+              <React.Fragment>
                 <div style={{ flex: 1 }} />
                 {supaUrl && supaKey && (((raceBets[num(raceInfo.raceNumber)] || []).length > 0) || !(["WIN", "PLACE", "SHOW"].includes(verdict.action) && !loggedRaces[num(raceInfo.raceNumber)])) && (
                   <Key onClick={openBetSlip} disabled={busy}>
@@ -2146,8 +2102,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
                     : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
                 )}
-              </div>
-          )}
+              </React.Fragment>
+            )}
+          </div>
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
         </div>
