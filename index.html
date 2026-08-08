@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.21</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.18.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.21";
+const APP_VERSION = "2.18.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -813,7 +813,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setBetSlipOpen(false); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -2079,6 +2079,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
                 <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
                 <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
+                <Key grow active={step === "results" && winnerMode} disabled={busy || step !== "results"} onClick={() => {
+                  if (step !== "results") return;
+                  if (raceDone && !winnerMode) { cancelResults(); }
+                  else if (winnerMode && finishPicks.length >= 3) { saveResults(); }
+                  else { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }
+                }}>{step !== "results" ? "🏁 Results" : raceDone && !winnerMode ? "Cancel Results" : winnerMode && finishPicks.length >= 3 ? "Save Results" : winnerMode ? "Cancel logging" : "Log Results"}</Key>
               </React.Fragment>
             ) : (
               <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, flex: 1 }}>
@@ -2098,7 +2104,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         </div>
 
         {/* ===== Body ===== */}
-        <div style={{ background: PAPER, borderRadius: 10, marginTop: 12, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", marginTop: 12 }}>
+        <div style={{ background: PAPER, borderRadius: 10, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
@@ -2570,25 +2577,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- RESULTS ---------- */}
           {step === "results" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
-                  {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
-                </h2>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                {supaUrl && supaKey && (((raceBets[num(raceInfo.raceNumber)] || []).length > 0) || !(["WIN", "PLACE", "SHOW"].includes(verdict.action) && !loggedRaces[num(raceInfo.raceNumber)])) && (
-                  <Key onClick={openBetSlip} disabled={busy}>
-                    {(raceBets[num(raceInfo.raceNumber)] || []).length ? `🎫 Slips (${(raceBets[num(raceInfo.raceNumber)] || []).length})` : "🎟 Bet"}
-                  </Key>
-                )}
-                {supaUrl && supaKey && (
-                  raceDone && !winnerMode
-                    ? <Key onClick={cancelResults} disabled={busy}>Cancel Results</Key>
-                    : winnerMode && finishPicks.length >= 3
-                    ? <Key onClick={saveResults} disabled={busy}>Save Results</Key>
-                    : <Key onClick={() => { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }}>{winnerMode ? "Cancel logging" : "Log Results"}</Key>
-                )}
-                </div>
-              </div>
+              <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
+                {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
+              </h2>
               {(raceInfo.distanceFurlongs || raceInfo.surface || raceInfo.purse) && (
                 <div style={{ fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "#4A4437", margin: "2px 0 8px", borderBottom: "1px solid rgba(0,0,0,0.35)", paddingBottom: 5 }}>
                   {[raceInfo.distanceFurlongs ? `${raceInfo.distanceFurlongs} furlongs` : null, raceInfo.surface || null, raceInfo.purse ? `purse $${Number(raceInfo.purse).toLocaleString()}` : null].filter(Boolean).join(" · ")}
@@ -2631,14 +2622,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                   {displayed.map((r, di) => {
                     const isBest = !loggedRaces[num(raceInfo.raceNumber)] && bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0 && ["WIN", "PLACE", "SHOW"].includes(verdict.action);
+                    const rnBets = raceBets[num(raceInfo.raceNumber)] || [];
+                    const ticketRow = rnBets.some((b) => String(b.horse).toLowerCase() === String(r.name).toLowerCase());
+                    const showTicketBtn = supaUrl && supaKey && !winnerMode && (ticketRow || (rnBets.length === 0 && isBest));
                     const edgeColor = r.edge === null ? "#8B8168" : r.edge > 0.1 ? "#8A6D2F" : r.edge > 0 ? "#4A4437" : "#8B8168";
                     const dim = r.scratched;
                     const cell = { fontSize: 12, color: "#4A4437", fontVariantNumeric: "tabular-nums", textAlign: "center" };
                     return (
                       <div key={r.i} style={{ background: isBest ? "rgba(138,109,47,0.12)" : "none", borderRadius: 0, marginBottom: 0, opacity: dim ? 0.45 : 1, borderBottom: "1px solid rgba(0,0,0,0.16)" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "34px 58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "6px 10px", background: winnerMode ? "rgba(138,109,47,0.06)" : "none" }}>
-                          {supaUrl && supaKey && isBest && !winnerMode ? (
-                            <button onClick={(e) => { e.stopPropagation(); openBetSlip(); }} title={`Bet ${r.name}`}
+                          {showTicketBtn ? (
+                            <button onClick={(e) => { e.stopPropagation(); openBetSlip(); }} title={ticketRow ? `Ticket — ${r.name}` : `Bet ${r.name}`}
                               style={{ background: RED, color: "#F3EDDD", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 6, padding: "5px 0", fontSize: 13, cursor: "pointer", fontWeight: 700, lineHeight: 1 }}>🎟</button>
                           ) : <span />}
                           <span style={{ ...lcdFont, background: LCD_BG, borderRadius: 5, padding: "3px 6px", fontSize: 13, textAlign: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)", opacity: dim ? 0.6 : 1 }}>
@@ -2842,12 +2836,34 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {finishPicks.length === 1 && "Now tap SECOND place."}
                   {finishPicks.length === 2 && "Now tap THIRD place."}
                   {finishPicks.length >= 3 && (
-                    <span>Top three set — tote payouts on each line (optional), then Save Results below.</span>
+                    <span>Top three set — tote payouts on each line (optional), then Save Results on the machine.</span>
                   )}
                 </div>
               )}
-              {betSlipOpen && (
-                <div style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "14px 16px", margin: "4px 0 12px", fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", maxWidth: 520, transform: raceDone ? "rotate(1.4deg) translateY(2px)" : "none", opacity: raceDone ? 0.85 : 1, clipPath: raceDone ? "polygon(0 0, 100% 0, 100% 93%, 95% 100%, 89% 94%, 83% 100%, 77% 94%, 71% 100%, 65% 94%, 59% 100%, 53% 94%, 47% 100%, 41% 94%, 35% 100%, 29% 94%, 23% 100%, 17% 94%, 11% 100%, 5% 94%, 0 100%)" : "none" }}>
+              {logMsg && !raceDone && (
+                <div style={{ background: "rgba(143,196,159,0.12)", border: "1px solid rgba(143,196,159,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
+                  ✓ {logMsg}
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 16, lineHeight: 1.55 }}>
+                Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
+                the machine would set. ODDS = the live board — the only thing you type. VALUE = WIN% × (ODDS+1) − 1.
+                WIN / PLC / SHW = chance to finish 1st, top two, or top three. Tap a horse's name for details; use
+                Scratch for late scratches.
+              </p>
+              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 8, lineHeight: 1.55 }}>
+                ★ = the machine's bet (shown only when the verdict is a bet). Numbered badges always show the machine's rating rank. Model % is an
+                approximation from the ratings, not a calibrated probability, and the track keeps 15–20% of the pool —
+                treat edges as signals to investigate, not sure things. In the words of the original manual: some
+                unknowns just can't be predicted. This is a period-style analytical toy, not betting advice.
+              </p>
+            </div>
+          )}
+        </div>
+        {betSlipOpen && step === "results" && (
+          <div style={{ position: "absolute", inset: 0, background: "rgba(46,42,32,0.30)", borderRadius: 10, zIndex: 6, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "24px 14px", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ transform: "rotate(-1.1deg)", width: "100%", maxWidth: 520, boxShadow: "0 10px 26px rgba(0,0,0,0.45)", borderRadius: 4 }}>
+              <div style={{ background: "#F2E8D0", color: "#3A3226", borderRadius: 4, padding: "14px 16px", fontFamily: "'Courier New', monospace", border: "1px solid #C9B98F", borderTop: "3px dashed #C9B98F", borderBottom: "3px dashed #C9B98F", boxShadow: "0 3px 8px rgba(0,0,0,0.35)", maxWidth: 520, transform: raceDone ? "rotate(1.4deg) translateY(2px)" : "none", opacity: raceDone ? 0.85 : 1, clipPath: raceDone ? "polygon(0 0, 100% 0, 100% 93%, 95% 100%, 89% 94%, 83% 100%, 77% 94%, 71% 100%, 65% 94%, 59% 100%, 53% 94%, 47% 100%, 41% 94%, 35% 100%, 29% 94%, 23% 100%, 17% 94%, 11% 100%, 5% 94%, 0 100%)" : "none" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, letterSpacing: "0.1em" }}>
                     <span>GOLDEN GATE STYLE PARI-MUTUEL</span>
                     <span style={{ color: "#A33327", fontWeight: 700 }}>{slipSerial}</span>
@@ -2881,12 +2897,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", color: "#A33327", border: "2px solid #A33327", borderRadius: 3, padding: "6px 10px", transform: "rotate(-2deg)", display: "inline-block", marginBottom: 10 }}>
                         RACE OFFICIAL — WINDOW CLOSED
                       </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Done</button>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <button onClick={() => { setBetSlipOpen(false); cancelResults(); }} disabled={busy}
                           style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#A33327", border: "1px solid #A33327" }}>
                           Cancel results
                         </button>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ marginLeft: "auto", fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Close</button>
                       </div>
                     </div>
                   ) : !slipStamped ? (
@@ -2917,9 +2933,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                         <input value={slipAmount} onChange={(e) => setSlipAmount(e.target.value)} inputMode="decimal"
                           style={{ fontFamily: "inherit", fontSize: 12, width: 64, padding: "4px 8px", border: "1px solid #3A3226", borderRadius: 3, background: "transparent", color: "#3A3226" }} />
                       </div>
-                      <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                         <button onClick={punchTicket} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 13, letterSpacing: "0.12em", padding: "7px 16px", borderRadius: 3, cursor: "pointer", background: "#A33327", color: "#F2E8D0", border: "none" }}>PUNCH TICKET</button>
-                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontSize: 12, padding: "7px 12px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3A3226", border: "1px solid #3A3226" }}>Back</button>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ marginLeft: "auto", fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "7px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Close</button>
                       </div>
                     </div>
                   ) : (
@@ -2927,34 +2943,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "0.1em", color: "#A33327", border: "2px solid #A33327", borderRadius: 3, padding: "8px 10px", transform: "rotate(-1.2deg)", display: "inline-block", marginBottom: 10 }}>
                         {slipStamped}
                       </div>
-                      <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                         <button onClick={() => { setSlipStamped(null); setSlipSerial("GGF-" + String(Date.now() % 100000).padStart(5, "0")); }}
                           style={{ fontFamily: "inherit", fontSize: 12, padding: "6px 12px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3A3226", border: "1px solid #3A3226" }}>+ Another bet</button>
-                        <button onClick={() => setBetSlipOpen(false)} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Done</button>
+                        <button onClick={() => setBetSlipOpen(false)} style={{ marginLeft: "auto", fontFamily: "inherit", fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "none" }}>Close</button>
                       </div>
                     </div>
                   )}
                 </div>
-              )}
-              {logMsg && !raceDone && (
-                <div style={{ background: "rgba(143,196,159,0.12)", border: "1px solid rgba(143,196,159,0.5)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "4px 0 10px" }}>
-                  ✓ {logMsg}
-                </div>
-              )}
-              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 16, lineHeight: 1.55 }}>
-                Rows are in post-position order, like the program. RTG = the legacy 1979-style rating. FAIR = the odds
-                the machine would set. ODDS = the live board — the only thing you type. VALUE = WIN% × (ODDS+1) − 1.
-                WIN / PLC / SHW = chance to finish 1st, top two, or top three. Tap a horse's name for details; use
-                Scratch for late scratches.
-              </p>
-              <p style={{ fontSize: 11, color: "#6B6353", marginTop: 8, lineHeight: 1.55 }}>
-                ★ = the machine's bet (shown only when the verdict is a bet). Numbered badges always show the machine's rating rank. Model % is an
-                approximation from the ratings, not a calibrated probability, and the track keeps 15–20% of the pool —
-                treat edges as signals to investigate, not sure things. In the words of the original manual: some
-                unknowns just can't be predicted. This is a period-style analytical toy, not betting advice.
-              </p>
             </div>
-          )}
+          </div>
+        )}
         </div>
 
         <div style={{ textAlign: "center", marginTop: 14, ...labelFont, color: "#7A756A" }}>
