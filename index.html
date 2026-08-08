@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.17</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.18</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,25 +414,27 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.17";
+const APP_VERSION = "2.17.18";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
 const INK = "#2E2A20";
 const GREEN_DARK = "#0E2820";
 const KEYROW = { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "6px 0 6px" };
+const KEYROW_MODES = { ...KEYROW, flexWrap: "nowrap", gap: 8 };
 const LCD_BG = "#96A08D";
 const LCD_INK = "#2A3328";
 const RED = "#B5442C";
 const lcdFont = { fontFamily: "'Courier New', monospace", fontWeight: 700, color: LCD_INK, letterSpacing: "0.06em" };
 const labelFont = { fontFamily: "Arial, Helvetica, sans-serif", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" };
 
-function Key({ children, onClick, disabled, wide, red, active }) {
+function Key({ children, onClick, disabled, wide, red, active, grow }) {
   return (
     <button onClick={onClick} disabled={disabled}
       style={{
         background: disabled ? "#3E5A4D" : active ? LCD_BG : red ? RED : GREEN, color: active ? "#3A2F17" : "#EFE8D5",
-        border: active ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.45)", borderRadius: 999,
+        border: active ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.45)", borderRadius: 8,
+        ...(grow ? { flex: "1 1 0", minWidth: 0, textAlign: "center" } : {}),
         padding: wide ? "0 24px" : "0 16px", minHeight: 44,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         fontFamily: "Arial, sans-serif", fontSize: 12, fontWeight: 700,
@@ -2063,19 +2065,22 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           </div>
         )}
           {/* ===== The keypad — every mode, always. No menus in 1979. ===== */}
-          <div style={KEYROW}>
+          <div style={KEYROW_MODES}>
             {supaUrl && supaKey ? (
               <React.Fragment>
-                <Key active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>📅 Race Day</Key>
-                <Key active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
-                <Key active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
+                <Key grow active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>📅 Race Day</Key>
+                <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
+                <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
               </React.Fragment>
             ) : (
-              <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, maxWidth: 380 }}>
+              <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, flex: 1 }}>
                 Add your Supabase URL and key in ⚙ Set to load race days. Credentials live in this browser only, so each device needs them once.
               </div>
             )}
-            <Key active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
+            <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
+          </div>
+          {(step === "review" || step === "results") && (
+          <div style={KEYROW}>
             {step === "review" && (
               <React.Fragment>
                 <Key onClick={() => setHorses([...horses, emptyHorse()])}>+ Add horse</Key>
@@ -2100,6 +2105,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </React.Fragment>
             )}
           </div>
+          )}
           </div>
           <div style={{ width: 18, background: GREEN_DARK }} />
         </div>
@@ -2161,10 +2167,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               {(() => {
                 const dates = [...new Set(slipsView.map((b) => b.race_date))].filter(Boolean);
                 return dates.length > 1 ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, marginBottom: 12 }}>
                     {[null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => setSlipsDate(d)}
-                        style={{ background: slipsDate === d ? GREEN_DARK : "#EAE3CF", color: slipsDate === d ? "#F3EDDD" : "#4A4437", border: slipsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: slipsDate === d ? GREEN_DARK : "#EAE3CF", color: slipsDate === d ? "#F3EDDD" : "#4A4437", border: slipsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
@@ -2225,25 +2231,25 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- CARDS ---------- */}
           {step === "cards" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
-                <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload Cards</Key>
-              </div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Cards on file</h2>
               <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 12px", lineHeight: 1.5 }}>
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
               {(() => {
                 const dates = [...new Set((savedCards || []).map((c) => c.race_date))].filter(Boolean).sort().reverse();
-                return dates.length > 1 ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                    {[null, ...dates].map((d) => (
+                return (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, flex: 1 }}>
+                    {dates.length > 1 && [null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setCardsDate(d); bindStripToDate(d, savedCards, "CARDS ON FILE"); }}
-                        style={{ background: cardsDate === d ? GREEN_DARK : "#EAE3CF", color: cardsDate === d ? "#F3EDDD" : "#4A4437", border: cardsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: cardsDate === d ? GREEN_DARK : "#EAE3CF", color: cardsDate === d ? "#F3EDDD" : "#4A4437", border: cardsDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
                   </div>
-                ) : null;
+                  <Key onClick={() => fileRef.current?.click()} disabled={busy}>📄 Upload</Key>
+                  </div>
+                );
               })()}
               {(!savedCards || savedCards.length === 0) && (
                 <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
@@ -2351,10 +2357,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 Eligible races from your uploaded cards, in post-time order. Tap one to open it.
               </p>
               {dayView.dates.length > 1 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, marginBottom: 12 }}>
                   {dayView.dates.map((d) => (
                     <button key={d} onClick={() => buildRaceCard(dayCards || [], d)} disabled={busy}
-                      style={{ background: d === dayView.ymd ? GREEN_DARK : "#EAE3CF", color: d === dayView.ymd ? "#F3EDDD" : "#4A4437", border: d === dayView.ymd ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      style={{ background: d === dayView.ymd ? GREEN_DARK : "#EAE3CF", color: d === dayView.ymd ? "#F3EDDD" : "#4A4437", border: d === dayView.ymd ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
                       {ymdToDisplay(d)}
                     </button>
                   ))}
@@ -2406,9 +2412,6 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           {/* ---------- DAY SCAN ---------- */}
           {step === "scan" && dayScan && (
             <div>
-              <div style={{ display: "flex", justifyContent: "flex-end", margin: "0 0 6px" }}>
-                <Key onClick={() => scanFileRef.current?.click()}>📄 Upload Entries</Key>
-              </div>
               {scanNote && (
                 <div style={{ background: "rgba(138,109,47,0.12)", border: "1px solid rgba(138,109,47,0.5)", borderRadius: 8, padding: "9px 12px", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
                   {scanNote}
@@ -2420,16 +2423,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               </p>
               {(() => {
                 const dates = [...new Set(dayScan.map((t) => t.ymd))].filter(Boolean).sort().reverse();
-                return dates.length > 1 ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                    {[null, ...dates].map((d) => (
+                return (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, flex: 1 }}>
+                    {dates.length > 1 && [null, ...dates].map((d) => (
                       <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
-                        style={{ background: entriesDate === d ? GREEN_DARK : "#EAE3CF", color: entriesDate === d ? "#F3EDDD" : "#4A4437", border: entriesDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        style={{ background: entriesDate === d ? GREEN_DARK : "#EAE3CF", color: entriesDate === d ? "#F3EDDD" : "#4A4437", border: entriesDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
                         {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
                   </div>
-                ) : null;
+                  <Key onClick={() => scanFileRef.current?.click()}>📄 Upload</Key>
+                  </div>
+                );
               })()}
               {dayScan.length === 0 && (
                 <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
