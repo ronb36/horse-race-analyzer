@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.14</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.17.15</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.17.14";
+const APP_VERSION = "2.17.15";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2028,7 +2028,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             </div>
         {(raceIndex.length > 0 && step !== "audit") ? (
           <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10, marginBottom: 8 }}>
-            {raceIndex.map((r) => {
+            {raceIndex.filter((r) => r.ok).map((r) => {
               const isActive = step === "results" && activeRace === r.raceNumber;
               // a race that didn't run is dead on the strip too, whatever the card says
               const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(Number(r.raceNumber));
@@ -2047,7 +2047,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   }}>
                   R{r.raceNumber}
                   <span style={{ display: "block", fontSize: 9, fontWeight: 400, letterSpacing: "0.05em", opacity: 0.85, textDecoration: "none" }}>
-                    {offR ? "no race" : r.ok ? (getPostTime(r.raceNumber) || `${r.distanceFurlongs}f`) : "skip"}
+                    {offR ? "no race" : (getPostTime(r.raceNumber) || `${r.distanceFurlongs}f`)}
                   </span>
                 </button>
               );
