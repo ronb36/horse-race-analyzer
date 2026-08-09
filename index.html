@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.18.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.18.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.18.0";
+const APP_VERSION = "2.18.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2073,25 +2073,25 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         )}
           {/* ===== The keypad — every mode, always. No menus in 1979. ===== */}
           <div style={KEYROW_MODES}>
+            <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>Set</Key>
             {supaUrl && supaKey ? (
               <React.Fragment>
-                <Key grow active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>📅 Race Day</Key>
-                <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>🔍 Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
-                <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>🃏 Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
-                <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>🧾 Audit</Key>
+                <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
+                <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
+                <Key grow active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>Races</Key>
                 <Key grow active={step === "results" && winnerMode} disabled={busy || step !== "results"} onClick={() => {
                   if (step !== "results") return;
                   if (raceDone && !winnerMode) { cancelResults(); }
                   else if (winnerMode && finishPicks.length >= 3) { saveResults(); }
                   else { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }
-                }}>{step !== "results" ? "🏁 Results" : raceDone && !winnerMode ? "Cancel Results" : winnerMode && finishPicks.length >= 3 ? "Save Results" : winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                }}>{step !== "results" ? "Results" : raceDone && !winnerMode ? "Cancel Results" : winnerMode && finishPicks.length >= 3 ? "Save Results" : winnerMode ? "Cancel logging" : "Log Results"}</Key>
+                <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>Audit</Key>
               </React.Fragment>
             ) : (
               <div style={{ fontSize: 12, color: "#9C5F1E", lineHeight: 1.5, flex: 1 }}>
-                Add your Supabase URL and key in ⚙ Set to load race days. Credentials live in this browser only, so each device needs them once.
+                Add your Supabase URL and key in Set to load race days. Credentials live in this browser only, so each device needs them once.
               </div>
             )}
-            <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>⚙ Set</Key>
           </div>
           {step === "review" && (
           <div style={KEYROW}>
