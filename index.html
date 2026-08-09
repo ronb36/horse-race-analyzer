@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.18.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.19.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -414,7 +414,7 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 // ---------- Styles ----------
-const APP_VERSION = "2.18.1";
+const APP_VERSION = "2.19.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -611,7 +611,7 @@ function HorseRaceAnalyzer() {
         body: JSON.stringify([{
           title, track: meta.track, race_date: meta.date,
           updated_at: new Date().toISOString(),
-          card: { raceIndex: index, raceData: dataMap, cardMeta: meta, cardTitle: title,
+          card: { raceIndex: (index || []).map((r) => { const rd = dataMap && dataMap[r.raceNumber]; return rd && rd.horses ? { ...r, live: rd.horses.filter((h) => !h.scratched).length } : r; }), raceData: dataMap, cardMeta: meta, cardTitle: title,
             cancelled: !!cardFlagsRef.current.cancelled, cancelledRaces: cardFlagsRef.current.cancelledRaces || [] },
           raw_file: rawFileRef.current,
         }]),
@@ -1183,6 +1183,8 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const tracks = dayCardsA.map((c) => {
           const cardOff = !!c.cx;
           const racesOff = new Set(((c.cxr) || []).map(Number));
+          // all horses scratched = the race was called off (stamped as live:0 by saveCard)
+          (c.idx || []).forEach((r) => { if (r.ok && r.live === 0) racesOff.add(num(r.raceNumber)); });
           const eligAll = (c.idx || []).filter((r) => r.ok).map((r) => num(r.raceNumber)).filter((n) => n !== null);
           // races that did not run owe nothing: excluded from the reconciliation
           const notRun = cardOff ? eligAll : eligAll.filter((n) => racesOff.has(n));
@@ -2034,11 +2036,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             {qual.map((r) => {
               const isActive = step === "results" && activeRace === r.raceNumber;
               // a race that didn't run is dead on the strip too, whatever the card says
-              const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(Number(r.raceNumber));
+              const rn = Number(r.raceNumber);
+              const rdH = rn === Number(activeRace) ? horses : ((raceData[r.raceNumber] || {}).horses || null);
+              const allScr = rdH ? rdH.length > 0 && rdH.every((h) => h.scratched) : r.live === 0;
+              const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(rn) || allScr;
               const live = r.ok && !offR;
+              const done = !!loggedRaces[rn];
               return (
-                <button key={r.raceNumber} onClick={() => { if (!live) return; if (step === "results") switchTab(r); else if (step === "today") { raceOriginRef.current = "today"; switchTab(r); } }} disabled={!live || busy || (step !== "results" && step !== "today")}
-                  title={offR ? (cardFlags.cancelled ? "Card cancelled — no racing" : "Did not run") : r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
+                <button key={r.raceNumber} onClick={() => { if (!live) return; switchTab(r); }} disabled={!live || busy}
+                  title={offR ? (cardFlags.cancelled ? "Card cancelled — no racing" : allScr ? "All horses scratched — no race" : "Did not run") : r.ok ? `${r.distanceFurlongs}f ${r.surface} · ${r.type}` : "Skipped: " + r.reason}
                   style={{
                     flex: "1 1 0", minWidth: 0, padding: "7px 4px", borderRadius: 8,
                     border: isActive ? "1px solid #3A2F17" : "1px solid rgba(0,0,0,0.35)",
@@ -2050,7 +2056,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   }}>
                   R{r.raceNumber}
                   <span style={{ display: "block", fontSize: 9, fontWeight: 400, letterSpacing: "0.05em", opacity: 0.85, textDecoration: "none" }}>
-                    {offR ? "no race" : (getPostTime(r.raceNumber) || `${r.distanceFurlongs}f`)}
+                    {offR ? "no race" : done ? "✓" : (getPostTime(r.raceNumber) || `${r.distanceFurlongs}f`)}
                   </span>
                 </button>
               );
@@ -2076,9 +2082,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>Set</Key>
             {supaUrl && supaKey ? (
               <React.Fragment>
-                <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>Entries{uploadCounts.entries ? ` — ${uploadCounts.entries.label}` : ""}</Key>
-                <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>Cards{uploadCounts.cards ? ` — ${uploadCounts.cards.label}` : ""}</Key>
-                <Key grow active={step === "today" || step === "results" || step === "races"} onClick={() => { setShowSettings(false); viewToday(); }} disabled={busy}>Races</Key>
+                <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>Entries</Key>
+                <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>Cards</Key>
                 <Key grow active={step === "results" && winnerMode} disabled={busy || step !== "results"} onClick={() => {
                   if (step !== "results") return;
                   if (raceDone && !winnerMode) { cancelResults(); }
