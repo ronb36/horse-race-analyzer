@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -451,6 +451,14 @@ function parseResultsChart(raw) {
       const decs = tail.match(/\d{1,4}\.\d{2}/g);
       finishers.push({ prog: rowHits[i].prog, name: rowHits[i].name, odds: decs && decs.length ? Number(decs[decs.length - 1]) : null });
     }
+    // extraction-order-independent fallback: in the table region the Odds $1 column is the only
+    // source of x.xx decimals (weights are integers, beaten lengths are glyphs, times come after
+    // OFF AT) — so all decimals in the region, in order, ARE the odds column. Use it whenever the
+    // per-row capture came back incomplete, which happens when pdf.js emits the table column-wise.
+    if (finishers.some((x) => x.odds === null)) {
+      const allDecs = (rowsRegion.match(/\d{1,4}\.\d{2}/g) || []).map(Number);
+      if (allDecs.length === finishers.length) finishers.forEach((x, i2) => { x.odds = allDecs[i2]; });
+    }
     // mutuel prices: window from OFF AT forward (label and lines interleave in extraction)
     const mut = [];
     const mutWindow = offAt > 0 ? seg.slice(offAt, offAt + 1800) : seg;
@@ -478,7 +486,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.20.0";
+const APP_VERSION = "2.20.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -1525,7 +1533,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     setFinishPicks(picks);
     const payFor = (prog) => (cr.mutuel.find((x) => x.prog === prog) || {}).prices || [];
     const f = cr.finishers;
-    const P = (arr, i) => (arr[i] !== undefined ? String(arr[i]) : "");
+    const P = (arr, i) => (arr[i] !== undefined ? Number(arr[i]).toFixed(2) : "");
     const pr1 = payFor(f[0] && f[0].prog), pr2 = payFor(f[1] && f[1].prog), pr3 = payFor(f[2] && f[2].prog);
     setResultPays({
       w1: P(pr1, 0), p1: P(pr1, 1), s1: P(pr1, 2),
