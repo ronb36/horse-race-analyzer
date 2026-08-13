@@ -1,0 +1,114 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>HRA Chart Probe</title>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";</script>
+<style>body{font-family:monospace;font-size:12px;padding:14px;background:#F5EFE0}pre{white-space:pre-wrap;word-break:break-all;background:#fff;padding:8px;border:1px solid #ccc}</style>
+</head><body>
+<h3>HRA Chart Probe — same pdf.js + join as the app</h3>
+<input type="file" id="f" accept="application/pdf"><div id="out"></div>
+<script>
+// ---- RESULTS CHART PARSER (module-level, fence-free) ----
+function parseResultsChart(raw) {
+  const text = String(raw || "").replace(/\s+/g, " ");
+  const ORD = ["FIRST","SECOND","THIRD","FOURTH","FIFTH","SIXTH","SEVENTH","EIGHTH","NINTH","TENTH","ELEVENTH","TWELFTH","THIRTEENTH","FOURTEENTH","FIFTEENTH","SIXTEENTH"];
+  if (!/\$2 Mutuel Prices/.test(text) || !/Value of Race:/.test(text)) return null;
+  const MONTHS = { January:1,February:2,March:3,April:4,May:5,June:6,July:7,August:8,September:9,October:10,November:11,December:12 };
+  const dm = text.match(/([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
+  const date = dm ? Number(`${dm[3]}${String(MONTHS[dm[1]]||0).padStart(2,"0")}${String(dm[2]).padStart(2,"0")}`) : null;
+  const tm = text.match(/(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)/);
+  const trackName = tm ? tm[1].trim() : null;
+  const headRe = /\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH|FIFTEENTH|SIXTEENTH)\s+RACE\b/g;
+  const marks = []; let m2;
+  while ((m2 = headRe.exec(text))) marks.push({ n: ORD.indexOf(m2[1]) + 1, at: m2.index });
+  const stripFlags = (s) => {
+    let n = s.replace(/[”"']/g, "").trim();
+    while (/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/.test(n) && n.split(" ").length > 1) n = n.replace(/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/, "");
+    return n.trim();
+  };
+  const races = [];
+  for (let k = 0; k < marks.length; k++) {
+    const seg = text.slice(marks[k].at, k + 1 < marks.length ? marks[k + 1].at : text.length);
+    const prevTail = text.slice(k > 0 ? marks[k - 1].at : 0, marks[k].at).slice(-700);
+    const turf = /\((?:Inner\s+)?Turf\)/i.test(prevTail);
+    const offAt = seg.search(/OFF AT/);
+    const tableRegion = offAt > 0 ? seg.slice(0, offAt) : seg;
+    // rows: prog + (name+flags) + age/sex code + weight — table is printed in FINISH ORDER
+    const finishers = [];
+    const rowRe = /(?:^|\s)(\d{1,2})\s+([”"']?\s?[A-Z][A-Za-z0-9 .,'()&\-\/]*?)\s+\d[A-Z]{1,3}\s+\d{3}\s/g;
+    let rm; const rowHits = [];
+    const rowsRegion = (() => { const i = tableRegion.search(/Odds \$1/); return i >= 0 ? tableRegion.slice(i) : tableRegion; })();
+    while ((rm = rowRe.exec(rowsRegion))) rowHits.push({ prog: Number(rm[1]), name: stripFlags(rm[2]), at: rm.index, end: rowRe.lastIndex });
+    for (let i = 0; i < rowHits.length; i++) {
+      const until = i + 1 < rowHits.length ? rowHits[i + 1].at : rowsRegion.length;
+      const tail = rowsRegion.slice(rowHits[i].end, until);
+      const decs = tail.match(/\d{1,4}\.\d{2}/g);
+      finishers.push({ prog: rowHits[i].prog, name: rowHits[i].name, odds: decs && decs.length ? Number(decs[decs.length - 1]) : null });
+    }
+    // extraction-order-independent fallback: in the table region the Odds $1 column is the only
+    // source of x.xx decimals (weights are integers, beaten lengths are glyphs, times come after
+    // OFF AT) — so all decimals in the region, in order, ARE the odds column. Use it whenever the
+    // per-row capture came back incomplete, which happens when pdf.js emits the table column-wise.
+    if (finishers.some((x) => x.odds === null)) {
+      const allDecs = (rowsRegion.match(/\d{1,4}\.\d{2}/g) || []).map(Number);
+      if (allDecs.length === finishers.length) finishers.forEach((x, i2) => { x.odds = allDecs[i2]; });
+    }
+    // mutuel prices: window from OFF AT forward (label and lines interleave in extraction)
+    const mut = [];
+    const mutWindow = offAt > 0 ? seg.slice(offAt, offAt + 1800) : seg;
+    // both extraction orders: "N- NAME prices ...dots" and "N- NAME ...dots prices"
+    const mutPats = [
+      /(\d{1,2})-\s*[”"']?\s*((?:DH\s*)?[A-Z][A-Z .,'()&\-\/]*[A-Z)])\s+((?:\d{1,4}\.\d{2}\s+){1,3})(?=\.)/g,
+      /(\d{1,2})-\s*[”"']?\s*((?:DH\s*)?[A-Z][A-Z .,'()&\-\/]*[A-Z)])\s*(?:\.\s*){2,}((?:\d{1,4}\.\d{2}\s*){1,3})/g,
+    ];
+    for (const mutRe of mutPats) {
+      let mm;
+      while ((mm = mutRe.exec(mutWindow))) {
+        const prog = Number(mm[1]);
+        if (mut.some((x) => x.prog === prog)) continue;
+        mut.push({ prog, name: stripFlags(mm[2].replace(/^DH\s*/, "")), prices: mm[3].trim().split(/\s+/).map(Number) });
+      }
+      if (mut.length >= 3) break;
+    }
+    const dh = /Dead Heat/i.test(seg) || mut.filter((x) => x.prices.length === 3).length >= 2;
+    const scr = [];
+    const sm = seg.match(/Scratched-\s*([^]*?)(?:\$1 Daily|\$1 Pick|50 CENT|\$1 Grand|\$1 Consolation|brisnet\.com|\(c\) Copyright|Emergence was|$)/);
+    if (sm) sm[1].split(",").forEach((s) => { const nm = s.replace(/\([^)]*\)/g, "").trim(); if (nm && nm.length > 1) scr.push(nm); });
+    races.push({ raceNumber: marks[k].n, turf, dh, finishers, mutuel: mut, scratched: scr });
+  }
+  return { trackName, date, races };
+}
+
+async function pdfFileToText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let out = "";
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    out += tc.items.map((it) => it.str).join(" ") + "\n";
+  }
+  return out;
+}
+document.getElementById("f").onchange = async (e) => {
+  const out = document.getElementById("out");
+  out.innerHTML = "reading...";
+  const text = await pdfFileToText(e.target.files[0]);
+  const r = parseResultsChart(text);
+  let h = "";
+  if (!r) { out.innerHTML = "<b>parser returned null</b>"; return; }
+  h += `<p><b>${r.trackName} ${r.date} — ${r.races.length} races</b></p>`;
+  for (const race of r.races) {
+    const nullOdds = race.finishers.filter(x => x.odds === null).length;
+    h += `<p>R${race.raceNumber}: ${race.finishers.length} finishers, ${nullOdds} null odds, dh=${race.dh}, winner=${race.finishers[0] ? race.finishers[0].name + "@" + race.finishers[0].odds : "?"}</p>`;
+  }
+  // raw table region for R3 — show exactly how pdf.js fragments it
+  const norm = text.replace(/\s+/g, " ");
+  const i3 = norm.search(/THIRD\s+RACE/), i4 = norm.search(/FOURTH\s+RACE/);
+  const seg = norm.slice(i3, i4);
+  const off = seg.indexOf("OFF AT");
+  const region = seg.slice(0, off > 0 ? off : 900);
+  const decs = region.match(/\d{1,4}\.\d{2}/g) || [];
+  h += `<p><b>R3 table-region decimals (${decs.length}):</b> ${decs.join(" ")}</p>`;
+  h += `<p><b>R3 raw table region:</b></p><pre>${region.replace(/</g,"&lt;")}</pre>`;
+  out.innerHTML = h;
+};
+</script></body></html>
