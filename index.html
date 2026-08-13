@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.19.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -413,8 +413,72 @@ function simVerdict(rows) {
   return { action: "PASS", horse: best };
 }
 /* SIM-CORE END */
+
+// ---- RESULTS CHART PARSER (module-level, fence-free) ----
+function parseResultsChart(raw) {
+  const text = String(raw || "").replace(/\s+/g, " ");
+  const ORD = ["FIRST","SECOND","THIRD","FOURTH","FIFTH","SIXTH","SEVENTH","EIGHTH","NINTH","TENTH","ELEVENTH","TWELFTH","THIRTEENTH","FOURTEENTH","FIFTEENTH","SIXTEENTH"];
+  if (!/\$2 Mutuel Prices/.test(text) || !/Value of Race:/.test(text)) return null;
+  const MONTHS = { January:1,February:2,March:3,April:4,May:5,June:6,July:7,August:8,September:9,October:10,November:11,December:12 };
+  const dm = text.match(/([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
+  const date = dm ? Number(`${dm[3]}${String(MONTHS[dm[1]]||0).padStart(2,"0")}${String(dm[2]).padStart(2,"0")}`) : null;
+  const tm = text.match(/(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)/);
+  const trackName = tm ? tm[1].trim() : null;
+  const headRe = /\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH|FIFTEENTH|SIXTEENTH)\s+RACE\b/g;
+  const marks = []; let m2;
+  while ((m2 = headRe.exec(text))) marks.push({ n: ORD.indexOf(m2[1]) + 1, at: m2.index });
+  const stripFlags = (s) => {
+    let n = s.replace(/[”"']/g, "").trim();
+    while (/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/.test(n) && n.split(" ").length > 1) n = n.replace(/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/, "");
+    return n.trim();
+  };
+  const races = [];
+  for (let k = 0; k < marks.length; k++) {
+    const seg = text.slice(marks[k].at, k + 1 < marks.length ? marks[k + 1].at : text.length);
+    const prevTail = text.slice(k > 0 ? marks[k - 1].at : 0, marks[k].at).slice(-700);
+    const turf = /\((?:Inner\s+)?Turf\)/i.test(prevTail);
+    const offAt = seg.search(/OFF AT/);
+    const tableRegion = offAt > 0 ? seg.slice(0, offAt) : seg;
+    // rows: prog + (name+flags) + age/sex code + weight — table is printed in FINISH ORDER
+    const finishers = [];
+    const rowRe = /(?:^|\s)(\d{1,2})\s+([”"']?\s?[A-Z][A-Za-z0-9 .,'()&\-\/]*?)\s+\d[A-Z]{1,3}\s+\d{3}\s/g;
+    let rm; const rowHits = [];
+    const rowsRegion = (() => { const i = tableRegion.search(/Odds \$1/); return i >= 0 ? tableRegion.slice(i) : tableRegion; })();
+    while ((rm = rowRe.exec(rowsRegion))) rowHits.push({ prog: Number(rm[1]), name: stripFlags(rm[2]), at: rm.index, end: rowRe.lastIndex });
+    for (let i = 0; i < rowHits.length; i++) {
+      const until = i + 1 < rowHits.length ? rowHits[i + 1].at : rowsRegion.length;
+      const tail = rowsRegion.slice(rowHits[i].end, until);
+      const decs = tail.match(/\d{1,4}\.\d{2}/g);
+      finishers.push({ prog: rowHits[i].prog, name: rowHits[i].name, odds: decs && decs.length ? Number(decs[decs.length - 1]) : null });
+    }
+    // mutuel prices: window from OFF AT forward (label and lines interleave in extraction)
+    const mut = [];
+    const mutWindow = offAt > 0 ? seg.slice(offAt, offAt + 1800) : seg;
+    // both extraction orders: "N- NAME prices ...dots" and "N- NAME ...dots prices"
+    const mutPats = [
+      /(\d{1,2})-\s*[”"']?\s*((?:DH\s*)?[A-Z][A-Z .,'()&\-\/]*[A-Z)])\s+((?:\d{1,4}\.\d{2}\s+){1,3})(?=\.)/g,
+      /(\d{1,2})-\s*[”"']?\s*((?:DH\s*)?[A-Z][A-Z .,'()&\-\/]*[A-Z)])\s*(?:\.\s*){2,}((?:\d{1,4}\.\d{2}\s*){1,3})/g,
+    ];
+    for (const mutRe of mutPats) {
+      let mm;
+      while ((mm = mutRe.exec(mutWindow))) {
+        const prog = Number(mm[1]);
+        if (mut.some((x) => x.prog === prog)) continue;
+        mut.push({ prog, name: stripFlags(mm[2].replace(/^DH\s*/, "")), prices: mm[3].trim().split(/\s+/).map(Number) });
+      }
+      if (mut.length >= 3) break;
+    }
+    const dh = /Dead Heat/i.test(seg) || mut.filter((x) => x.prices.length === 3).length >= 2;
+    const scr = [];
+    const sm = seg.match(/Scratched-\s*([^]*?)(?:\$1 Daily|\$1 Pick|50 CENT|\$1 Grand|\$1 Consolation|brisnet\.com|\(c\) Copyright|Emergence was|$)/);
+    if (sm) sm[1].split(",").forEach((s) => { const nm = s.replace(/\([^)]*\)/g, "").trim(); if (nm && nm.length > 1) scr.push(nm); });
+    races.push({ raceNumber: marks[k].n, turf, dh, finishers, mutuel: mut, scratched: scr });
+  }
+  return { trackName, date, races };
+}
+
 // ---------- Styles ----------
-const APP_VERSION = "2.19.1";
+const APP_VERSION = "2.20.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -475,6 +539,9 @@ function HorseRaceAnalyzer() {
   const [winnerMode, setWinnerMode] = useState(false);
   const [finishPicks, setFinishPicks] = useState([]);
   const [betSlipOpen, setBetSlipOpen] = useState(false);
+  const [dhWin, setDhWin] = useState(false); // dead heat for first (2.20.0)
+  const [resultsHub, setResultsHub] = useState(null); // parsed chart model
+  const resultsFileRef = useRef(null);
   const [slipType, setSlipType] = useState("WIN");
   const [slipHorseI, setSlipHorseI] = useState(null);
   const [slipAmount, setSlipAmount] = useState("2");
@@ -813,7 +880,7 @@ function HorseRaceAnalyzer() {
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
     }
-    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setLogMsg(""); setBetSlipOpen(false); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
+    setError(""); setExpanded(null); setWinnerMode(false); setScratchMode(false); setDhWin(false); setLogMsg(""); setBetSlipOpen(false); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false); setOffTurf(false);
     const cached = raceData[r.raceNumber];
     if (cached) {
       setRaceInfo(cached.raceInfo);
@@ -1406,6 +1473,71 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     return out;
   }
 
+  const normName = (s) => String(s || "").toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9]/g, "");
+
+  async function handleResultsChartFile(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError(""); setBusy(true); setLcdMsg("READING CHART...");
+    try {
+      const text = await pdfFileToText(files[0]);
+      if (!/Value of Race:/.test(text) && /(Scroll to race:|Also Ran:)/.test(text)) {
+        throw new Error("That's the summary results page — upload the full chart version (the one with the Odds $1 column).");
+      }
+      const parsed = parseResultsChart(text);
+      if (!parsed || !parsed.races.length) throw new Error("Couldn't read that as a results chart.");
+      const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_cards?select=id,track,race_date", { headers: supaHeaders() });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const cards = await resp.json();
+      const sc = (cards || []).find((c) => Number(c.race_date) === parsed.date &&
+        String(parsed.trackName || "").toUpperCase().startsWith(String(c.track || "").slice(0, 3).toUpperCase()));
+      if (!sc) throw new Error(`No card on file for ${parsed.trackName || "that track"} ${parsed.date || ""} — load the day's card first.`);
+      await loadSavedCard(sc.id, null, true);
+      setResultsHub(parsed);
+      setStep("resultsHub");
+      setLcdMsg("CHART · " + parsed.races.length + " RACES");
+    } catch (e) {
+      setError("Chart upload failed. " + (e.message || e));
+      setLcdMsg("RESULTS");
+    } finally { setBusy(false); }
+  }
+
+  function stageChartRace(cr) {
+    const idxEntry = raceIndex.find((r) => num(r.raceNumber) === cr.raceNumber);
+    const rd = idxEntry && raceData[idxEntry.raceNumber];
+    if (!idxEntry || !rd || !rd.horses) { setError("R" + cr.raceNumber + " isn't in the loaded card data."); return; }
+    switchTab(idxEntry); // opens the race; our sets below land in the same batch and win
+    const oddsByName = new Map(cr.finishers.map((f) => [normName(f.name), f.odds]));
+    const ranNames = new Set(cr.finishers.map((f) => normName(f.name)));
+    const scrNames = new Set(cr.scratched.map(normName));
+    const updated = rd.horses.map((h) => {
+      const key = normName(h.name);
+      const odds = oddsByName.get(key);
+      return {
+        ...h,
+        scratched: scrNames.has(key) ? true : ranNames.has(key) ? false : !!h.scratched,
+        odds: odds !== undefined && odds !== null ? String(odds) : h.odds,
+      };
+    });
+    setHorses(updated);
+    const idxOf = (nm) => updated.findIndex((h) => normName(h.name) === normName(nm));
+    const picks = cr.finishers.slice(0, 3).map((f) => idxOf(f.name)).filter((i) => i >= 0);
+    setFinishPicks(picks);
+    const payFor = (prog) => (cr.mutuel.find((x) => x.prog === prog) || {}).prices || [];
+    const f = cr.finishers;
+    const P = (arr, i) => (arr[i] !== undefined ? String(arr[i]) : "");
+    const pr1 = payFor(f[0] && f[0].prog), pr2 = payFor(f[1] && f[1].prog), pr3 = payFor(f[2] && f[2].prog);
+    setResultPays({
+      w1: P(pr1, 0), p1: P(pr1, 1), s1: P(pr1, 2),
+      w2: cr.dh ? P(pr2, 0) : "",
+      p2: cr.dh ? P(pr2, 1) : P(pr2, 0), s2: cr.dh ? P(pr2, 2) : P(pr2, 1),
+      s3: P(pr3, 0),
+    });
+    setDhWin(!!cr.dh);
+    if (/turf/i.test(String((idxEntry.surface || (rd.raceInfo || {}).surface) || "")) && !cr.turf) setOffTurf(true);
+    setWinnerMode(true); setScratchMode(false); setLogMsg("Chart staged — review, then Save Results on the machine.");
+  }
+
   async function handleScanFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -1664,7 +1796,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         body: JSON.stringify({ settled: false, won: null, payout: null }),
       });
       setLoggedRaces((prev) => { const next = { ...prev }; delete next[rn]; return next; });
-      setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setWinnerMode(false);
+      setFinishPicks([]); setResultPays({ w1: "", w2: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setDhWin(false); setWinnerMode(false);
       await fetchBetsForRace(rn);
       setLogMsg("Result cleared \u2014 log it again when ready.");
       setLcdMsg("RESULT CLEARED \u00b7 R" + rn);
@@ -1865,9 +1997,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         rating: o.rating,
         model_pct: Math.round(o.pModel * 1000) / 10,
         odds: o.odds,
-        is_winner: o.i === p1,
-        finish_pos: o.i === p1 ? 1 : o.i === p2 ? 2 : o.i === p3 ? 3 : null,
-        pay_win: o.i === p1 ? payNum(resultPays.w1) : null,
+        is_winner: o.i === p1 || (dhWin && o.i === p2),
+        finish_pos: o.i === p1 ? 1 : o.i === p2 ? (dhWin ? 1 : 2) : o.i === p3 ? 3 : null,
+        pay_win: o.i === p1 ? payNum(resultPays.w1) : dhWin && o.i === p2 ? payNum(resultPays.w2) : null,
         pay_place: o.i === p1 ? payNum(resultPays.p1) : o.i === p2 ? payNum(resultPays.p2) : null,
         pay_show: o.i === p1 ? payNum(resultPays.s1) : o.i === p2 ? payNum(resultPays.s2) : o.i === p3 ? payNum(resultPays.s3) : null,
       }));
@@ -1889,10 +2021,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         const pos = top.indexOf(b.horse);
         // scratched after the ticket was punched: refund the stake rather than book a loss
         const scr = overlay.some((o) => o.name === b.horse && o.scratched);
-        const won = scr ? false : (b.bet_type === "WIN" ? pos === 0 : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0);
+        const won = scr ? false : (b.bet_type === "WIN" ? pos === 0 || (dhWin && pos === 1) : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0);
         let payout = scr ? b.amount : (won ? null : 0);
         if (won) {
-          const official = b.bet_type === "WIN" ? payNum(resultPays.w1)
+          const official = b.bet_type === "WIN" ? (pos === 1 ? payNum(resultPays.w2) : payNum(resultPays.w1))
             : b.bet_type === "PLACE" ? (pos === 0 ? payNum(resultPays.p1) : payNum(resultPays.p2))
             : (pos === 0 ? payNum(resultPays.s1) : pos === 1 ? payNum(resultPays.s2) : payNum(resultPays.s3));
           if (official !== null) payout = Math.round((b.amount / 2) * official * 100) / 100;
@@ -1913,7 +2045,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       setRaceBets((prev) => ({ ...prev, [rn]: settledLocal }));
       setLoggedRaces((prev) => ({ ...prev, [rn]: { finish: finishPicks.map((i) => (overlay.find((o) => o.i === i) || {}).name).filter(Boolean) } }));
       if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
-      setWinnerMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
+      setWinnerMode(false); setFinishPicks([]); setResultPays({ w1: "", w2: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setDhWin(false);
       setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
       const merged = { ...raceData, [activeRace]: { raceInfo, horses } };
       setRaceData(merged);
@@ -2086,11 +2218,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <React.Fragment>
                 <Key grow active={step === "scan"} onClick={() => { setShowSettings(false); viewEntries(); }} disabled={busy}>Entries</Key>
                 <Key grow active={step === "cards" || step === "review"} onClick={() => { setShowSettings(false); viewCards(); }} disabled={busy}>Cards</Key>
-                <Key grow active={step === "results" && winnerMode} disabled={busy || step !== "results"} onClick={() => {
-                  if (step !== "results") return;
+                <Key grow active={(step === "results" && winnerMode) || step === "resultsHub"} disabled={busy} onClick={() => {
+                  if (step !== "results") { setShowSettings(false); setStep("resultsHub"); setActiveRace(null); setLcdMsg("RESULTS"); return; }
                   if (raceDone && !winnerMode) { cancelResults(); }
                   else if (winnerMode && finishPicks.length >= 3) { saveResults(); }
-                  else { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setLogMsg(""); }
+                  else { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", w2: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setDhWin(false); setLogMsg(""); }
                 }}>{step !== "results" ? "Results" : raceDone && !winnerMode ? "Cancel Results" : winnerMode && finishPicks.length >= 3 ? "Save Results" : winnerMode ? "Cancel logging" : "Log Results"}</Key>
                 <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>Audit</Key>
               </React.Fragment>
@@ -2141,6 +2273,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           <input ref={fileRef} type="file" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
           <input ref={scanFileRef} type="file" multiple onChange={(e) => handleScanFiles(e.target.files)} style={{ display: "none" }} />
           <input ref={oddsSnapRef} type="file" accept="image/*" multiple onChange={(e) => handleOddsSnap(e.target.files)} style={{ display: "none" }} />
+          <input ref={resultsFileRef} type="file" accept="application/pdf,.pdf" onChange={(e) => { handleResultsChartFile(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
 
           {cardTitle && step !== "start" && (
             <div style={{ ...labelFont, color: "#6B6353", marginBottom: 10 }}>{cardTitle}</div>
@@ -2154,6 +2287,37 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
           {/* ---------- START ---------- */}
           {/* ---------- SLIPS ---------- */}
+          {step === "resultsHub" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>Results — chart ingestion</h2>
+                <Key onClick={() => resultsFileRef.current && resultsFileRef.current.click()} disabled={busy}>📄 Upload Chart</Key>
+              </div>
+              <div style={{ fontSize: 12, color: "#7A756A", margin: "6px 0 10px" }}>
+                Upload the free Brisnet chart PDF — the version with the Odds $1 column. Each race stages into its own view; Save Results on the machine commits it.
+              </div>
+              {!resultsHub && <div style={{ fontSize: 13, color: "#4A4437" }}>No chart loaded yet.</div>}
+              {resultsHub && (raceIndex || []).filter((r) => r.ok).map((r) => {
+                const rn = num(r.raceNumber);
+                const cr = resultsHub.races.find((x) => x.raceNumber === rn);
+                const done = !!loggedRaces[rn];
+                const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(rn) || r.live === 0;
+                if (offR) return null;
+                return (
+                  <div key={rn} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px solid rgba(0,0,0,0.09)", fontSize: 13 }}>
+                    <span style={{ fontWeight: 800, minWidth: 34 }}>R{rn}</span>
+                    {cr ? (
+                      <span style={{ flex: 1 }}>
+                        {cr.finishers[0] ? cr.finishers[0].name : "?"}{cr.dh && cr.finishers[1] ? " & " + cr.finishers[1].name + " (DH)" : ""} · odds for {cr.finishers.filter((x) => x.odds !== null).length} runners
+                      </span>
+                    ) : <span style={{ flex: 1, color: "#8B8168" }}>not in chart</span>}
+                    {done ? <span style={{ color: "#2E6B3E", fontWeight: 700 }}>✓ logged</span>
+                      : cr ? <Key onClick={() => stageChartRace(cr)} disabled={busy}>Stage</Key> : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {step === "slips" && slipsView && (
             <div>
               <h2 style={{ fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Betting slips — the table</h2>
@@ -2716,7 +2880,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                           // 2.15.4: the tote board reads in columns — $2 Win, $2 Place, $2 Show —
                           // and a horse that ran second has an empty Win column, not a Place figure
                           // shifted left under the Win header. Fixed slots, blanks where no pool paid.
-                          const slots = [pos === 0 ? "w1" : null, pos === 0 ? "p1" : pos === 1 ? "p2" : null,
+                          const slots = [pos === 0 ? "w1" : pos === 1 && dhWin ? "w2" : null, pos === 0 ? "p1" : pos === 1 ? "p2" : null,
                             pos === 0 ? "s1" : pos === 1 ? "s2" : "s3"];
                           return (
                             <div style={{ padding: "4px 10px 8px 68px", background: "rgba(138,109,47,0.06)" }}>
@@ -2726,6 +2890,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                                   {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
                                     <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{hd}</span>
                                   ))}
+                                  <button onClick={(e) => { e.stopPropagation(); setDhWin(!dhWin); }}
+                                    style={{ fontFamily: "inherit", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 3, cursor: "pointer", background: dhWin ? "#3A3226" : "transparent", color: dhWin ? "#F2E8D0" : "#7A6A45", border: "1px solid #7A6A45" }}>DEAD HEAT</button>
                                 </div>
                               )}
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
