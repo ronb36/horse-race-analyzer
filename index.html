@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.6</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.21.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -486,7 +486,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.20.6";
+const APP_VERSION = "2.21.1";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -1716,6 +1716,26 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   });
   const verdict = simVerdict(overlay);
   /* SIM-CORE END */
+  // 2.21.0 — the season doctrine as a filter, applied outside the fence, downstream of the verdict.
+  // Interim thresholds from the season's profile; to be re-derived in the fall refit, whose goal is
+  // a verdict that makes this filter never fire.
+  const doctrineFilter = (() => {
+    if (!["WIN", "PLACE", "SHOW"].includes(verdict.action) || !verdict.horse) return null;
+    const live = overlay.filter((o) => !o.scratched && o.rating !== null && o.rating !== undefined);
+    if (live.length < 2) return null;
+    const byR = [...live].sort((a, b) => b.rating - a.rating);
+    if (verdict.horse.i !== byR[0].i) return "NOT TOP-RATED";
+    const gap = byR[0].rating - byR[1].rating;
+    if (gap < 6) return "GAP " + gap.toFixed(1);
+    if (/turf/i.test(String(raceInfo.surface || ""))) return "TURF";
+    const df = num(raceInfo.distanceFurlongs);
+    if (!(df >= 6 && df <= 9)) return "DISTANCE " + df + "F";
+    const typ = String(raceInfo.type || "").toLowerCase();
+    if (typ.includes("claim") && !typ.includes("starter") && !typ.includes("optional") && !typ.includes("alw")) return "CLAIMER";
+    const od = verdict.horse.odds;
+    if (od !== null && od !== undefined && od < 1) return "PRICE " + decimalToBoard(od);
+    return null;
+  })();
   const bestEdge = overlay.reduce((best, r) => (r.edge !== null && (best === null || r.edge > best.edge) ? r : best), null);
   let liveRank = 0;
   const withRank = overlay.map((r) => ({ ...r, ratingRank: r.scratched ? null : ++liveRank }));
@@ -1731,6 +1751,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   async function askClaudeForBet() {
     if (loggedRaces[num(raceInfo.raceNumber)]) return; // race is official — the LCD reports the result, no read needed
     if (horses.length > 0 && horses.every((h) => h.scratched)) return; // race scratched — nothing to read
+    if (winnerMode) return; // entering results — recording history, not asking for a read (2.21.1)
     const seq = ++askSeqRef.current;
     setClaudeThinking(true);
     try {
@@ -2188,7 +2209,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
                 ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {busy ? lcdMsg : step === "results" ? (raceDone ? officialLine : raceScratched ? "RACE SCRATCHED" : winnerMode ? "ENTER RESULTS" : verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
+              {busy ? lcdMsg : step === "results" ? (raceDone ? officialLine : raceScratched ? "RACE SCRATCHED" : winnerMode ? "ENTER RESULTS" : verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : doctrineFilter ? `FILTERED \u00b7 ${doctrineFilter}` : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
@@ -2800,7 +2821,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {[raceInfo.distanceFurlongs ? `${raceInfo.distanceFurlongs} furlongs` : null, raceInfo.surface || null, raceInfo.purse ? `purse $${Number(raceInfo.purse).toLocaleString()}` : null].filter(Boolean).join(" · ")}
                 </div>
               )}
-              {!loggedRaces[num(raceInfo.raceNumber)] && !raceScratched && (claudeRec || claudeThinking || claudeErr) && (
+              {!loggedRaces[num(raceInfo.raceNumber)] && !raceScratched && !winnerMode && (claudeRec || claudeThinking || claudeErr) && (
                 <div style={{ background: "rgba(138,109,47,0.08)", border: "1px solid rgba(138,109,47,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
                   {claudeErr && !claudeRec && !claudeThinking ? (
                     <span style={{ color: "#6B6353" }}>
@@ -2836,7 +2857,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     <span /><span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                   {displayed.map((r, di) => {
-                    const isBest = !loggedRaces[num(raceInfo.raceNumber)] && bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0 && ["WIN", "PLACE", "SHOW"].includes(verdict.action);
+                    const isBest = !doctrineFilter && !loggedRaces[num(raceInfo.raceNumber)] && bestEdge && r.i === bestEdge.i && r.edge !== null && r.edge > 0 && ["WIN", "PLACE", "SHOW"].includes(verdict.action);
                     const rnBets = raceBets[num(raceInfo.raceNumber)] || [];
                     const ticketRow = rnBets.some((b) => String(b.horse).toLowerCase() === String(r.name).toLowerCase());
                     const showTicketBtn = supaUrl && supaKey && !winnerMode && (ticketRow || (rnBets.length === 0 && isBest));
@@ -2931,8 +2952,8 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                             <div style={{ padding: "4px 10px 8px 68px", background: "rgba(138,109,47,0.06)" }}>
                               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
                                 <span style={{ minWidth: 34 }} />
-                                {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
-                                  <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{hd}</span>
+                                {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd, hi) => (
+                                  <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{slots[hi] ? hd : ""}</span>
                                 ))}
                                 {dhWin && pos === 0 && <button onClick={(e) => { e.stopPropagation(); setDhWin(false); }}
                                   style={{ fontFamily: "inherit", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "1px solid #7A6A45" }}>DEAD HEAT ✕</button>}
