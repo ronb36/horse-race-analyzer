@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.4</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.5</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -486,7 +486,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.20.4";
+const APP_VERSION = "2.20.5";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -1510,12 +1510,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         if (lr.ok) loggedNos = new Set((await lr.json()).map((x) => Number(x.race_no)));
       } catch (_) {}
       const byRn = new Map(parsed.races.map((x) => [x.raceNumber, x]));
-      const run = { byRn, pending: [] };
-      chartRunRef.current = run;
+      chartRunRef.current = { byRn, preLogged: loggedNos, start: true };
       setStep("resultsHub");
       setLcdMsg("CHART · " + parsed.races.length + " RACES");
-      // stage the first pending race after state settles enough for raceIndex/raceData to be current
-      setTimeout(() => { advanceChartRun(true); }, 0);
+      // the render-side trigger below stages the first race once the loaded card's state is current
     } catch (e) {
       setError("Chart upload failed. " + (e.message || e));
       setLcdMsg("RESULTS");
@@ -1525,7 +1523,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   function advanceChartRun(first) {
     const run = chartRunRef.current;
     if (!run) return;
-    const done = (rn) => !!loggedRaces[rn];
+    const done = (rn) => !!loggedRaces[rn] || (run.preLogged && run.preLogged.has(rn));
     const next = (raceIndex || []).find((r) => {
       const rn = num(r.raceNumber);
       const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(rn) || r.live === 0;
@@ -2137,6 +2135,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   // Recorded without a schema change — a losing ticket always pays 0, so a settled,
   // non-winning ticket whose payout equals its stake can only be a refund.
   const isRefund = (b) => !!b && !!b.settled && !b.won && b.payout !== null && b.payout !== undefined && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0;
+  // chart-run kickoff: staged from a render pass so advanceChartRun's closures see the loaded card (2.20.5)
+  if (chartRunRef.current && chartRunRef.current.start && step === "resultsHub" && (raceIndex || []).length > 0 && !busy) {
+    chartRunRef.current.start = false;
+    setTimeout(() => advanceChartRun(true), 0);
+  }
   const raceDone = !!loggedRaces[num(raceInfo.raceNumber)] || (raceBets[num(raceInfo.raceNumber)] || []).some((b) => b.settled);
   const raceScratched = horses.length > 0 && horses.every((h) => h.scratched); // all-scratched = the race was called off (2.19.0)
   const officialLine = (() => {
