@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.5</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.6</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -486,7 +486,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.20.5";
+const APP_VERSION = "2.20.6";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2080,7 +2080,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         settledLocal.push({ ...b, settled: true, won, payout });
       }
       setRaceBets((prev) => ({ ...prev, [rn]: settledLocal }));
-      setLoggedRaces((prev) => ({ ...prev, [rn]: { finish: finishPicks.map((i) => (overlay.find((o) => o.i === i) || {}).name).filter(Boolean) } }));
+      setLoggedRaces((prev) => ({ ...prev, [rn]: { finish: finishPicks.map((i) => (overlay.find((o) => o.i === i) || {}).name).filter(Boolean), dh: dhWin } }));
       if (bets.length) settledNote = ` — ${bets.length} ticket${bets.length > 1 ? "s" : ""} settled`;
       setWinnerMode(false); setFinishPicks([]); setResultPays({ w1: "", w2: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setDhWin(false);
       setLogMsg(`Race ${raceInfo.raceNumber} official: ${nameAt(p1)} · ${nameAt(p2)} · ${nameAt(p3)}${settledNote}.`);
@@ -2860,15 +2860,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                             {r.name}{isBest ? " ★" : ""}
                             {winnerMode && finishPicks.includes(r.i) && (
                               <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#2F7A46", borderRadius: 4, padding: "1px 5px" }}>
-                                {["1ST", "2ND", "3RD"][finishPicks.indexOf(r.i)]}
+                                {(dhWin ? ["1ST", "1ST", "3RD"] : ["1ST", "2ND", "3RD"])[finishPicks.indexOf(r.i)]}
                               </span>
                             )}
                             {!winnerMode && (() => {
-                              const fin = (loggedRaces[num(raceInfo.raceNumber)] || {}).finish || [];
+                              const lg = loggedRaces[num(raceInfo.raceNumber)] || {};
+                              const fin = lg.finish || [];
                               const fi = fin.findIndex((h) => String(h).toUpperCase() === String(r.name).toUpperCase());
                               return fi >= 0 ? (
                                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#3A2F17", background: "#2F7A46", borderRadius: 4, padding: "1px 5px" }}>
-                                  {["1ST", "2ND", "3RD"][fi]}
+                                  {(lg.dh ? ["1ST", "1ST", "3RD"] : ["1ST", "2ND", "3RD"])[fi]}
                                 </span>
                               ) : null;
                             })()}
@@ -2928,18 +2929,17 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                             pos === 0 ? "s1" : pos === 1 ? "s2" : "s3"];
                           return (
                             <div style={{ padding: "4px 10px 8px 68px", background: "rgba(138,109,47,0.06)" }}>
-                              {pos === 0 && (
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
-                                  <span style={{ minWidth: 34 }} />
-                                  {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
-                                    <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{hd}</span>
-                                  ))}
-                                  {dhWin && <button onClick={(e) => { e.stopPropagation(); setDhWin(false); }}
-                                    style={{ fontFamily: "inherit", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "1px solid #7A6A45" }}>DEAD HEAT ✕</button>}
-                                </div>
-                              )}
+                              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
+                                <span style={{ minWidth: 34 }} />
+                                {["$2 WIN", "$2 PLACE", "$2 SHOW"].map((hd) => (
+                                  <span key={hd} style={{ width: 74, textAlign: "center", fontSize: 9, letterSpacing: "0.08em", color: "#8B8168", fontWeight: 700 }}>{hd}</span>
+                                ))}
+                                {dhWin && pos === 0 && <button onClick={(e) => { e.stopPropagation(); setDhWin(false); }}
+                                  style={{ fontFamily: "inherit", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 3, cursor: "pointer", background: "#3A3226", color: "#F2E8D0", border: "1px solid #7A6A45" }}>DEAD HEAT ✕</button>}
+                                {dhWin && pos === 1 && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 3, background: "#3A3226", color: "#F2E8D0", border: "1px solid #7A6A45" }}>DEAD HEAT</span>}
+                              </div>
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <span style={{ fontSize: 10, color: "#7A6A45", fontWeight: 700, letterSpacing: "0.08em", minWidth: 34 }}>{["1ST", "2ND", "3RD"][pos]}</span>
+                                <span style={{ fontSize: 10, color: "#7A6A45", fontWeight: 700, letterSpacing: "0.08em", minWidth: 34 }}>{dhWin ? ["1ST", "1ST", "3RD"][pos] : ["1ST", "2ND", "3RD"][pos]}</span>
                                 {slots.map((k, si) => (k === null
                                   ? <span key={"blank" + si} style={{ width: 74 }} />
                                   : <input key={k} value={resultPays[k]} onChange={(e) => setResultPays((prev) => ({ ...prev, [k]: e.target.value }))}
