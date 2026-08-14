@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.3</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.20.4</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -486,7 +486,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.20.3";
+const APP_VERSION = "2.20.4";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -550,6 +550,7 @@ function HorseRaceAnalyzer() {
   const [dhWin, setDhWin] = useState(false); // dead heat for first (2.20.0)
   const [resultsHub, setResultsHub] = useState(null); // parsed chart model
   const resultsFileRef = useRef(null);
+  const chartRunRef = useRef(null); // { byRn: Map, pending: [raceNumber,...] } — the step-through run (2.20.4)
   const [slipType, setSlipType] = useState("WIN");
   const [slipHorseI, setSlipHorseI] = useState(null);
   const [slipAmount, setSlipAmount] = useState("2");
@@ -1502,12 +1503,42 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       if (!sc) throw new Error(`No card on file for ${parsed.trackName || "that track"} ${parsed.date || ""} — load the day's card first.`);
       await loadSavedCard(sc.id, null, true);
       setResultsHub(parsed);
+      // already-logged races, straight from the table (state hydration is async — don't trust it here)
+      let loggedNos = new Set();
+      try {
+        const lr = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log?select=race_no&track=eq." + sc.track + "&race_date=eq." + parsed.date, { headers: supaHeaders() });
+        if (lr.ok) loggedNos = new Set((await lr.json()).map((x) => Number(x.race_no)));
+      } catch (_) {}
+      const byRn = new Map(parsed.races.map((x) => [x.raceNumber, x]));
+      const run = { byRn, pending: [] };
+      chartRunRef.current = run;
       setStep("resultsHub");
       setLcdMsg("CHART · " + parsed.races.length + " RACES");
+      // stage the first pending race after state settles enough for raceIndex/raceData to be current
+      setTimeout(() => { advanceChartRun(true); }, 0);
     } catch (e) {
       setError("Chart upload failed. " + (e.message || e));
       setLcdMsg("RESULTS");
     } finally { setBusy(false); }
+  }
+
+  function advanceChartRun(first) {
+    const run = chartRunRef.current;
+    if (!run) return;
+    const done = (rn) => !!loggedRaces[rn];
+    const next = (raceIndex || []).find((r) => {
+      const rn = num(r.raceNumber);
+      const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(rn) || r.live === 0;
+      return r.ok && !offR && !done(rn) && run.byRn.has(rn) && !run.saved?.has(rn);
+    });
+    if (!next) {
+      chartRunRef.current = null;
+      setStep("resultsHub");
+      setActiveRace(null);
+      setLcdMsg("ALL RESULTS SAVED");
+      return;
+    }
+    stageChartRace(run.byRn.get(num(next.raceNumber)));
   }
 
   function stageChartRace(cr) {
@@ -2058,9 +2089,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       const merged = { ...raceData, [activeRace]: { raceInfo, horses } };
       setRaceData(merged);
       saveCard(cardMeta, cardTitle, raceIndex, merged);
+      return true;
     } catch (e) {
       setLogMsg("");
       setError("Couldn't log the result. " + (e.message || e));
+      return false;
     }
   }
 
@@ -2229,7 +2262,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 <Key grow active={(step === "results" && winnerMode) || step === "resultsHub"} disabled={busy} onClick={() => {
                   if (step !== "results") { setShowSettings(false); setStep("resultsHub"); setActiveRace(null); setLcdMsg("RESULTS"); return; }
                   if (raceDone && !winnerMode) { cancelResults(); }
-                  else if (winnerMode && finishPicks.length >= 3) { saveResults(); }
+                  else if (winnerMode && finishPicks.length >= 3) { (async () => { const ok = await saveResults(); if (ok && chartRunRef.current) { (chartRunRef.current.saved = chartRunRef.current.saved || new Set()).add(num(raceInfo.raceNumber)); advanceChartRun(false); } })(); }
                   else { setWinnerMode(!winnerMode); setScratchMode(false); setFinishPicks([]); setResultPays({ w1: "", w2: "", p1: "", s1: "", p2: "", s2: "", s3: "" }); setDhWin(false); setLogMsg(""); }
                 }}>{step !== "results" ? "Results" : raceDone && !winnerMode ? "Cancel Results" : winnerMode && finishPicks.length >= 3 ? "Save Results" : winnerMode ? "Cancel logging" : "Log Results"}</Key>
                 <Key grow active={step === "audit"} onClick={() => { setShowSettings(false); loadAudit(); }} disabled={busy}>Audit</Key>
