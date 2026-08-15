@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.22.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.23.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,11 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.22.0";
+const APP_VERSION = "2.23.0";
+// Doctrine eras: the scoreline and the era banner scope to the current one.
+// 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
+// from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
+const ERA_START = 20260806;
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -566,6 +570,7 @@ function HorseRaceAnalyzer() {
   const [slipsView, setSlipsView] = useState(null);
   const [slipsDate, setSlipsDate] = useState(null);
   const [auditView, setAuditView] = useState(null);
+  const [auditStats, setAuditStats] = useState(null);
   const [cardFlags, setCardFlags] = useState({ cancelled: false, cancelledRaces: [] });
   const [offTurf, setOffTurf] = useState(false);
   const cardFlagsRef = useRef({ cancelled: false, cancelledRaces: [] });
@@ -830,6 +835,7 @@ function HorseRaceAnalyzer() {
       distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
       purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
       surface: r.surface,
+      type: r.type || "", // 2.22.1: CLAIMER gate was blind on k-file cards without this
     };
     const hs = brisnetHorses(brisRef.current.get(r.raceNumber));
     setRaceInfo(info);
@@ -864,6 +870,7 @@ function HorseRaceAnalyzer() {
           distanceFurlongs: r.distanceFurlongs !== null && r.distanceFurlongs !== undefined ? String(r.distanceFurlongs) : "",
           purse: r.purse !== null && r.purse !== undefined ? String(r.purse) : "",
           surface: r.surface,
+          type: r.type || "", // 2.22.1
         },
         horses: brisnetHorses(parsedB.byRace.get(r.raceNumber)),
       };
@@ -1301,18 +1308,31 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       });
       setAuditView(view);
       setStep("audit");
-      // 2.22.0: the machine announces the season scoreline — settled tickets only,
-      // refunds excluded from every figure (a scratched horse's returned stake is
-      // a non-event, not a bet).
+      // 2.22.0/2.23.0: settled tickets only, refunds excluded from every figure.
+      // The LCD reads the CURRENT ERA (since ERA_START); the banner carries both ledgers.
       {
         const isRef = (b) => !b.won && b.payout !== null && b.payout !== undefined && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0;
-        const done = bets.filter((b) => b.settled && !isRef(b));
-        const wonN = done.filter((b) => b.won).length;
-        const stk = done.reduce((s, b) => s + (num(b.amount) || 0), 0);
-        const ret = done.reduce((s, b) => s + (num(b.payout) || 0), 0);
-        const roi = stk > 0 ? Math.round(((ret - stk) / stk) * 100) : 0;
-        setLcdMsg(done.length
-          ? `${done.length} BET \u00b7 ${wonN} WON \u00b7 ${Math.round((wonN / done.length) * 100)}% \u00b7 ROI ${roi >= 0 ? "+" : "\u2212"}${Math.abs(roi)}%`
+        const sum = (rows) => {
+          const done = rows.filter((b) => b.settled && !isRef(b));
+          const wonN = done.filter((b) => b.won).length;
+          const stk = done.reduce((s, b) => s + (num(b.amount) || 0), 0);
+          const ret = done.reduce((s, b) => s + (num(b.payout) || 0), 0);
+          return { n: done.length, wonN, stk, ret, roi: stk > 0 ? Math.round(((ret - stk) / stk) * 100) : 0 };
+        };
+        const season = sum(bets);
+        const era = sum(bets.filter((b) => Number(b.race_date) >= ERA_START));
+        const raceDays = view.filter((v) => v.tracks.length > 0 && !v.allOff);
+        const eraDays = raceDays.filter((v) => Number(v.date) >= ERA_START);
+        const qualOf = (rows) => rows.reduce((s, v) => s + v.tracks.reduce((a, t) => a + (t.cardOff ? 0 : t.elig), 0), 0);
+        const eraBetRaces = new Set(bets.filter((b) => !isRef(b) && Number(b.race_date) >= ERA_START).map((b) => b.race_date + "|" + b.track + "|" + b.race_no)).size;
+        setAuditStats({
+          tracks: [...new Set(cards.map((c) => c.track))].join("+"),
+          opened: raceDays.length ? raceDays[raceDays.length - 1].date : null,
+          days: raceDays.length, qual: qualOf(raceDays), season,
+          eraDays: eraDays.length, eraQual: qualOf(eraDays), eraFiltered: Math.max(0, qualOf(eraDays) - eraBetRaces), era,
+        });
+        setLcdMsg(era.n
+          ? `${era.n} BET \u00b7 ${era.wonN} WON \u00b7 ${Math.round((era.wonN / era.n) * 100)}% \u00b7 ROI ${era.roi >= 0 ? "+" : "\u2212"}${Math.abs(era.roi)}%`
           : "THE AUDIT");
       }
     } catch (e) {
@@ -1749,7 +1769,9 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const df = num(raceInfo.distanceFurlongs);
     if (!(df >= 6 && df <= 9)) return { reason: "DISTANCE " + df + "F" };
     const typ = String(raceInfo.type || "").toLowerCase();
-    if (typ.includes("claim") && !typ.includes("starter") && !typ.includes("optional") && !typ.includes("alw")) return { reason: "CLAIMER" };
+    // 2.22.1: k-file class strings are abbreviated ("Clm 30000n3l", "OClm 80000n2x") —
+    // "claim" never matches them. Match Clm at a word start so OClm stays allowed.
+    if ((typ.includes("claim") || /(^|\s)clm/.test(typ)) && !typ.includes("oclm") && !typ.includes("starter") && !typ.includes("optional") && !typ.includes("alw")) return { reason: "CLAIMER" };
     if (top.odds !== null && top.odds !== undefined && top.odds < 1) return { reason: "PRICE " + decimalToBoard(top.odds) };
     return { bet: top };
   })();
@@ -2541,6 +2563,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               <p style={{ fontSize: 11, color: "#6B6353", margin: "0 0 14px", lineHeight: 1.5 }}>
                 Every race date reconciled across cards, results, and tickets. Green means the day is closed clean.
               </p>
+              {auditStats && (
+                <div style={{ background: "#EAE3CF", border: "1px solid rgba(0,0,0,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 11, letterSpacing: "0.04em", lineHeight: 1.8, fontVariantNumeric: "tabular-nums" }}>
+                  <div>
+                    <b>SEASON — {auditStats.tracks}</b> · opened {auditStats.opened ? ymdToDisplay(auditStats.opened) : "—"} · {auditStats.days} race day{auditStats.days === 1 ? "" : "s"} · {auditStats.qual} qualified · {auditStats.season.n} bet · {auditStats.season.wonN} won · ${auditStats.season.stk.toFixed(2)} → ${auditStats.season.ret.toFixed(2)}
+                  </div>
+                  <div style={{ borderTop: "1px solid rgba(0,0,0,0.12)", marginTop: 4, paddingTop: 4 }}>
+                    <b>ERA — FILTER DOCTRINE</b> · since {ymdToDisplay(ERA_START)} · {auditStats.eraDays} day{auditStats.eraDays === 1 ? "" : "s"} · {auditStats.eraQual} qualified · {auditStats.eraFiltered} filtered · {auditStats.era.n} bet · {auditStats.era.wonN} won · ROI {auditStats.era.roi >= 0 ? "+" : "−"}{Math.abs(auditStats.era.roi)}%
+                  </div>
+                </div>
+              )}
               {auditView.length === 0 && (
                 <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353" }}>
                   Nothing on the books yet.
