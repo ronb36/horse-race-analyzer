@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.21.6</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.22.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.21.6";
+const APP_VERSION = "2.22.0";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -1301,7 +1301,20 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       });
       setAuditView(view);
       setStep("audit");
-      setLcdMsg("THE AUDIT");
+      // 2.22.0: the machine announces the season scoreline — settled tickets only,
+      // refunds excluded from every figure (a scratched horse's returned stake is
+      // a non-event, not a bet).
+      {
+        const isRef = (b) => !b.won && b.payout !== null && b.payout !== undefined && Number(b.payout) === Number(b.amount) && Number(b.amount) > 0;
+        const done = bets.filter((b) => b.settled && !isRef(b));
+        const wonN = done.filter((b) => b.won).length;
+        const stk = done.reduce((s, b) => s + (num(b.amount) || 0), 0);
+        const ret = done.reduce((s, b) => s + (num(b.payout) || 0), 0);
+        const roi = stk > 0 ? Math.round(((ret - stk) / stk) * 100) : 0;
+        setLcdMsg(done.length
+          ? `${done.length} BET \u00b7 ${wonN} WON \u00b7 ${Math.round((wonN / done.length) * 100)}% \u00b7 ROI ${roi >= 0 ? "+" : "\u2212"}${Math.abs(roi)}%`
+          : "THE AUDIT");
+      }
     } catch (e) {
       setError("Couldn't run the audit. " + (e.message || e));
       setLcdMsg("READY");
