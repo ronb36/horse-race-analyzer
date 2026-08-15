@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.24.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.25.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.24.0";
+const APP_VERSION = "2.25.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -2145,6 +2145,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         // a race taken off the turf is logged on the surface it was run on, and marked,
         // so the fall refit can exclude or study cards that mis-specified it
         surface: offTurf ? "dirt (off turf)" : (raceInfo.surface || null),
+        race_type: raceInfo.type || null, // 2.25.0: class string, raw — the refit parses it
         purse: num(raceInfo.purse),
         horse: o.name,
         post: num(o.post),
@@ -2222,6 +2223,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         // a race taken off the turf is logged on the surface it was run on, and marked,
         // so the fall refit can exclude or study cards that mis-specified it
         surface: offTurf ? "dirt (off turf)" : (raceInfo.surface || null),
+        race_type: raceInfo.type || null, // 2.25.0: class string, raw — the refit parses it
         purse: num(raceInfo.purse),
         horse: o.name,
         post: num(o.post),
