@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.23.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.23.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.23.0";
+const APP_VERSION = "2.23.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -801,7 +801,13 @@ function HorseRaceAnalyzer() {
       setRaceIndex(card.raceIndex || []);
       const hydrated = {};
       for (const [k, val] of Object.entries(card.raceData || {})) {
-        hydrated[k] = { ...val, horses: (val.horses || []).map((h) => ({ ...h, mlOdds: normalizeOdds(h.mlOdds) })) };
+        // 2.23.1: cards saved before 2.22.1 stored raceInfo without type, leaving the
+        // CLAIMER gate blind on reload. The race index always carried type — backfill.
+        const idxRow = (card.raceIndex || []).find((r) => String(r.raceNumber) === String(k));
+        const info = val.raceInfo && !val.raceInfo.type && idxRow && idxRow.type
+          ? { ...val.raceInfo, type: idxRow.type }
+          : val.raceInfo;
+        hydrated[k] = { ...val, raceInfo: info, horses: (val.horses || []).map((h) => ({ ...h, mlOdds: normalizeOdds(h.mlOdds) })) };
       }
       setRaceData(hydrated);
       if (preview) {
