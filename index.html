@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.21.4</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.21.6</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -420,9 +420,13 @@ function parseResultsChart(raw) {
   const ORD = ["FIRST","SECOND","THIRD","FOURTH","FIFTH","SIXTH","SEVENTH","EIGHTH","NINTH","TENTH","ELEVENTH","TWELFTH","THIRTEENTH","FOURTEENTH","FIFTEENTH","SIXTEENTH"];
   if (!/\$2 Mutuel Prices/.test(text) || !/Value of Race:/.test(text)) return null;
   const MONTHS = { January:1,February:2,March:3,April:4,May:5,June:6,July:7,August:8,September:9,October:10,November:11,December:12 };
-  const dm = text.match(/([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
+  // 2.21.6: the card date must come from the chart header (RACE <Track> <Month D, YYYY>),
+  // never from a first loose match — race conditions can quote dates ("Non-winners Of A
+  // Race Since February 14, 2026" sat ahead of the header on SAR 08/14 R1 and stamped
+  // the whole chart 20260214). Loose match kept only as a fallback when no header hits.
+  const tm = text.match(/(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
+  const dm = tm ? [tm[0], tm[2], tm[3], tm[4]] : text.match(/([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
   const date = dm ? Number(`${dm[3]}${String(MONTHS[dm[1]]||0).padStart(2,"0")}${String(dm[2]).padStart(2,"0")}`) : null;
-  const tm = text.match(/(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)/);
   const trackName = tm ? tm[1].trim() : null;
   const headRe = /\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH|FIFTEENTH|SIXTEENTH)\s+RACE\b/g;
   const marks = []; let m2;
@@ -486,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.21.4";
+const APP_VERSION = "2.21.6";
 const GOLD = "linear-gradient(175deg, #E3C98C 0%, #C9A96A 35%, #B8944F 60%, #D8BC7E 100%)";
 const GREEN = "#16382B";
 const PAPER = "#F3EDDD";
@@ -2179,6 +2183,16 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     }
     return win ? "OFFICIAL: " + win : "RACE OFFICIAL";
   })();
+  // 2.21.5: a live (unsettled) ticket owns the LCD while the race is still to run,
+  // so toggling the race keys reads as a position map: WIN BET: <HORSE> on punched
+  // races, FILTERED/PASS on the rest. Official results, SCRATCHED and ENTER RESULTS
+  // still outrank it.
+  const liveTicketLine = (() => {
+    const open = (raceBets[num(raceInfo.raceNumber)] || []).filter((b) => !b.settled);
+    if (!open.length) return null;
+    const b = open[0];
+    return `${b.bet_type || "WIN"} BET: ${String(b.horse || "").toUpperCase().slice(0, 18)}` + (open.length > 1 ? ` +${open.length - 1}` : "");
+  })();
   const displayed = [...withRank].sort((a, b) => (num(a.post) ?? 99) - (num(b.post) ?? 99));
   oddsRefs.current.length = displayed.length;
   askNowRef.current = askClaudeForBet;
@@ -2211,7 +2225,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
                 ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {busy ? lcdMsg : step === "results" ? (raceDone ? officialLine : raceScratched ? "RACE SCRATCHED" : winnerMode ? "ENTER RESULTS" : verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : doctrineRead ? (doctrineRead.bet ? `BET: ${doctrineRead.bet.name.toUpperCase().slice(0, 20)} TO WIN` : `FILTERED \u00b7 ${doctrineRead.reason}`) : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
+              {busy ? lcdMsg : step === "results" ? (raceDone ? officialLine : raceScratched ? "RACE SCRATCHED" : winnerMode ? "ENTER RESULTS" : liveTicketLine ? liveTicketLine : verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : doctrineRead ? (doctrineRead.bet ? `BET: ${doctrineRead.bet.name.toUpperCase().slice(0, 20)} TO WIN` : `FILTERED \u00b7 ${doctrineRead.reason}`) : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
