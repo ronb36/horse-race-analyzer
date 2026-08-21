@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.25.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.26.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.25.0";
+const APP_VERSION = "2.26.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -1666,7 +1666,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         let races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
         if (isEtd) races = await mergeStoredPostTimes(key, ymd0, races);
         setPostTimes((prev) => ({ ...prev, [key + "|" + ymd0]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
-        saveEntries(key, parsed.track, ymd0, races);
+        await saveEntries(key, parsed.track, ymd0, races);
         found.push({ track: parsed.track, code: parsed.trackCode, ymd: ymd0, dateStr: parsed.dateStr || ymdToDisplay(ymd0), races });
       }
       const ocScan = await fetchOwnedCards();
@@ -1843,6 +1843,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   async function askClaudeForBet() {
+    return; // 2.26.0 — advisor retired for the SAR season; panel removed, plumbing dormant pending dark-week sweep
     if (loggedRaces[num(raceInfo.raceNumber)]) return; // race is official — the LCD reports the result, no read needed
     if (horses.length > 0 && horses.every((h) => h.scratched)) return; // race scratched — nothing to read
     if (winnerMode) return; // entering results — recording history, not asking for a read (2.21.1)
@@ -2945,29 +2946,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   {[raceInfo.distanceFurlongs ? `${raceInfo.distanceFurlongs} furlongs` : null, raceInfo.surface || null, raceInfo.purse ? `purse $${Number(raceInfo.purse).toLocaleString()}` : null].filter(Boolean).join(" · ")}
                 </div>
               )}
-              {!loggedRaces[num(raceInfo.raceNumber)] && !raceScratched && !winnerMode && (claudeRec || claudeThinking || claudeErr) && (
-                <div style={{ background: "rgba(138,109,47,0.08)", border: "1px solid rgba(138,109,47,0.35)", borderRadius: 8, padding: "10px 12px", fontSize: 13, margin: "10px 0 12px", lineHeight: 1.55 }}>
-                  {claudeErr && !claudeRec && !claudeThinking ? (
-                    <span style={{ color: "#6B6353" }}>
-                      🤖 {claudeErr}{" "}
-                      <button onClick={() => { setClaudeErr(null); scheduleAsk(0); }}
-                        style={{ background: "none", border: "none", padding: 0, color: "#8A6D2F", fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>
-                        Re-read
-                      </button>
-                    </span>
-                  ) : !claudeRec && claudeThinking ? (
-                    <span style={{ color: "#6B6353" }}>🤖 Reading the board…</span>
-                  ) : (
-                    <span>
-                      {claudeRec.context && <span style={{ display: "block" }}>{claudeRec.context}</span>}
-                      {claudeRec.why && <span style={{ display: "block", marginTop: 4 }}>🤖 {claudeRec.why}{claudeThinking ? " …" : ""}</span>}
-                      <span style={{ display: "block", fontSize: 10, color: "#6B6353", marginTop: 5 }}>
-                        Claude's read of the machine's numbers — refreshes as the board changes. An interpretation, not betting advice.
-                      </span>
-                    </span>
-                  )}
-                </div>
-              )}
+              
 
 
               {raceExtras.sel && (
