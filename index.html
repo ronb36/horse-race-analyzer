@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.26.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.26.0";
+const APP_VERSION = "2.27.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -1464,6 +1464,18 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     } catch (e) { console.error("owned cards fetch", e); return []; }
   }
 
+  // 2.26.1: the Form's column header stays put while the rows scroll. Sticky must live
+  // OUTSIDE the horizontal scroller — an overflow-x box is a scroll container, and a
+  // sticky child of one anchors to that box, which never scrolls vertically. So the
+  // header is its own wrapper (sticky against the paper) and its scrollLeft is mirrored
+  // from the rows wrapper, keeping the columns aligned if the grid ever scrolls sideways.
+  const gridHeadRef = useRef(null);
+  const gridBodyRef = useRef(null);
+  function syncGridHead() {
+    const head = gridHeadRef.current, body = gridBodyRef.current;
+    if (head && body) head.scrollLeft = body.scrollLeft;
+  }
+
   function clearStrip() {
     setRaceIndex([]); setRaceData({}); setHorses([]); setActiveRace(null);
     setCardTitle(""); setCardMeta({ track: "", date: "" });
@@ -1758,6 +1770,44 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     setLcdMsg(events + " RACES \u00b7 " + alarms + " ALERT" + (alarms === 1 ? "" : "S") + " \u00b7 CALENDAR CUT");
   }
 
+  // 2.27.0: the calendar cut moved to the moment of commitment. Punching a ticket is
+  // the only event worth an alarm — non-bet qualifiers get logged from the chart at
+  // night and never need you at the board. One ticket, one event, one alert; cancelling
+  // the ticket cuts a matching CANCEL against the same UID so the event comes back out.
+  function betEventUID(rn) {
+    return (cardMeta.track || "").toUpperCase() + "-" + String(cardMeta.date || "") + "-R" + rn + "-BET@hra";
+  }
+  function cutBetCalendar(rn, horseName, betType, cancel) {
+    const track = (cardMeta.track || "").toUpperCase();
+    const D = String(cardMeta.date || "");
+    if (!track || D.length !== 8) return false;
+    const t = getPostTime(num(rn));
+    const mm = t ? String(t).match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i) : null;
+    if (!mm) { setError("No post time on file for R" + rn + " \u2014 scan the entries page to get calendar alerts."); return false; }
+    const pad = (n) => String(n).padStart(2, "0");
+    let hh = Number(mm[1]) % 12; if (/pm/i.test(mm[3])) hh += 12;
+    const start = D + "T" + pad(hh) + mm[2] + "00";
+    const endMin = hh * 60 + Number(mm[2]) + 20;
+    const end = D + "T" + pad(Math.floor(endMin / 60)) + pad(endMin % 60) + "00";
+    const summary = track + " R" + rn + " \u00b7 " + String(betType || "WIN").toUpperCase() + ": " + String(horseName || "").toUpperCase();
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//HRA//Horse Race Analyzer//EN",
+      "METHOD:" + (cancel ? "CANCEL" : "PUBLISH"), "BEGIN:VEVENT",
+      "UID:" + betEventUID(rn), "DTSTAMP:" + stamp, "SEQUENCE:" + (cancel ? 1 : 0),
+      "DTSTART:" + start, "DTEND:" + end, "SUMMARY:" + summary,
+      "DESCRIPTION:Ticket punched on the machine. The LCD at the track is the final word."];
+    if (cancel) lines.push("STATUS:CANCELLED");
+    else lines.push("BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + summary, "TRIGGER:-PT10M", "END:VALARM");
+    lines.push("END:VEVENT", "END:VCALENDAR");
+    const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = track + "-" + D + "-R" + rn + (cancel ? "-cancel" : "") + ".ics";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return true;
+  }
+
   function startManual() {
     setHorses([emptyHorse(), emptyHorse()]);
     setRaceInfo({ distanceFurlongs: "", purse: "", surface: "dirt", raceNumber: "" });
@@ -2009,6 +2059,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       const rn = num(raceInfo.raceNumber);
       setRaceBets((prev) => ({ ...prev, [rn]: [...(prev[rn] || []), ...(saved || [row])] }));
       setSlipStamped(`${slipType} $${amt.toFixed(2)} — #${o.post} ${o.name.toUpperCase()}`);
+      cutBetCalendar(rn, o.name, slipType, false);
     } catch (e) {
       setError("Ticket didn't save. " + (e.message || e));
     }
@@ -2064,7 +2115,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         throw new Error("the database accepted the request but removed nothing — check the delete policy on hra_bets.");
       }
       const rn = num(raceInfo.raceNumber);
+      const remaining = (raceBets[rn] || []).filter((x) => x.id !== b.id);
       setRaceBets((prev) => ({ ...prev, [rn]: (prev[rn] || []).filter((x) => x.id !== b.id) }));
+      // 2.27.0: last live ticket off this race — pull its calendar event back out.
+      if (!remaining.some((x) => !x.settled)) cutBetCalendar(rn, b.horse, b.bet_type, true);
     } catch (e) { setError("Couldn't cancel that ticket. " + (e.message || e)); }
   }
 
@@ -2954,11 +3008,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Track handicapper's picks: {raceExtras.sel}
                 </div>
               )}
-              <div style={{ overflowX: "auto" }}>
+              <div ref={gridHeadRef} style={{ overflowX: "hidden", position: "sticky", top: 0, zIndex: 3, background: PAPER, paddingTop: 2 }}>
                 <div style={{ minWidth: 526 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "34px 58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 5px", ...labelFont, color: "#2E2A20", textAlign: "center", borderBottom: "3px double rgba(0,0,0,0.55)", marginBottom: 2 }}>
                     <span /><span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
+                </div>
+              </div>
+              <div ref={gridBodyRef} onScroll={syncGridHead} style={{ overflowX: "auto" }}>
+                <div style={{ minWidth: 526 }}>
                   {displayed.map((r, di) => {
                     const isBest = !loggedRaces[num(raceInfo.raceNumber)] && doctrineRead && doctrineRead.bet && r.i === doctrineRead.bet.i;
                     const rnBets = raceBets[num(raceInfo.raceNumber)] || [];
