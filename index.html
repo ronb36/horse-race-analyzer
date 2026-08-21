@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.27.1";
+const APP_VERSION = "2.27.2";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -2991,7 +2991,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
           {/* ---------- RESULTS ---------- */}
           {step === "results" && (
-            <div>
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+              {/* 2.27.2: the title block and column rules are the Form's letterhead — they sit
+                  OUTSIDE the scroller so they cannot move. Sticky proved unreliable inside the
+                  paper on iPad Safari; a non-scrolling sibling cannot fail the same way. */}
+              <div style={{ flex: "0 0 auto" }}>
               <h2 style={{ fontSize: 17, fontFamily: '"Arial Narrow", "Helvetica Neue Condensed", "Avenir Next Condensed", sans-serif', fontWeight: 800, letterSpacing: "0.03em", textTransform: "uppercase", margin: 0 }}>
                 {raceInfo.raceNumber ? `Race ${raceInfo.raceNumber}` : "Ratings"} — post order{getPostTime(num(raceInfo.raceNumber)) ? ` · post ${getPostTime(num(raceInfo.raceNumber))}` : ""}
               </h2>
@@ -3008,13 +3012,15 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Track handicapper's picks: {raceExtras.sel}
                 </div>
               )}
-              <div ref={gridHeadRef} style={{ overflowX: "hidden", position: "sticky", top: 0, zIndex: 3, background: PAPER, paddingTop: 2 }}>
+              <div ref={gridHeadRef} style={{ overflowX: "hidden" }}>
                 <div style={{ minWidth: 526 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "34px 58px minmax(130px, 1fr) 46px 54px 58px 44px 44px 44px 26px", gap: 6, alignItems: "center", padding: "0 10px 5px", ...labelFont, color: "#2E2A20", textAlign: "center", borderBottom: "3px double rgba(0,0,0,0.55)", marginBottom: 2 }}>
                     <span /><span>Rtg</span><span style={{ textAlign: "left" }}>Horse</span><span>Fair</span><span>Odds</span><span>Value</span><span>Win</span><span>Plc</span><span>Shw</span><span />
                   </div>
                 </div>
               </div>
+              </div>
+              <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
               <div ref={gridBodyRef} onScroll={syncGridHead} style={{ overflowX: "auto" }}>
                 <div style={{ minWidth: 526 }}>
                   {displayed.map((r, di) => {
@@ -3256,6 +3262,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 treat edges as signals to investigate, not sure things. In the words of the original manual: some
                 unknowns just can't be predicted. This is a period-style analytical toy, not betting advice.
               </p>
+              </div>
             </div>
           )}
         </div>
