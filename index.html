@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.27.0";
+const APP_VERSION = "2.27.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -2472,7 +2472,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
 
         {/* ===== Body ===== */}
         <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", marginTop: 12 }}>
-        <div style={{ background: PAPER, borderRadius: 10, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ background: PAPER, borderRadius: 10, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
