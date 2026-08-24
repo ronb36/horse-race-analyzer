@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.3</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.28.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script src="https://unpkg.com/fflate@0.8.2/umd/index.js"></script>
 <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";</script>
-<style>body { margin: 0; } #err { font-family: monospace; color: #B5442C; padding: 16px; white-space: pre-wrap; }</style>
+<style>body { margin: 0; } #err { font-family: monospace; color: #B5442C; padding: 16px; white-space: pre-wrap; }
+.hra-frame { height: 100vh; height: 100dvh; }</style>
 </head>
 <body>
 <div id="root"></div>
@@ -26,7 +27,7 @@ window.addEventListener("load", function () {
 });
 </script>
 <script type="text/babel" data-presets="react">
-const { useState, useRef } = React;
+const { useState, useRef, useEffect } = React;
 
 // ============================================================
 // HORSE RACE ANALYZER — a tribute to the 1979 Mattel original
@@ -490,7 +491,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.27.3";
+const APP_VERSION = "2.28.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -558,6 +559,25 @@ function Field({ label, value, onChange }) {
 
 function HorseRaceAnalyzer() {
   const [step, setStep] = useState("start"); // start | races | review | results
+  // 2.28.0 — the landscape phone layout. Gated on viewport GEOMETRY, never on user agent:
+  // iPad is 768 tall in landscape and 1024 in portrait, so it never enters either branch and
+  // its render is unchanged. compact = phone held sideways; portraitLock = phone held upright.
+  const [vp, setVp] = useState(() => { try {
+    return { compact: window.matchMedia("(max-height: 500px)").matches,
+             portraitLock: window.matchMedia("(max-width: 500px) and (orientation: portrait)").matches };
+  } catch { return { compact: false, portraitLock: false }; } });
+  const [sheetRaised, setSheetRaised] = useState(false);
+  useEffect(() => {
+    const land = window.matchMedia("(max-height: 500px)");
+    const port = window.matchMedia("(max-width: 500px) and (orientation: portrait)");
+    const read = () => setVp({ compact: land.matches, portraitLock: port.matches });
+    read();
+    const on = (mq) => { if (mq.addEventListener) { mq.addEventListener("change", read); return () => mq.removeEventListener("change", read); }
+                         mq.addListener(read); return () => mq.removeListener(read); };
+    const offA = on(land), offB = on(port);
+    return () => { offA(); offB(); };
+  }, []);
+  const compact = vp.compact;
   const [apiKey, setApiKeyState] = useState(() => { try { return localStorage.getItem("hra_api_key") || ""; } catch { return ""; } });
   const setApiKey = (v) => { setApiKeyState(v); try { localStorage.setItem("hra_api_key", v); } catch {} };
   const [busy, setBusy] = useState(false);
@@ -2381,28 +2401,59 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
   }
   if (step === "results" && !claudeRec && !claudeThinking && !claudeErr && !askTimerRef.current) scheduleAsk(600);
 
+  // 2.28.0 — the sheet rides up on its own whenever the screen genuinely needs the room:
+  // logging tote prices, or a slip on the table. One derived expression, no handler edits.
+  const sheetUp = compact && (sheetRaised || winnerMode || betSlipOpen);
+
+  // A phone held upright cannot show this machine. Say so in character rather than render badly.
+  if (vp.portraitLock) {
+    return (
+      <div className="hra-frame" style={{ boxSizing: "border-box", background: "#EDEAE2", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "Arial, sans-serif" }}>
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", boxShadow: "0 6px 18px rgba(0,0,0,0.3)", width: "100%", maxWidth: 420 }}>
+          <div style={{ width: 14, background: GREEN_DARK }} />
+          <div style={{ flex: 1, background: GOLD, padding: "18px 14px" }}>
+            <div style={{ background: LCD_BG, borderRadius: 999, padding: "16px 18px", ...lcdFont, fontSize: 16, textAlign: "center", boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)" }}>TURN THE MACHINE</div>
+            <div style={{ textAlign: "center", marginTop: 12, fontSize: 11, fontStyle: "italic", color: "#3A2F17" }}>For the columnist they called Clyde the Winner.</div>
+            <div style={{ textAlign: "center", marginTop: 5, fontSize: 9, letterSpacing: 1.3, textTransform: "uppercase", color: "#5A4A25" }}>Hold it sideways · v{APP_VERSION}</div>
+          </div>
+          <div style={{ width: 14, background: GREEN_DARK }} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ height: "100vh", boxSizing: "border-box", background: "#EDEAE2", padding: "16px 10px 12px", fontFamily: "Arial, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ maxWidth: 760, margin: "0 auto", width: "100%", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className={compact ? "hra-frame" : ""} style={{ ...(compact ? {} : { height: "100vh" }), boxSizing: "border-box", background: "#EDEAE2", padding: compact ? "6px 6px 6px" : "16px 10px 12px", fontFamily: "Arial, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ position: "relative", maxWidth: compact ? "100%" : 760, margin: "0 auto", width: "100%", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
 
         {/* ===== Device faceplate ===== */}
         <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", boxShadow: "0 6px 18px rgba(0,0,0,0.3)", flex: "none" }}>
-          <div style={{ width: 18, background: GREEN_DARK }} />
-          <div style={{ flex: 1, background: GOLD, padding: "14px 14px 8px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ width: compact ? 8 : 18, background: GREEN_DARK }} />
+          <div style={{ flex: 1, background: GOLD, padding: compact ? "7px 8px 4px" : "14px 14px 8px", display: "flex", flexDirection: "column", gap: compact ? 5 : 10 }}>
             <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <div aria-live="polite"
-              style={{ background: LCD_BG, borderRadius: 999, minWidth: 200, flex: "1 1 200px", padding: "14px 20px",
+              style={{ background: LCD_BG, borderRadius: 999, minWidth: compact ? 0 : 200, flex: "1 1 200px", padding: compact ? "9px 16px" : "14px 20px",
                 boxShadow: "inset 0 3px 8px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.6)",
-                ...lcdFont, fontSize: 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                ...lcdFont, fontSize: compact ? 15 : 18, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {busy ? lcdMsg : step === "results" ? (raceDone ? officialLine : raceScratched ? "RACE SCRATCHED" : winnerMode ? "ENTER RESULTS" : liveTicketLine ? liveTicketLine : verdict.action === "PASS" ? "PASS THIS RACE" : verdict.action === "NONE" ? "ENTER ODDS" : doctrineRead ? (doctrineRead.bet ? `BET: ${doctrineRead.bet.name.toUpperCase().slice(0, 20)} TO WIN` : `FILTERED \u00b7 ${doctrineRead.reason}`) : `BET: ${verdict.horse.name.toUpperCase().slice(0, 20)} TO ${verdict.action}`) : lcdMsg}
             </div>
+            {!compact && (
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: "0.14em", color: "#3A2F17" }}>
                 HORSE RACE ANALYZER
               </div>
               <div style={{ ...labelFont, color: "#5A4A25", marginTop: 2 }}>Handicapping Computer · est. 1979 · v{APP_VERSION}</div>
             </div>
+            )}
             </div>
+            {compact ? (
+            /* 2.28.0 — the engraving is permanent, so at 340px of screen it becomes one hairline
+               rule rather than disappearing. The qualifying-rules line is reference text and drops. */
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8, margin: 0, whiteSpace: "nowrap", overflow: "hidden" }}>
+              <span style={{ fontSize: 10, fontStyle: "italic", color: "#3A2F17" }}>For the columnist they called Clyde the Winner.</span>
+              <span style={{ fontSize: 8, letterSpacing: 1.1, textTransform: "uppercase", color: "#5A4A25" }}>Berkeley Gazette · GGF · v{APP_VERSION}</span>
+            </div>
+            ) : (
             <div style={{ textAlign: "center", margin: "0 0 2px" }}>
               <div style={{ fontSize: 12, fontStyle: "italic", color: "#3A2F17", lineHeight: 1.35 }}>
                 For the columnist they called Clyde the Winner.
@@ -2414,8 +2465,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 Qualifying races: thoroughbreds 3 and up · no maidens · 6 furlongs or more
               </div>
             </div>
+            )}
         {(raceIndex.length > 0 && step !== "audit") ? (
-          <div style={{ display: "flex", gap: 6, paddingBottom: 10, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: compact ? 4 : 6, paddingBottom: compact ? 0 : 10, marginBottom: compact ? 0 : 8 }}>
             {(() => { const qual = raceIndex.filter((r) => r.ok); const blanks = Math.max(0, 10 - qual.length); return (<React.Fragment>
             {qual.map((r) => {
               const isActive = step === "results" && activeRace === r.raceNumber;
@@ -2453,7 +2505,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
             </React.Fragment>); })()}
           </div>
         ) : (
-          <div style={{ display: "flex", gap: 6, overflowX: "hidden", paddingBottom: 10, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: compact ? 4 : 6, overflowX: "hidden", paddingBottom: compact ? 0 : 10, marginBottom: compact ? 0 : 8 }}>
             {Array.from({ length: 10 }, (_, i) => (
               <div key={i} style={{ flex: "1 1 0", minWidth: 0, height: 42, borderRadius: 8,
                 border: "1px solid rgba(0,0,0,0.35)", background: GREEN_DARK,
@@ -2462,7 +2514,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           </div>
         )}
           {/* ===== The keypad — every mode, always. No menus in 1979. ===== */}
-          <div style={KEYROW_MODES}>
+          <div style={compact ? { ...KEYROW_MODES, padding: "2px 0 0", gap: 5 } : KEYROW_MODES}>
             <Key grow active={showSettings} onClick={() => { setShowSettings(true); setStep("start"); setActiveRace(null); fetchUploadCounts(); setLcdMsg("SETTINGS"); }}>Set</Key>
             {supaUrl && supaKey ? (
               <React.Fragment>
@@ -2489,12 +2541,31 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
           </div>
           )}
           </div>
-          <div style={{ width: 18, background: GREEN_DARK }} />
+          <div style={{ width: compact ? 8 : 18, background: GREEN_DARK }} />
         </div>
 
         {/* ===== Body ===== */}
-        <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", marginTop: 12 }}>
-        <div style={{ background: PAPER, borderRadius: 10, padding: "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
+        {/* 2.28.0 — the Form as a pull-up sheet. DOCKED it is an ordinary flex child, so it fills
+            the leftover space exactly and no gap can open under the plate. RAISED it lifts out of
+            flow and floats over the key rows, leaving the LCD lit above it. Two fixed positions,
+            a tap handle, no drag gesture — structure over behaviour, per the sticky lesson. */}
+        <div style={{ position: sheetUp ? "absolute" : "relative", ...(sheetUp ? { left: 0, right: 0, bottom: 0, height: "78%", zIndex: 5, boxShadow: "0 -8px 22px rgba(0,0,0,0.35)", borderRadius: 10 } : { flex: "1 1 auto" }), minHeight: 0, display: "flex", flexDirection: "column", marginTop: compact ? 5 : 12 }}>
+        {compact && (
+          <button onClick={() => setSheetRaised(!sheetUp)}
+            style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              width: "100%", minHeight: 26, padding: "0 12px", marginBottom: 3,
+              background: GREEN_DARK, color: "#EFE8D5", border: "1px solid rgba(0,0,0,0.45)", borderRadius: 8,
+              fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em",
+              textTransform: "uppercase", cursor: "pointer",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)" }}>
+            <span style={{ fontSize: 12 }}>{sheetUp ? "▼" : "▲"}</span>
+            <span style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+              {step === "results" && raceInfo.raceNumber ? `Race ${raceInfo.raceNumber} — the Form` : "The Form"}
+            </span>
+            <span style={{ fontSize: 12 }}>{sheetUp ? "▼" : "▲"}</span>
+          </button>
+        )}
+        <div style={{ background: PAPER, borderRadius: 10, padding: compact ? "9px 9px 12px" : "18px 14px 22px", boxShadow: "0 6px 18px rgba(0,0,0,0.25)", color: INK, border: "1px solid #CFC5AC", fontVariantNumeric: "tabular-nums", flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
 
           {showSettings && (
             <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, marginBottom: 16 }}>
