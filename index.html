@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.27.3</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -490,7 +490,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.27.2";
+const APP_VERSION = "2.27.3";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -1816,6 +1816,16 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   }
 
   function toggleScratch(i) {
+    // 2.27.3: a horse scratched after its ticket was punched leaves a live calendar alarm
+    // pointing at a race it can't run in. Cut the CANCEL at the moment of the scratch —
+    // the refund itself is settled later, at log time, which is too late for the alert.
+    const h0 = horses[i];
+    if (h0 && !h0.scratched) {
+      const rn0 = num(raceInfo.raceNumber);
+      const live = (raceBets[rn0] || []).filter((b) => !b.settled);
+      const onHorse = live.find((b) => b.horse === h0.name);
+      if (onHorse && live.length === 1) cutBetCalendar(rn0, onHorse.horse, onHorse.bet_type, true);
+    }
     persistHorses(horses.map((h, j) => (j === i ? { ...h, scratched: !h.scratched } : h)));
     scheduleAsk(900);
   }
@@ -2221,7 +2231,19 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       if (!resp.ok) throw new Error("Supabase said HTTP " + resp.status + ": " + (await resp.text()).slice(0, 140));
       // settle this race's tickets
       const rn = num(raceInfo.raceNumber);
-      const bets = raceBets[rn] || [];
+      // 2.27.3: read the tickets from the database rather than from raceBets state.
+      // State is only populated by visiting the race; a chart crank on a fresh page load
+      // settles against an empty array and leaves a live ticket on an official race —
+      // silently, since an empty loop cannot fail. Found on 08/23 (Hot Currency).
+      let bets = raceBets[rn] || [];
+      try {
+        const bq = `track=eq.${cardMeta.track}&race_date=eq.${cardMeta.date}&race_no=eq.${rn}`;
+        const bresp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_bets?" + bq + "&select=*", { headers: supaHeaders() });
+        if (bresp.ok) {
+          const fresh = await bresp.json();
+          if (Array.isArray(fresh)) bets = fresh.filter((b) => !b.settled);
+        }
+      } catch (bErr) { console.error("settle fetch", bErr); }
       const nameAt = (i) => (overlay.find((o) => o.i === i) || {}).name;
       const top = [nameAt(p1), nameAt(p2), nameAt(p3)];
       let settledNote = "";
