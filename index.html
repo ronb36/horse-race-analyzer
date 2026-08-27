@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.28.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -491,7 +491,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.28.0";
+const APP_VERSION = "2.29.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -499,6 +499,23 @@ const ERA_START = 20260806;
 
 // 2.24.0: the doctrine filter rules, one shared implementation — the race-view LCD and
 // the calendar builder both call this. Rows need { rating, scratched, odds, name, i }.
+// 2.29.0: the three doctrine rules that need no ratings — surface, distance, class.
+// Extracted so the Entries screen can read them off an entries scan, hours before a
+// k-file exists. doctrineFilter calls this in its original slot with its original
+// order, so the reasons it returns are unchanged and the season replay is unaffected.
+// Vocabulary note: entries pages spell it out ("Allowance Optional Claiming",
+// "Starter Allowance") while k-files abbreviate ("Clm 30000n3l", "OClm 80000n2x").
+// The 2.22.1 test already handles both — it matches "claim" OR word-start "clm",
+// then excludes oclm/starter/optional/alw. Do not narrow it to one vocabulary.
+function entryDoctrine(raceInfo) {
+  if (/turf/i.test(String(raceInfo.surface || ""))) return { reason: "TURF", label: "Turf" };
+  const df = num(raceInfo.distanceFurlongs);
+  if (!(df >= 6 && df <= 9)) return { reason: "DISTANCE " + df + "F", label: "Distance " + df + "f" };
+  const typ = String(raceInfo.type || "").toLowerCase();
+  if ((typ.includes("claim") || /(^|\s)clm/.test(typ)) && !typ.includes("oclm") && !typ.includes("starter") && !typ.includes("optional") && !typ.includes("alw")) return { reason: "CLAIMER", label: "Claimer" };
+  return null;
+}
+
 function doctrineFilter(rows, raceInfo) {
   const live = rows.filter((o) => !o.scratched && o.rating !== null && o.rating !== undefined);
   if (live.length < 2) return null;
@@ -506,13 +523,8 @@ function doctrineFilter(rows, raceInfo) {
   const top = byR[0];
   const gap = top.rating - byR[1].rating;
   if (gap < 6) return { reason: "GAP " + gap.toFixed(1) };
-  if (/turf/i.test(String(raceInfo.surface || ""))) return { reason: "TURF" };
-  const df = num(raceInfo.distanceFurlongs);
-  if (!(df >= 6 && df <= 9)) return { reason: "DISTANCE " + df + "F" };
-  const typ = String(raceInfo.type || "").toLowerCase();
-  // 2.22.1: k-file class strings are abbreviated ("Clm 30000n3l", "OClm 80000n2x") —
-  // "claim" never matches them. Match Clm at a word start so OClm stays allowed.
-  if ((typ.includes("claim") || /(^|\s)clm/.test(typ)) && !typ.includes("oclm") && !typ.includes("starter") && !typ.includes("optional") && !typ.includes("alw")) return { reason: "CLAIMER" };
+  const ed = entryDoctrine(raceInfo);
+  if (ed) return { reason: ed.reason };
   if (top.odds !== null && top.odds !== undefined && top.odds < 1) return { reason: "PRICE " + decimalToBoard(top.odds) };
   return { bet: top };
 }
@@ -2945,6 +2957,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
               )}
               {dayScan.filter((t) => !entriesDate || !t.ymd || t.ymd === entriesDate).map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
+                // 2.29.0: annotate each qualifier with the doctrine rules readable from entries.
+                (t.races || []).forEach((r) => { r.entryFiltered = r.ok ? (entryDoctrine(r) || {}).label || null : null; });
+                const dOk = ok.filter((r) => !r.entryFiltered).length;
                 const owned = (t.ymd && ownedCards.find((c) => c.race_date === t.ymd && (t.code ? c.track === t.code : trackMatches(c.track, t.track)))) || null;
                 return (
                   <div key={ti} style={{ background: "#EAE3CF", borderRadius: 8, padding: 12, marginBottom: 10 }}>
@@ -2953,12 +2968,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                       <span style={{ fontSize: 11, color: owned ? "#2F7A46" : ok.length ? "#8A6D2F" : "#8B8168" }}>
                         {t.error ? t.error : owned ? (
                           <span>
-                            {ok.length} of {t.races.length} qualify —{" "}
+                            {ok.length} of {t.races.length} qualify · {dOk} pass doctrine —{" "}
                             <span style={{ color: "#2F7A46", fontWeight: 700, fontSize: 11 }}>✓ card on file</span>
                           </span>
                         ) : ok.length ? (
                           <span>
-                            {ok.length} of {t.races.length} qualify —{" "}
+                            {ok.length} of {t.races.length} qualify · {dOk} pass doctrine —{" "}
+                            {/* 2.29.0: the buy link is deliberately NOT gated on the doctrine count.
+                                Filtered races are still calibration rows the fall refit needs. */}
                             <a href="https://www.brisnet.com/product/data-files" target="_blank" rel="noopener noreferrer"
                               style={{ color: "#8A6D2F", fontWeight: 700, textDecoration: "underline" }}>
                               buy this card ↗
@@ -2974,6 +2991,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                         <span style={{ minWidth: 70 }}>{r.distanceFurlongs}f {r.surface}</span>
                         <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.type}{r.fieldSize ? ` · ${r.fieldSize} horses` : ""}</span>
                         {!r.ok && <span style={{ fontSize: 11 }}>{r.reason}</span>}
+                        {/* 2.29.0: qualifies under 1979, but a doctrine rule already reads on the
+                            entries page. Gap and price cannot be known here — this is a subset. */}
+                        {r.ok && r.entryFiltered && <span style={{ fontSize: 11, color: "#8A6D2F", whiteSpace: "nowrap" }}>Entry Filtered: {r.entryFiltered}</span>}
                       </div>
                     ))}
                   </div>
