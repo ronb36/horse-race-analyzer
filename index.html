@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -425,9 +425,40 @@ function parseResultsChart(raw) {
   // never from a first loose match — race conditions can quote dates ("Non-winners Of A
   // Race Since February 14, 2026" sat ahead of the header on SAR 08/14 R1 and stamped
   // the whole chart 20260214). Loose match kept only as a fallback when no header hits.
-  const tm = text.match(/(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
-  const dm = tm ? [tm[0], tm[2], tm[3], tm[4]] : text.match(/([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/);
-  const date = dm ? Number(`${dm[3]}${String(MONTHS[dm[1]]||0).padStart(2,"0")}${String(dm[2]).padStart(2,"0")}`) : null;
+  // 2.29.1: the date is now decided by FREQUENCY, not by position.
+  //
+  // 2.21.6 anchored the date to the "<ORDINAL> RACE <Track> <Month D, YYYY>" header because a
+  // first loose match could pick up a conditions date. That anchor is not reliable: this chart
+  // is laid out in two columns, and text extraction can interleave the header block with the
+  // conditions paragraph beside it, leaving "FIRST RACE", "Saratoga" and the date scattered.
+  // When the anchor missed on SAR 09/03 the old fallback took "Since March 3, 2026" out of the
+  // R1 conditions and stamped the whole chart 20260303 — no card matched, nothing logged.
+  //
+  // The reliable signal is that EVERY race header carries the same date, so the true date is
+  // simply the one that occurs most often. On that chart: 20260903 ten times, 20260303 once,
+  // 20260822 once. Conditions dates are incidental and cannot outvote one-per-race.
+  // The header anchor is kept for the track name and as a tie-break corroborator only.
+  const anchorRe = /(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH)\s+RACE\s+([A-Z][A-Za-z .']+?)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/g;
+  const toDate = (mon, day, yr) => Number(`${yr}${String(MONTHS[mon] || 0).padStart(2, "0")}${String(day).padStart(2, "0")}`);
+  const anchorDates = new Set();
+  let tm = null, am;
+  while ((am = anchorRe.exec(text))) { if (!tm) tm = am; anchorDates.add(toDate(am[2], am[3], am[4])); }
+  const tally = new Map();
+  const looseRe = /([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})/g;
+  let lm;
+  while ((lm = looseRe.exec(text))) {
+    if (!MONTHS[lm[1]]) continue; // "Saratoga 3, 2026" is not a date
+    const d = toDate(lm[1], lm[2], lm[3]);
+    tally.set(d, (tally.get(d) || 0) + 1);
+  }
+  // most occurrences wins; ties go to a date the header anchor also produced, then to the later date
+  let date = null, bestN = -1;
+  for (const [d, n] of tally) {
+    const better = n > bestN
+      || (n === bestN && anchorDates.has(d) && !anchorDates.has(date))
+      || (n === bestN && anchorDates.has(d) === anchorDates.has(date) && d > date);
+    if (better) { date = d; bestN = n; }
+  }
   const trackName = tm ? tm[1].trim() : null;
   const headRe = /\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|THIRTEENTH|FOURTEENTH|FIFTEENTH|SIXTEENTH)\s+RACE\b/g;
   const marks = []; let m2;
@@ -491,7 +522,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.29.0";
+const APP_VERSION = "2.29.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
