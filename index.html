@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -522,7 +522,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.29.1";
+const APP_VERSION = "2.29.2";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -1340,16 +1340,38 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     setError(""); setBusy(true); setLcdMsg("RUNNING THE AUDIT...");
     try {
       const base = supaUrl.replace(/\/+$/, "") + "/rest/v1/";
-      const [cardsR, logR, betsR, entR] = await Promise.all([
+      // 2.29.2: PostgREST caps every response at the server's max-rows (1000 on Supabase),
+      // so "limit=4000" was a request, not a promise. Worse, the query carried no ORDER BY,
+      // so rows came back in physical insertion order and the truncation silently discarded
+      // the NEWEST ones. At 1,090 log rows the Audit stopped seeing 09/03 and 09/04 at all
+      // and reported both as unlogged while the rows sat correctly in the table.
+      //
+      // This is the mirror of the RLS silent-204: that wrote nothing and reported success,
+      // this reads part and reports green. Page explicitly, and order deterministically —
+      // pagination without an ORDER BY is undefined and can repeat or skip rows.
+      const PAGE = 1000;
+      const fetchAllRows = async (path, order) => {
+        const out = [];
+        for (let page = 0; page < 25; page++) {
+          const r = await fetch(base + path + "&order=" + order + "&limit=" + PAGE + "&offset=" + page * PAGE, { headers: supaHeaders() });
+          if (!r.ok) return page === 0 ? [] : out;
+          const chunk = await r.json();
+          if (!Array.isArray(chunk)) break;
+          out.push(...chunk);
+          if (chunk.length < PAGE) break;
+        }
+        return out;
+      };
+      const [cardsR, entR] = await Promise.all([
         fetch(base + "hra_cards?select=track,race_date,idx:card->raceIndex,cx:card->cancelled,cxr:card->cancelledRaces&order=race_date.desc&limit=60", { headers: supaHeaders() }),
-        fetch(base + "hra_race_log?select=track,race_date,race_no,horse,is_winner,pay_win,rating,model_pct,odds&limit=4000", { headers: supaHeaders() }),
-        fetch(base + "hra_bets?select=track,race_date,race_no,settled,won,payout,amount&limit=1000", { headers: supaHeaders() }),
         fetch(base + "hra_entries?select=track,race_date&limit=200", { headers: supaHeaders() }),
+      ]);
+      const [logs, bets] = await Promise.all([
+        fetchAllRows("hra_race_log?select=track,race_date,race_no,horse,is_winner,pay_win,rating,model_pct,odds", "race_date.asc,track.asc,race_no.asc,horse.asc"),
+        fetchAllRows("hra_bets?select=track,race_date,race_no,settled,won,payout,amount", "race_date.asc,track.asc,race_no.asc"),
       ]);
       if (!cardsR.ok) throw new Error("cards HTTP " + cardsR.status);
       const cards = await cardsR.json();
-      const logs = logR.ok ? await logR.json() : [];
-      const bets = betsR.ok ? await betsR.json() : [];
       const ents = entR.ok ? await entR.json() : [];
       const dates = [...new Set([...cards.map((c) => c.race_date), ...logs.map((l) => l.race_date), ...bets.map((b) => b.race_date)])]
         .filter(Boolean).sort().reverse();
