@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.29.2</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.30.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -416,6 +416,59 @@ function simVerdict(rows) {
 /* SIM-CORE END */
 
 // ---- RESULTS CHART PARSER (module-level, fence-free) ----
+// 2.30.0: official finishing positions for the whole field.
+// The running-line table is printed in finish order, but row order cannot express a tie —
+// two horses that dead-heat print on consecutive rows like anyone else, which is how a
+// co-second came to be logged as finish_pos 3. The mutuel block can express it: a horse
+// dead-heating at a placing collects the same pools as the horse it tied with, so it prints
+// the same number of price figures. Grouping adjacent finishers with an equal, non-zero
+// figure count recovers the official line (1, 2, 2, 4) rather than the row order (1, 2, 3, 4).
+// Gated on the chart's own dead-heat marker, so an ordinary race cannot be grouped by accident.
+function officialFinish(cr) {
+  const figs = (f) => ((cr.mutuel.find((x) => x.prog === f.prog) || {}).prices || []).length;
+  const out = [];
+  let i = 0;
+  while (i < cr.finishers.length) {
+    let j = i;
+    if (cr.dhAny && figs(cr.finishers[i]) > 0) {
+      while (j + 1 < cr.finishers.length && figs(cr.finishers[j + 1]) === figs(cr.finishers[i])) j++;
+    }
+    for (let k = i; k <= j; k++) out.push({ name: cr.finishers[k].name, prog: cr.finishers[k].prog, pos: i + 1 });
+    i = j + 1;
+  }
+  return out;
+}
+
+// Sum of implied win probability across a race's runners. Read correctly off the chart's
+// Odds $1 column this is near-constant — 160 of 164 Saratoga races landed in 1.191-1.195,
+// because the figure is derived from the pool at a fixed takeout. The four that didn't were
+// the four with hand-reconstructed odds. It is therefore a single scalar that detects the
+// column-wise extraction failure, which is the corruption most likely to pass every other check.
+function chartOverround(cr) {
+  const o = (cr.finishers || []).map((f) => Number(f.odds)).filter((n) => Number.isFinite(n) && n > 0);
+  if (o.length < 3) return null;
+  return o.reduce((s, x) => s + 1 / (x + 1), 0);
+}
+
+// The gates that replace the human read-back. Returns null to pass, or the reason to hold.
+// A held race writes NOTHING: a partial card that says so beats a whole card that lies.
+// `ref` is the median overround of the other races on this same card, so the check calibrates
+// itself to the circuit instead of trusting a constant that Santa Anita would break.
+function chartGateFail(cr, cardKeys, norm, ref) {
+  const fin = cr.finishers || [];
+  if (fin.length < 2) return "no running line found";
+  const unmatched = fin.map((f) => f.name).filter((n) => !cardKeys.has(norm(n)));
+  if (unmatched.length) return unmatched.length + " finisher(s) not on the card: " + unmatched.slice(0, 3).join(", ");
+  const progs = new Set(fin.slice(0, 4).map((f) => f.prog));
+  const stray = (cr.mutuel || []).filter((m) => m.prices && m.prices.length && !progs.has(m.prog));
+  if (stray.length) return "payoff block names a horse outside the top of the finish order (pgm " + stray[0].prog + ")";
+  const ov = chartOverround(cr);
+  if (ov === null) return "no usable odds column";
+  if (ov < 1.1 || ov > 1.35) return "odds column implausible (overround " + ov.toFixed(3) + ")";
+  if (ref && Math.abs(ov - ref) > 0.04) return "odds column out of line with this card (overround " + ov.toFixed(3) + " vs " + ref.toFixed(3) + ")";
+  return null;
+}
+
 function parseResultsChart(raw) {
   const text = String(raw || "").replace(/\s+/g, " ");
   const ORD = ["FIRST","SECOND","THIRD","FOURTH","FIFTH","SIXTH","SEVENTH","EIGHTH","NINTH","TENTH","ELEVENTH","TWELFTH","THIRTEENTH","FOURTEENTH","FIFTEENTH","SIXTEENTH"];
@@ -512,17 +565,32 @@ function parseResultsChart(raw) {
       }
       if (mut.length >= 3) break;
     }
-    const dh = /Dead Heat/i.test(seg) || mut.filter((x) => x.prices.length === 3).length >= 2;
+    // 2.29.3 [fix]: `dh` must mean a dead heat FOR THE WIN and nothing else. The old test
+    // fired on /Dead Heat/ anywhere in the segment, which the chart prints for a dead heat at
+    // ANY placing. On 20260829 R11 a dead heat for SECOND set the flag; stageChartRace then
+    // read the runner-up's PLACE payoff as a win payoff and stamped a second winner. 20260730
+    // R3 is the same case earlier in the meet — two occurrences in 164 rated races.
+    // The mutuel block is the reliable signal: a horse dead-heating for the WIN prints the same
+    // number of price figures as the winner, while one dead-heating for a placing prints fewer
+    // (no win payoff). Counting the winner's OWN figures rather than a literal 3 keeps this
+    // correct in a small field where no show pool is offered. The textual marker is retained as
+    // a required corroborator; on its own it can no longer promote anything.
+    const priceFigs = (fin) => ((mut.find((x) => fin && x.prog === fin.prog) || {}).prices || []).length;
+    const winFigs = priceFigs(finishers[0]);
+    const dhMark = /Dead Heat/i.test(seg) || /\bDH\b/.test(mutWindow);
+    const dh = winFigs > 0 && priceFigs(finishers[1]) === winFigs && dhMark;
     const scr = [];
     const sm = seg.match(/Scratched-\s*([^]*?)(?:\$1 Daily|\$1 Pick|50 CENT|\$1 Grand|\$1 Consolation|brisnet\.com|\(c\) Copyright|Emergence was|$)/);
     if (sm) sm[1].split(",").forEach((s) => { const nm = s.replace(/\([^)]*\)/g, "").trim(); if (nm && nm.length > 1) scr.push(nm); });
-    races.push({ raceNumber: marks[k].n, turf, dh, finishers, mutuel: mut, scratched: scr });
+    // dhAny: a dead heat SOMEWHERE in this race. `dh` is the win-only flag (2.29.3);
+    // officialFinish needs to know about placing dead heats too.
+    races.push({ raceNumber: marks[k].n, turf, dh, dhAny: dhMark, finishers, mutuel: mut, scratched: scr });
   }
   return { trackName, date, races };
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.29.2";
+const APP_VERSION = "2.30.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -637,6 +705,7 @@ function HorseRaceAnalyzer() {
   const [cardMeta, setCardMeta] = useState({ track: "", date: "" });
   const [winnerMode, setWinnerMode] = useState(false);
   const [finishPicks, setFinishPicks] = useState([]);
+  const [finishOrder, setFinishOrder] = useState([]); // 2.30.0: [{name,pos}] for the WHOLE field
   const [betSlipOpen, setBetSlipOpen] = useState(false);
   const [dhWin, setDhWin] = useState(false); // dead heat for first (2.20.0)
   const [resultsHub, setResultsHub] = useState(null); // parsed chart model
@@ -1670,7 +1739,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         if (lr.ok) loggedNos = new Set((await lr.json()).map((x) => Number(x.race_no)));
       } catch (_) {}
       const byRn = new Map(parsed.races.map((x) => [x.raceNumber, x]));
-      chartRunRef.current = { byRn, preLogged: loggedNos, start: true };
+      // reference overround for the gate: the median of this card's own races
+      const ovs = parsed.races.map(chartOverround).filter((x) => x !== null).sort((a, b) => a - b);
+      const ref = ovs.length >= 3 ? ovs[Math.floor(ovs.length / 2)] : null;
+      chartRunRef.current = { byRn, preLogged: loggedNos, start: true, ref, held: new Map() };
       setStep("resultsHub");
       setLcdMsg("CHART · " + parsed.races.length + " RACES");
       // the render-side trigger below stages the first race once the loaded card's state is current
@@ -1687,13 +1759,22 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const next = (raceIndex || []).find((r) => {
       const rn = num(r.raceNumber);
       const offR = cardFlags.cancelled || (cardFlags.cancelledRaces || []).includes(rn) || r.live === 0;
-      return r.ok && !offR && !done(rn) && run.byRn.has(rn) && !run.saved?.has(rn);
+      return r.ok && !offR && !done(rn) && run.byRn.has(rn) && !run.saved?.has(rn) && !run.held?.has(rn);
     });
     if (!next) {
+      const held = Array.from(run.held ? run.held.entries() : []);
+      const saved = run.saved ? run.saved.size : 0;
       chartRunRef.current = null;
       setStep("resultsHub");
       setActiveRace(null);
-      setLcdMsg("ALL RESULTS SAVED");
+      // a card that half-landed has to say so on the panel, not in a console
+      if (held.length) {
+        setLcdMsg(saved + " SAVED · " + held.length + " HELD");
+        setError("Held " + held.length + " race(s), nothing written for them: "
+          + held.map(([rn, why]) => "R" + rn + " — " + why).join("; "));
+      } else {
+        setLcdMsg("ALL RESULTS SAVED");
+      }
       return;
     }
     stageChartRace(run.byRn.get(num(next.raceNumber)));
@@ -1703,6 +1784,15 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const idxEntry = raceIndex.find((r) => num(r.raceNumber) === cr.raceNumber);
     const rd = idxEntry && raceData[idxEntry.raceNumber];
     if (!idxEntry || !rd || !rd.horses) { setError("R" + cr.raceNumber + " isn't in the loaded card data."); return; }
+    // 2.30.0: gate before staging. Nobody reads these back any more, so a race that fails a
+    // check is held and skipped rather than written on the strength of a parse nobody saw.
+    const run0 = chartRunRef.current;
+    const why = chartGateFail(cr, new Set(rd.horses.map((h) => normName(h.name))), normName, run0 && run0.ref);
+    if (why) {
+      if (run0) { (run0.held = run0.held || new Map()).set(cr.raceNumber, why); setTimeout(() => advanceChartRun(false), 0); }
+      else setError("R" + cr.raceNumber + " held: " + why);
+      return;
+    }
     switchTab(idxEntry); // opens the race; our sets below land in the same batch and win
     const oddsByName = new Map(cr.finishers.map((f) => [normName(f.name), f.odds]));
     const ranNames = new Set(cr.finishers.map((f) => normName(f.name)));
@@ -1720,15 +1810,30 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     const idxOf = (nm) => updated.findIndex((h) => normName(h.name) === normName(nm));
     const picks = cr.finishers.slice(0, 3).map((f) => idxOf(f.name)).filter((i) => i >= 0);
     setFinishPicks(picks);
+    // 2.30.0: the whole field, with official positions, carried by name into the write
+    setFinishOrder(officialFinish(cr).map((x) => ({ name: x.name, pos: x.pos })));
     const payFor = (prog) => (cr.mutuel.find((x) => x.prog === prog) || {}).prices || [];
     const f = cr.finishers;
-    const P = (arr, i) => (arr[i] !== undefined ? Number(arr[i]).toFixed(2) : "");
     const pr1 = payFor(f[0] && f[0].prog), pr2 = payFor(f[1] && f[1].prog), pr3 = payFor(f[2] && f[2].prog);
+    // 2.29.4 [fix]: the payoff block was read by position from the FRONT, which silently
+    // assumes every listed horse collected every pool. It doesn't: the chart prints only the
+    // pools a horse actually cashed, and they are always the TRAILING ones — a winner shows
+    // W/P/S, a second shows P/S, a third shows S. When a horse dead-heats for a placing it
+    // prints one figure fewer than the front-indexed read expects, and every figure shifts
+    // left: on a dead heat for second the third-listed horse's PLACE payoff was written into
+    // pay_show. 2.29.3 stopped the phantom winner; this stops the row beneath it being wrong.
+    // The winner's own figure count is the number of pools offered, so a short field with no
+    // show pool (winner shows W/P only) maps correctly without a special case.
+    const nPools = pr1.length;
+    const pool = (arr, j) => { // j: 0 = win, 1 = place, 2 = show
+      const i = j - (nPools - arr.length); // how many leading pools this horse missed
+      return i >= 0 && arr[i] !== undefined ? Number(arr[i]).toFixed(2) : "";
+    };
     setResultPays({
-      w1: P(pr1, 0), p1: P(pr1, 1), s1: P(pr1, 2),
-      w2: cr.dh ? P(pr2, 0) : "",
-      p2: cr.dh ? P(pr2, 1) : P(pr2, 0), s2: cr.dh ? P(pr2, 2) : P(pr2, 1),
-      s3: P(pr3, 0),
+      w1: pool(pr1, 0), p1: pool(pr1, 1), s1: pool(pr1, 2),
+      w2: cr.dh ? pool(pr2, 0) : "",
+      p2: pool(pr2, 1), s2: pool(pr2, 2),
+      s3: pool(pr3, 2),
     });
     setDhWin(!!cr.dh);
     if (/turf/i.test(String((idxEntry.surface || (rd.raceInfo || {}).surface) || "")) && !cr.turf) setOffTurf(true);
@@ -2286,6 +2391,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     if (finishPicks.length < 3) return;
     const [p1, p2, p3] = finishPicks;
     const payNum = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
+    const posByName = new Map((finishOrder || []).map((x) => [normName(x.name), x.pos]));
     try {
       const rows = overlay.filter((o) => !o.scratched).map((o) => ({
         track: cardMeta.track || null,
@@ -2302,8 +2408,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         rating: o.rating,
         model_pct: Math.round(o.pModel * 1000) / 10,
         odds: o.odds,
-        is_winner: o.i === p1 || (dhWin && o.i === p2),
-        finish_pos: o.i === p1 ? 1 : o.i === p2 ? (dhWin ? 1 : 2) : o.i === p3 ? 3 : null,
+        is_winner: posByName.get(normName(o.name)) === 1 || o.i === p1 || (dhWin && o.i === p2),
+        // 2.30.0: every runner gets its official position when the chart supplied one.
+        // The picker slots remain the fallback for a hand-entered race with no chart.
+        finish_pos: posByName.get(normName(o.name))
+          || (o.i === p1 ? 1 : o.i === p2 ? (dhWin ? 1 : 2) : o.i === p3 ? 3 : null),
         pay_win: o.i === p1 ? payNum(resultPays.w1) : dhWin && o.i === p2 ? payNum(resultPays.w2) : null,
         pay_place: o.i === p1 ? payNum(resultPays.p1) : o.i === p2 ? payNum(resultPays.p2) : null,
         pay_show: o.i === p1 ? payNum(resultPays.s1) : o.i === p2 ? payNum(resultPays.s2) : o.i === p3 ? payNum(resultPays.s3) : null,
@@ -2393,6 +2502,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         model_pct: Math.round(o.pModel * 1000) / 10,
         odds: o.odds,
         is_winner: o.i === winner.i,
+        // 2.30.0: this path wrote no finishing position for anyone, not even the winner,
+        // leaving the race invisible to every finish-based query. The rest of the field is
+        // genuinely unknown here — there is no chart — so it stays null, honestly.
+        finish_pos: o.i === winner.i ? 1 : null,
       }));
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log", {
         method: "POST",
