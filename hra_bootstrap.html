@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cycle-Ledger Bootstrap — SPY CC</title>
+<title>HRA Bootstrap</title>
 <style>
   :root{
     --paper:#f6f7f5; --panel:#ffffff; --ink:#1c2126; --dim:#6b7480;
@@ -70,7 +70,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>HRA Ledger Bootstrap <span id="bs-ver" class="mono" style="font-weight:400;font-size:14px;color:var(--dim)"></span></h1>
+  <h1>HRA Bootstrap <span id="bs-ver" class="mono" style="font-weight:400;font-size:14px;color:var(--dim)"></span></h1>
   <p class="sub">Circular calendar-day block bootstrap — HRA fork. Evaluation instrument
   only, no policy machinery. Import a <span class="mono">ledger-pack/2</span> JSON:
   incumbent first as entry #0, challengers after.</p>
@@ -102,7 +102,7 @@
 "use strict";
 const BS_VERSION='v1.4.0-hra1'; // v1.2.3 — SINGLE VERSION WRITER (v6.3.0 pattern): feeds the H1 badge and every report header; the changelog comment below stays manual by nature (it IS the entry)
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('bs-ver');if(e)e.textContent=BS_VERSION;});
-/* Cycle-Ledger Bootstrap v1.4.0 — S66
+/* HRA Bootstrap v1.4.0-hra1 — forked from SPY Cycle-Ledger Bootstrap v1.4.0 (S66)
    v1.4.0 (S66): LEDGER-PACK/2 ONLY. Backtester v7.2.13 retired the frozen
    first-roll core-yield basis. There is no single basis: each cycle is scored
    against the spot its own selection saw, coreYld = Σ[pnl_i/(entrySPY_i ×
@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementByI
    challenger" was chosen by win frequency (maiden-run wart: pointed at a
    wide-spread lottery shape while a different entry cleared the 90% paired
    bar). Doctrine: win-frequency is descriptive, paired-Δ decides. Selection
-   is now argmax P(Δ>0) at L=61, ties → lower id; win% retained in the
+   is now argmax P(Δ>0) at the middle L (HRA fork: 7cd), ties → lower id; win% retained in the
    sentence as a descriptive stat. VERDICT TEXT ONLY — draws, resampling,
    fingerprint gate, bands, win-frequency tables, and the legacy A/B path
    are byte-untouched. Cert: re-import of the repaired maiden pack (seed 42,
@@ -216,7 +216,7 @@ $('fileP').onchange=()=>{
 };
 gateP();
 
-$('runP').onclick=()=>{
+$('runP').onclick=()=>{ try{
   const j=PK.pack,E=j.entries,B=Math.max(100,+$('nBP').value||10000),seed=+$('seedP').value||42;
   const Ls=[3,7,14];
   // Union calendar window across all entries' core cycles (exit-date attribution)
@@ -297,18 +297,19 @@ $('runP').onclick=()=>{
 
   // Verdicts
   const vTxt=[];
-  const inc=res[61].win[0]/B*100;
-  const chall=E.map((e,i)=>i===0?null:{i,w:res[61].win[i]/B*100,p:res[61].dq[i].pgt*100})
+  const LSEL=Ls[1]; // anchor block length for the verdict (was hardcoded 61 in the SPY original)
+  const inc=res[LSEL].win[0]/B*100;
+  const chall=E.map((e,i)=>i===0?null:{i,w:res[LSEL].win[i]/B*100,p:res[LSEL].dq[i].pgt*100})
     .filter(x=>x).sort((a,b)=>b.p-a.p||a.i-b.i); // v1.3.1: paired P(Δ>0) decides; ties → lower id; win% descriptive
   const top=chall[0];
-  const v1='P-P1 — incumbent wins '+inc.toFixed(0)+'% of worlds at L=61'
+  const v1='P-P1 — incumbent wins '+inc.toFixed(0)+'% of worlds at L='+LSEL+'cd'
     +(top?'; strongest challenger #'+E[top.i].id+' ('+E[top.i].label+') P(Δ>0) '+top.p.toFixed(0)
       +'% (paired), wins '+top.w.toFixed(0)+'% of worlds':'')
     +' → '+(top&&top.p>=90?'challenger CLEARS the paired bar — walk-forward candidate'
       :top&&top.p>=60?'suggestive, NOT resolved — more tape or more cycles'
       :'ranking is sampling luck at this depth — no motion');
   vTxt.push(v1);out.push('<div class="verdict '+(top&&top.p>=90?'fail':'pass')+'">'+v1+'</div>');
-  const stab=E.every((e,i)=>i===0||Ls.every(L=>Math.abs(res[L].dq[i].pgt-res[61].dq[i].pgt)<=0.10));
+  const stab=E.every((e,i)=>i===0||Ls.every(L=>Math.abs(res[L].dq[i].pgt-res[LSEL].dq[i].pgt)<=0.10));
   const v2='P-P2 — P(Δ>0) drift across L {3,7,14}: '+(stab?'STABLE (≤10pp per entry)':'BLOCK-LENGTH FRAGILE — treat verdicts as unresolved');
   vTxt.push(v2);out.push('<div class="verdict '+(stab?'pass':'fail')+'">'+v2+'</div>');
   const mth='Method: circular calendar-day moving-block · ONE shared draw sequence per resample across all entries '
@@ -320,7 +321,7 @@ $('runP').onclick=()=>{
 
   // Plain-text report
   const rep=['═══════════════════════════════════════════════════════════',
-    'LEDGER-PACK BOOTSTRAP — N-WAY RESULTS REPORT',
+    'HRA BOOTSTRAP — LEDGER-PACK N-WAY RESULTS REPORT',
     '═══════════════════════════════════════════════════════════',hdr,'','Entries:'];
   E.forEach((e,i)=>rep.push('  #'+e.id+' '+e.label+(e.aliases&&e.aliases.length?' (+'+e.aliases.length+' alias)':'')
     +' · fp '+e.fingerprint+' · core '+yObs[i].toFixed(1)+'% · '+e._core.length+' core cycles'));
@@ -334,7 +335,7 @@ $('runP').onclick=()=>{
         +d.p95.toFixed(2)+' '+(d.pgt*100).toFixed(0)+'%').padStart(28);}).join(''));});
   rep.push('');vTxt.forEach(v=>rep.push(v));rep.push('',mth);
   reportTxtP=rep.join('\n')+'\n';
-  const fn='bootstrap_pack_'+etStamp(new Date(),true)+'.txt';
+  const fn='HRA_bootstrap_pack_'+etStamp(new Date(),true)+'.txt';
   $('dlP').onclick=()=>{
     const blob=new Blob([reportTxtP],{type:'text/plain'});
     const a=document.createElement('a');
@@ -342,6 +343,7 @@ $('runP').onclick=()=>{
     document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);
   };
+  }catch(err){ $('outP').innerHTML='<div class="verdict fail">Run failed: '+(err&&err.message||err)+'</div>'; console.error(err); }
 };
 </script>
 </body>

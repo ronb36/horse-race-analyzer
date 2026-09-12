@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SPY Covered Call Backtest</title>
+<title>HRA Bench</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -462,7 +462,7 @@ function downloadLog() {
     + String(now.getDate()).padStart(2,'0') + '_'
     + String(now.getHours()).padStart(2,'0')
     + String(now.getMinutes()).padStart(2,'0');
-  const filename = `SPY_Log_${ts}.txt`;
+  const filename = `HRA_Bench_Log_${ts}.txt`;
   const blob = new Blob([text], { type: 'text/plain' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
