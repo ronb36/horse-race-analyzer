@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v3.0.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v3.0.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -607,7 +607,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -744,7 +744,9 @@ function HorseRaceAnalyzer() {
   const [cardFlags, setCardFlags] = useState({ cancelled: false, cancelledRaces: [] });
   const [offTurf, setOffTurf] = useState(false);
   const cardFlagsRef = useRef({ cancelled: false, cancelledRaces: [] });
-  const [entriesDate, setEntriesDate] = useState(null);
+  // 3.0.1: Entries is an operational shopping list, so it opens on the CURRENT ERA.
+  // "era" is a scope sentinel, not a date — null still means All, a ymd still means that day.
+  const [entriesDate, setEntriesDate] = useState("era");
   const [cardsDate, setCardsDate] = useState(null);
   const [resultPays, setResultPays] = useState({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
   const [scratchMode, setScratchMode] = useState(false);
@@ -3147,10 +3149,10 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 return (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, flex: 1 }}>
-                    {dates.length > 1 && [null, ...dates].map((d) => (
-                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
+                    {dates.length > 0 && ["era", null, ...dates].map((d) => (
+                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d === "era" ? null : d, ownedCards, "ENTRIES ON FILE"); }}
                         style={{ background: entriesDate === d ? GREEN_DARK : "#EAE3CF", color: entriesDate === d ? "#F3EDDD" : "#4A4437", border: entriesDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
-                        {d ? ymdToDisplay(d) : "All"}
+                        {d === "era" ? "ERA \u00b7 " + ymdToDisplay(String(ERA_START)) : d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
                   </div>
@@ -3162,7 +3164,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Nothing on file yet — tap "Upload Entries" with saved entries-page PDFs.
                 </div>
               )}
-              {dayScan.filter((t) => !entriesDate || !t.ymd || t.ymd === entriesDate).map((t, ti) => {
+              {dayScan.length > 0 && entriesDate === "era" && !dayScan.some((t) => !t.ymd || Number(t.ymd) >= ERA_START) && (
+                <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
+                  No entries on file since {ymdToDisplay(String(ERA_START))}. Tap <b>All</b> for earlier meets.
+                </div>
+              )}
+              {dayScan.filter((t) => entriesDate === "era" ? (!t.ymd || Number(t.ymd) >= ERA_START) : (!entriesDate || !t.ymd || t.ymd === entriesDate)).map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
                 // 2.29.0: annotate each qualifier with the doctrine rules readable from entries.
                 (t.races || []).forEach((r) => { r.entryFiltered = r.ok ? (entryDoctrine(r) || {}).label || null : null; });
