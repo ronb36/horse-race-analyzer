@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v2.30.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v2.32.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -439,6 +439,23 @@ function officialFinish(cr) {
   return out;
 }
 
+// 2.30.1: every runner's payoffs, keyed by horse. Same trailing-pool rule as 2.29.4 —
+// the figures a horse prints are the pools it actually cashed, right-aligned against the
+// winner's count — but applied to the whole field instead of three picker slots. A horse
+// dead-heating for a placing therefore keeps its place payoff instead of losing it to a
+// slot that has nowhere to put it.
+function chartPays(cr) {
+  const pricesOf = (f) => ((cr.mutuel || []).find((x) => x.prog === f.prog) || {}).prices || [];
+  const nPools = cr.finishers && cr.finishers.length ? pricesOf(cr.finishers[0]).length : 0;
+  const fix = (v) => (v === undefined ? "" : Number(v).toFixed(2));
+  return (cr.finishers || []).map((f) => {
+    const arr = pricesOf(f);
+    const off = nPools - arr.length;
+    const at = (j) => { const i = j - off; return i >= 0 && arr[i] !== undefined ? fix(arr[i]) : ""; };
+    return { name: f.name, w: at(0), p: at(1), s: at(2) };
+  });
+}
+
 // Sum of implied win probability across a race's runners. Read correctly off the chart's
 // Odds $1 column this is near-constant — 160 of 164 Saratoga races landed in 1.191-1.195,
 // because the figure is derived from the pool at a fixed takeout. The four that didn't were
@@ -590,11 +607,11 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "2.30.0";
+const APP_VERSION = "2.32.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
-const ERA_START = 20260806;
+const ERA_START = 20260918;
 
 // 2.24.0: the doctrine filter rules, one shared implementation — the race-view LCD and
 // the calendar builder both call this. Rows need { rating, scratched, odds, name, i }.
@@ -621,7 +638,7 @@ function doctrineFilter(rows, raceInfo) {
   const byR = [...live].sort((a, b) => b.rating - a.rating);
   const top = byR[0];
   const gap = top.rating - byR[1].rating;
-  if (gap < 6) return { reason: "GAP " + gap.toFixed(1) };
+  if (gap < 8) return { reason: "GAP " + gap.toFixed(1) };
   const ed = entryDoctrine(raceInfo);
   if (ed) return { reason: ed.reason };
   if (top.odds !== null && top.odds !== undefined && top.odds < 1) return { reason: "PRICE " + decimalToBoard(top.odds) };
@@ -706,6 +723,7 @@ function HorseRaceAnalyzer() {
   const [winnerMode, setWinnerMode] = useState(false);
   const [finishPicks, setFinishPicks] = useState([]);
   const [finishOrder, setFinishOrder] = useState([]); // 2.30.0: [{name,pos}] for the WHOLE field
+  const [finishPays, setFinishPays] = useState([]);   // 2.30.1: [{name,w,p,s}] for the WHOLE field
   const [betSlipOpen, setBetSlipOpen] = useState(false);
   const [dhWin, setDhWin] = useState(false); // dead heat for first (2.20.0)
   const [resultsHub, setResultsHub] = useState(null); // parsed chart model
@@ -1812,6 +1830,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
     setFinishPicks(picks);
     // 2.30.0: the whole field, with official positions, carried by name into the write
     setFinishOrder(officialFinish(cr).map((x) => ({ name: x.name, pos: x.pos })));
+    setFinishPays(chartPays(cr));
     const payFor = (prog) => (cr.mutuel.find((x) => x.prog === prog) || {}).prices || [];
     const f = cr.finishers;
     const pr1 = payFor(f[0] && f[0].prog), pr2 = payFor(f[1] && f[1].prog), pr3 = payFor(f[2] && f[2].prog);
@@ -2036,7 +2055,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   const live = results.filter((r) => !r.scratched);
   const topRating = live.length ? live[0].rating : 0;
   /* SIM-CORE BEGIN — probability curve, Harville place/show, overlay math. */
-  const TAU = 8;
+  const TAU = 28;
   const expW = live.map((r) => Math.exp((r.rating - topRating) / TAU));
   const expSum = expW.reduce((a, b) => a + b, 0) || 1;
   const pWin = new Map(live.map((r, idx) => [r.i, expW[idx] / expSum]));
@@ -2392,6 +2411,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
     const [p1, p2, p3] = finishPicks;
     const payNum = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
     const posByName = new Map((finishOrder || []).map((x) => [normName(x.name), x.pos]));
+    const payByName = new Map((finishPays || []).map((x) => [normName(x.name), x]));
+    // 2.30.1: chart payoffs win; the picker slots remain the fallback for a hand-entered race
+    const chartPay = (name, k) => { const e = payByName.get(normName(name)); return e ? payNum(e[k]) : null; };
     try {
       const rows = overlay.filter((o) => !o.scratched).map((o) => ({
         track: cardMeta.track || null,
@@ -2413,9 +2435,9 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
         // The picker slots remain the fallback for a hand-entered race with no chart.
         finish_pos: posByName.get(normName(o.name))
           || (o.i === p1 ? 1 : o.i === p2 ? (dhWin ? 1 : 2) : o.i === p3 ? 3 : null),
-        pay_win: o.i === p1 ? payNum(resultPays.w1) : dhWin && o.i === p2 ? payNum(resultPays.w2) : null,
-        pay_place: o.i === p1 ? payNum(resultPays.p1) : o.i === p2 ? payNum(resultPays.p2) : null,
-        pay_show: o.i === p1 ? payNum(resultPays.s1) : o.i === p2 ? payNum(resultPays.s2) : o.i === p3 ? payNum(resultPays.s3) : null,
+        pay_win: chartPay(o.name, "w") ?? (o.i === p1 ? payNum(resultPays.w1) : dhWin && o.i === p2 ? payNum(resultPays.w2) : null),
+        pay_place: chartPay(o.name, "p") ?? (o.i === p1 ? payNum(resultPays.p1) : o.i === p2 ? payNum(resultPays.p2) : null),
+        pay_show: chartPay(o.name, "s") ?? (o.i === p1 ? payNum(resultPays.s1) : o.i === p2 ? payNum(resultPays.s2) : o.i === p3 ? payNum(resultPays.s3) : null),
       }));
       const resp = await fetch(supaUrl.replace(/\/+$/, "") + "/rest/v1/hra_race_log", {
         method: "POST",
@@ -2445,14 +2467,22 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       for (const b of bets) {
         if (!b.id) { settledLocal.push(b); continue; }
         const pos = top.indexOf(b.horse);
+        // 2.30.1: settle on the OFFICIAL position when the chart gave us one. The slot index
+        // cannot express a tie, so a horse dead-heating for second sat in slot 3 and its PLACE
+        // ticket was booked a loser. finish_pos 2 is finish_pos 2 however many horses share it.
+        const officialPos = posByName.get(normName(b.horse)) || null;
         // scratched after the ticket was punched: refund the stake rather than book a loss
         const scr = overlay.some((o) => o.name === b.horse && o.scratched);
-        const won = scr ? false : (b.bet_type === "WIN" ? pos === 0 || (dhWin && pos === 1) : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0);
+        const won = scr ? false
+          : officialPos !== null
+            ? (b.bet_type === "WIN" ? officialPos === 1 : b.bet_type === "PLACE" ? officialPos <= 2 : officialPos <= 3)
+            : (b.bet_type === "WIN" ? pos === 0 || (dhWin && pos === 1) : b.bet_type === "PLACE" ? pos >= 0 && pos <= 1 : pos >= 0);
         let payout = scr ? b.amount : (won ? null : 0);
         if (won) {
-          const official = b.bet_type === "WIN" ? (pos === 1 ? payNum(resultPays.w2) : payNum(resultPays.w1))
+          const byHorse = chartPay(b.horse, b.bet_type === "WIN" ? "w" : b.bet_type === "PLACE" ? "p" : "s");
+          const official = byHorse ?? (b.bet_type === "WIN" ? (pos === 1 ? payNum(resultPays.w2) : payNum(resultPays.w1))
             : b.bet_type === "PLACE" ? (pos === 0 ? payNum(resultPays.p1) : payNum(resultPays.p2))
-            : (pos === 0 ? payNum(resultPays.s1) : pos === 1 ? payNum(resultPays.s2) : payNum(resultPays.s3));
+            : (pos === 0 ? payNum(resultPays.s1) : pos === 1 ? payNum(resultPays.s2) : payNum(resultPays.s3)));
           if (official !== null) payout = Math.round((b.amount / 2) * official * 100) / 100;
           else if (b.bet_type === "WIN") {
             const od = parseOdds(b.odds_at_bet);
