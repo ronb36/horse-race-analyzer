@@ -612,6 +612,10 @@ const APP_VERSION = "3.0.1";
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
 const ERA_START = 20260918;
+// 3.0.1: THE MACHINE LOOKS FORWARD. Pre-era race days are closed history — their results
+// are in the tables and were what refit the model. The backtester is where the past is
+// read; the machine shows the current era only, with no route back to earlier meets.
+const inEra = (ymd) => !ymd || Number(ymd) >= ERA_START;
 
 // 2.24.0: the doctrine filter rules, one shared implementation — the race-view LCD and
 // the calendar builder both call this. Rows need { rating, scratched, odds, name, i }.
@@ -744,9 +748,7 @@ function HorseRaceAnalyzer() {
   const [cardFlags, setCardFlags] = useState({ cancelled: false, cancelledRaces: [] });
   const [offTurf, setOffTurf] = useState(false);
   const cardFlagsRef = useRef({ cancelled: false, cancelledRaces: [] });
-  // 3.0.1: Entries is an operational shopping list, so it opens on the CURRENT ERA.
-  // "era" is a scope sentinel, not a date — null still means All, a ymd still means that day.
-  const [entriesDate, setEntriesDate] = useState("era");
+  const [entriesDate, setEntriesDate] = useState(null);
   const [cardsDate, setCardsDate] = useState(null);
   const [resultPays, setResultPays] = useState({ w1: "", p1: "", s1: "", p2: "", s2: "", s3: "" });
   const [scratchMode, setScratchMode] = useState(false);
@@ -1506,7 +1508,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         return { date: d, tracks, orphans: orphans.length, entCount, allOff,
           clean: tracks.every((t) => t.clean) && orphans.length === 0 && tracks.length > 0 };
       });
-      setAuditView(view);
+      setAuditView(view.filter((v) => inEra(v.date)));
       setStep("audit");
       // 2.22.0/2.23.0: settled tickets only, refunds excluded from every figure.
       // The LCD reads the CURRENT ERA (since ERA_START); the banner carries both ledgers.
@@ -2947,7 +2949,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 Uploaded Brisnet data files save here automatically. Open races through Race Day.
               </p>
               {(() => {
-                const dates = [...new Set((savedCards || []).map((c) => c.race_date))].filter(Boolean).sort().reverse();
+                const dates = [...new Set((savedCards || []).map((c) => c.race_date))].filter(Boolean).filter(inEra).sort().reverse();
                 return (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, flex: 1 }}>
@@ -2966,7 +2968,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Nothing saved yet — tap "Upload Cards" below with a Brisnet data file.
                 </div>
               )}
-              {(savedCards || []).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
+              {(savedCards || []).filter((c) => inEra(c.race_date)).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
                 <div key={c.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                   <button onClick={() => loadSavedCard(c.id, undefined, "CARDS ON FILE")} disabled={busy}
                     style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.35)", background: "#EAE3CF", color: "#2E2A20", cursor: "pointer", fontSize: 13, textAlign: "left", opacity: c.cancelled ? 0.55 : 1 }}>
@@ -3145,14 +3147,14 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                 Tracks with qualifying races are worth a data file at brisnet.com. Post times shown for planning.
               </p>
               {(() => {
-                const dates = [...new Set(dayScan.map((t) => t.ymd))].filter(Boolean).sort().reverse();
+                const dates = [...new Set(dayScan.map((t) => t.ymd))].filter(Boolean).filter(inEra).sort().reverse();
                 return (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4, flex: 1 }}>
-                    {dates.length > 0 && ["era", null, ...dates].map((d) => (
-                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d === "era" ? null : d, ownedCards, "ENTRIES ON FILE"); }}
+                    {dates.length > 1 && [null, ...dates].map((d) => (
+                      <button key={d || "all"} onClick={() => { setEntriesDate(d); bindStripToDate(d, ownedCards, "ENTRIES ON FILE"); }}
                         style={{ background: entriesDate === d ? GREEN_DARK : "#EAE3CF", color: entriesDate === d ? "#F3EDDD" : "#4A4437", border: entriesDate === d ? "1px solid rgba(0,0,0,0.5)" : "1px solid rgba(0,0,0,0.25)", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: "0 0 auto" }}>
-                        {d === "era" ? "ERA \u00b7 " + ymdToDisplay(String(ERA_START)) : d ? ymdToDisplay(d) : "All"}
+                        {d ? ymdToDisplay(d) : "All"}
                       </button>
                     ))}
                   </div>
@@ -3164,12 +3166,12 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   Nothing on file yet — tap "Upload Entries" with saved entries-page PDFs.
                 </div>
               )}
-              {dayScan.length > 0 && entriesDate === "era" && !dayScan.some((t) => !t.ymd || Number(t.ymd) >= ERA_START) && (
+              {dayScan.filter((t) => inEra(t.ymd)).length === 0 && dayScan.length > 0 && (
                 <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
-                  No entries on file since {ymdToDisplay(String(ERA_START))}. Tap <b>All</b> for earlier meets.
+                  No entries on file for this era. Earlier meets live in the backtester.
                 </div>
               )}
-              {dayScan.filter((t) => entriesDate === "era" ? (!t.ymd || Number(t.ymd) >= ERA_START) : (!entriesDate || !t.ymd || t.ymd === entriesDate)).map((t, ti) => {
+              {dayScan.filter((t) => inEra(t.ymd)).filter((t) => !entriesDate || !t.ymd || t.ymd === entriesDate).map((t, ti) => {
                 const ok = (t.races || []).filter((r) => r.ok);
                 // 2.29.0: annotate each qualifier with the doctrine rules readable from entries.
                 (t.races || []).forEach((r) => { r.entryFiltered = r.ok ? (entryDoctrine(r) || {}).label || null : null; });
