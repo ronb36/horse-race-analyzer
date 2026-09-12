@@ -616,6 +616,8 @@ const ERA_START = 20260918;
 // are in the tables and were what refit the model. The backtester is where the past is
 // read; the machine shows the current era only, with no route back to earlier meets.
 const inEra = (ymd) => !ymd || Number(ymd) >= ERA_START;
+const ERA_MEET = "BELMONT 2026";   // 3.0.1: names the current era on the boot LCD
+const READY_MSG = "READY FOR " + ERA_MEET;
 
 // 2.24.0: the doctrine filter rules, one shared implementation — the race-view LCD and
 // the calendar builder both call this. Rows need { rating, scratched, odds, name, i }.
@@ -713,7 +715,7 @@ function HorseRaceAnalyzer() {
   const [apiKey, setApiKeyState] = useState(() => { try { return localStorage.getItem("hra_api_key") || ""; } catch { return ""; } });
   const setApiKey = (v) => { setApiKeyState(v); try { localStorage.setItem("hra_api_key", v); } catch {} };
   const [busy, setBusy] = useState(false);
-  const [lcdMsg, setLcdMsg] = useState("READY");
+  const [lcdMsg, setLcdMsg] = useState(READY_MSG);
   const [error, setError] = useState("");
   const [cardTitle, setCardTitle] = useState("");
   const [raceIndex, setRaceIndex] = useState([]);
@@ -1005,7 +1007,7 @@ function HorseRaceAnalyzer() {
       } else { setStep("races"); setLcdMsg("SELECT RACE"); }
     } catch (e) {
       setError("Couldn't load that card. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally { setBusy(false); }
   }
 
@@ -1209,7 +1211,7 @@ Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5).
     } catch (e) {
       console.error(e);
       setError(e.message || String(e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -1387,7 +1389,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setLcdMsg("RACE DAY");
     } catch (e) {
       setError("Couldn't build the Race Card. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally { setBusy(false); }
   }
 
@@ -1539,7 +1541,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       }
     } catch (e) {
       setError("Couldn't run the audit. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally { setBusy(false); }
   }
 
@@ -1679,7 +1681,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
   function goHome() {
     setStep("start"); setHorses([]); setRaceIndex([]); setRaceData({}); setActiveRace(null);
     setWinnerMode(false); setScratchMode(false); setLogMsg(""); askSeqRef.current++; setClaudeRec(null); setClaudeErr(null); setClaudeThinking(false);
-    brisRef.current = null; setLcdMsg("READY"); setError("");
+    brisRef.current = null; setLcdMsg(READY_MSG); setError("");
   }
 
   async function viewCards() {
@@ -1716,7 +1718,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setLcdMsg(rows.length ? "ENTRIES ON FILE" : "NO ENTRIES YET");
     } catch (e) {
       setError("Couldn't load stored entries. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally { setBusy(false); }
   }
 
@@ -1908,7 +1910,7 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
       setLcdMsg(found.length + " TRACK" + (found.length === 1 ? "" : "S") + " SCANNED");
     } catch (e) {
       setError("Scan failed. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally {
       setBusy(false);
       if (scanFileRef.current) scanFileRef.current.value = "";
@@ -2305,7 +2307,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       setLcdMsg("THE TABLE");
     } catch (e) {
       setError("Couldn't fetch the tickets. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally { setBusy(false); }
   }
 
@@ -2400,7 +2402,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
       setLcdMsg("BOARD UPDATED");
     } catch (e) {
       setError("Couldn't read the board snapshot. " + (e.message || e));
-      setLcdMsg("READY");
+      setLcdMsg(READY_MSG);
     } finally {
       setBusy(false);
       if (oddsSnapRef.current) oddsSnapRef.current.value = "";
@@ -2963,9 +2965,11 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                   </div>
                 );
               })()}
-              {(!savedCards || savedCards.length === 0) && (
+              {(savedCards || []).filter((c) => inEra(c.race_date)).length === 0 && (
                 <div style={{ background: "#EAE3CF", borderRadius: 8, padding: 14, fontSize: 13, color: "#6B6353", marginBottom: 10 }}>
-                  Nothing saved yet — tap "Upload Cards" below with a Brisnet data file.
+                  {(savedCards || []).length === 0
+                    ? "Nothing saved yet — tap \u201cUpload Cards\u201d below with a Brisnet data file."
+                    : "No cards on file for this era. Earlier meets live in the backtester."}
                 </div>
               )}
               {(savedCards || []).filter((c) => inEra(c.race_date)).filter((c) => !cardsDate || c.race_date === cardsDate).map((c) => (
