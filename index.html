@@ -3004,7 +3004,7 @@ Line 3: one sentence (max 140 chars) citing the numbers that drove the call.`;
                     <b>SEASON — {auditStats.tracks}</b> · opened {auditStats.opened ? ymdToDisplay(auditStats.opened) : "—"} · {auditStats.days} race day{auditStats.days === 1 ? "" : "s"} · {auditStats.qual} qualified · {auditStats.season.n} bet · {auditStats.season.wonN} won · ${auditStats.season.stk.toFixed(2)} → ${auditStats.season.ret.toFixed(2)}
                   </div>
                   <div style={{ borderTop: "1px solid rgba(0,0,0,0.12)", marginTop: 4, paddingTop: 4 }}>
-                    <b>ERA — FILTER DOCTRINE</b> · since {ymdToDisplay(ERA_START)} · {auditStats.eraDays} day{auditStats.eraDays === 1 ? "" : "s"} · {auditStats.eraQual} qualified · {auditStats.eraFiltered} filtered · {auditStats.era.n} bet · {auditStats.era.wonN} won · ROI {auditStats.era.roi >= 0 ? "+" : "−"}{Math.abs(auditStats.era.roi)}%
+                    <b>ERA — {ERA_MEET}</b> · since {ymdToDisplay(String(ERA_START))} · {auditStats.eraDays} day{auditStats.eraDays === 1 ? "" : "s"} · {auditStats.eraQual} qualified · {auditStats.eraFiltered} filtered · {auditStats.era.n} bet · {auditStats.era.wonN} won · ROI {auditStats.era.roi >= 0 ? "+" : "−"}{Math.abs(auditStats.era.roi)}%
                   </div>
                 </div>
               )}
