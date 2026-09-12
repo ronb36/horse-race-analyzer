@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cycle-Ledger Bootstrap — SPY CC</title>
+<style>
+  :root{
+    --paper:#f6f7f5; --panel:#ffffff; --ink:#1c2126; --dim:#6b7480;
+    --line:#d8dce0; --mono-bg:#f0f2f1; --signal:#2456c8; --pass:#1a7d3c;
+    --fail:#b3261e; --warn:#a05a00; --band:#dfe7f8;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font:16px/1.5 -apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif}
+  .wrap{max-width:880px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:21px;font-weight:700;letter-spacing:.01em;margin:6px 0 2px}
+  .sub{color:var(--dim);font-size:13.5px;margin:0 0 18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+        padding:14px 16px;margin-bottom:14px}
+  .card h2{font-size:13px;font-weight:700;text-transform:uppercase;
+           letter-spacing:.07em;color:var(--dim);margin:0 0 10px}
+  textarea{width:100%;height:130px;font:12px/1.45 ui-monospace,Menlo,monospace;
+           border:1px solid var(--line);border-radius:6px;padding:8px;
+           background:var(--mono-bg);color:var(--ink);resize:vertical}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:10px}
+  label{font-size:12.5px;color:var(--dim);display:block;margin-bottom:3px}
+  input[type=text],input[type=number]{
+    font:14px ui-monospace,Menlo,monospace;border:1px solid var(--line);
+    border-radius:6px;padding:7px 9px;width:110px;background:#fff;color:var(--ink)}
+  input[type=file]{display:none}
+  button{font:600 14px -apple-system,sans-serif;border:1px solid var(--ink);
+         border-radius:6px;padding:9px 16px;background:var(--ink);color:#fff;
+         cursor:pointer}
+  button.ghost{background:#fff;color:var(--ink)}
+  button:disabled{opacity:.45;cursor:default}
+  .gatemsg{font:12.5px ui-monospace,Menlo,monospace;color:var(--warn)}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  .parsebox{font:12.5px/1.6 ui-monospace,Menlo,monospace;background:var(--mono-bg);
+            border:1px solid var(--line);border-radius:6px;padding:8px 10px;
+            margin-top:10px;white-space:pre-wrap}
+  .ok{color:var(--pass);font-weight:700}.bad{color:var(--fail);font-weight:700}
+  .wn{color:var(--warn);font-weight:700}
+  table{border-collapse:collapse;width:100%;font:13px/1.5 ui-monospace,Menlo,monospace}
+  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600;font-size:11.5px;text-transform:uppercase;
+     letter-spacing:.05em}
+  th:first-child,td:first-child{text-align:left}
+  .gauge{position:relative;height:34px;margin:8px 0 2px;background:var(--mono-bg);
+         border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .gauge .band{position:absolute;top:0;bottom:0;background:var(--band)}
+  .gauge .iqr{position:absolute;top:9px;bottom:9px;background:#b9c9ee}
+  .gauge .med{position:absolute;top:0;bottom:0;width:2px;background:var(--signal)}
+  .gauge .cmp{position:absolute;top:0;bottom:0;width:2px;background:var(--fail)}
+  .gauge .cmp::after{content:attr(data-l);position:absolute;top:-1px;left:4px;
+         font:10px ui-monospace,monospace;color:var(--fail);white-space:nowrap}
+  .axis{display:flex;justify-content:space-between;font:10.5px ui-monospace,monospace;
+        color:var(--dim);margin-bottom:10px}
+  .verdict{font:13px/1.6 ui-monospace,Menlo,monospace;border-left:3px solid var(--line);
+           padding:6px 10px;margin:8px 0;background:var(--mono-bg);border-radius:0 5px 5px 0}
+  .verdict.pass{border-left-color:var(--pass)}
+  .verdict.fail{border-left-color:var(--fail)}
+  .runhdr{font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--dim);
+          background:var(--mono-bg);border:1px dashed var(--line);border-radius:6px;
+          padding:7px 10px;margin-bottom:10px;white-space:pre-wrap;user-select:all}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px}
+  @media (max-width:520px){ input[type=text],input[type=number]{width:88px} th,td{padding:4px 5px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>HRA Ledger Bootstrap <span id="bs-ver" class="mono" style="font-weight:400;font-size:14px;color:var(--dim)"></span></h1>
+  <p class="sub">Circular calendar-day block bootstrap — HRA fork. Evaluation instrument
+  only, no policy machinery. Import a <span class="mono">ledger-pack/2</span> JSON:
+  incumbent first as entry #0, challengers after.</p>
+
+  <div class="card"><!-- ledger-pack mode — the only import path in this fork -->
+    <h2>Ledger Pack — N-way calendar-block</h2>
+    <div class="row">
+      <button class="ghost" id="loadP">Load ledger pack…</button>
+      <input type="file" id="fileP" accept=".json,application/json">
+      <div><label>Resamples B</label><input type="number" id="nBP" value="10000"></div>
+      <div><label>Seed</label><input type="number" id="seedP" value="42"></div>
+      <button id="runP" disabled>Run pack bootstrap</button>
+      <span class="gatemsg" id="gateMsgP"></span>
+    </div>
+    <div class="parsebox" id="pboxP">— no pack loaded —</div>
+    <p class="note">Import a <span class="mono">ledger-pack/2</span> JSON from the backtester
+    (v6.19.0+ Export Ledger Pack). Co-resampling: ONE shared sequence of circular
+    calendar-day blocks (L ∈ {3, 7, 14} ≈ card / week / fortnight) applied to every entry per
+    resample — shared history cancels; the Δ distribution reflects only where machines
+    diverge. Core cycles only (initial excluded), attributed to blocks by exit date.
+    Outputs: win-frequency ranking + paired Δ vs entry #0 (incumbent). Adjudication
+    instrument only — the shortlist still walks through walk-forward.</p>
+  </div>
+
+  <div id="outP"></div>
+  </div>
+
+<script>
+"use strict";
+const BS_VERSION='v1.4.0-hra1'; // v1.2.3 — SINGLE VERSION WRITER (v6.3.0 pattern): feeds the H1 badge and every report header; the changelog comment below stays manual by nature (it IS the entry)
+document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('bs-ver');if(e)e.textContent=BS_VERSION;});
+/* Cycle-Ledger Bootstrap v1.4.0 — S66
+   v1.4.0 (S66): LEDGER-PACK/2 ONLY. Backtester v7.2.13 retired the frozen
+   first-roll core-yield basis. There is no single basis: each cycle is scored
+   against the spot its own selection saw, coreYld = Σ[pnl_i/(entrySPY_i ×
+   shares)] × 365/coreDays. Packs carry schema ledger-pack/2, basis
+   market-percycle. /1 is refused BY NAME with the reason — same policy reads
+   ~1pp higher under /1, so a /1 report and a /2 report are not comparable even
+   though both are labelled core yield. basis is surfaced on import and stamped
+   into every report header, so no report is silent about its own frame.
+   Ordering was measured UNCHANGED across the six-entry v6.41.0 pack before the
+   switch: this is a level correction, not a re-selection.
+
+   v1.3.1 (S48): P-P1 VERDICT SELECTS BY PAIRED P(Δ>0) — the "strongest
+   Full version history: CHANGELOG.md in the project folder (S46 ruling; in-file
+   log carries only the current release entry, per the S45 convention).
+   v1.3.1 (S48): P-P1 VERDICT SELECTS BY PAIRED P(Δ>0) — the "strongest
+   challenger" was chosen by win frequency (maiden-run wart: pointed at a
+   wide-spread lottery shape while a different entry cleared the 90% paired
+   bar). Doctrine: win-frequency is descriptive, paired-Δ decides. Selection
+   is now argmax P(Δ>0) at L=61, ties → lower id; win% retained in the
+   sentence as a descriptive stat. VERDICT TEXT ONLY — draws, resampling,
+   fingerprint gate, bands, win-frequency tables, and the legacy A/B path
+   are byte-untouched. Cert: re-import of the repaired maiden pack (seed 42,
+   B 10000) must reproduce draw ck {23e158e3, 748f97a4, 16c4a153} and all
+   band values; sole report diff is the P-P1 line. Legacy A/B certified
+   reference remains the 08-05 pair, band fp 22659242. */
+const $=id=>document.getElementById(id);
+
+
+function etStamp(d, forFilename){ // v1.2.1 — America/New_York, DST-correct via Intl (never hand-offset)
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone:'America/New_York', year:'numeric', month:'2-digit',
+    day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(d)
+    .reduce((o,x)=>(o[x.type]=x.value,o),{});
+  const hh = p.hour === '24' ? '00' : p.hour; // en-CA can emit 24 at midnight
+  return forFilename ? `${p.year}-${p.month}-${p.day}_${hh}${p.minute}ET`
+                     : `${p.year}-${p.month}-${p.day} ${hh}:${p.minute} ET`;
+}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return((t^t>>>14)>>>0)/4294967296;};}
+
+// ═══ Ledger-Pack N-way calendar-block mode — sole path in this fork ═══════
+let PK=null,reportTxtP=null;
+
+function fpPack(cycles){ // must match the backtester's _fpLedger exactly (djb2 over entry|exit|round(pnl))
+  let h=5381;
+  const s=(cycles||[]).map(c=>c.entryDate+'|'+c.exitDate+'|'+Math.round(c.pnl)).join(';');
+  for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;
+  return h.toString(16).padStart(8,'0');
+}
+function dayIdx(iso,t0){return Math.round((Date.parse(iso+'T00:00:00Z')-t0)/86400000);}
+
+function parsePack(txt){
+  let j;
+  try{j=JSON.parse(txt);}catch(e){return {err:'Not valid JSON: '+e.message};}
+  // v1.4.0 (S66) — ledger-pack/2. A /1 pack's coreYld divided coreSum by SPY
+  // at the FIRST ROLL, frozen; /2 scores each cycle against the spot its own
+  // selection saw. Same policy reads ~1pp higher under /1. parsePack takes ONE
+  // pack, so /1 and /2 entries cannot mix inside a run — the hazard is reading
+  // a /1 REPORT against a /2 report. /1 is refused BY NAME, with the reason.
+  if(j.schema==='ledger-pack/1')return {err:'ledger-pack/1 — RETIRED at v7.2.13. Its coreYld uses the frozen first-roll basis and reads ~1pp higher than /2 for the same policy. Not comparable to a /2 report. Re-export from the backtester.'};
+  if(j.schema!=='ledger-pack/2')return {err:'Unknown schema "'+(j.schema||'?')+'" — expected ledger-pack/2'};
+  if(j.basis&&j.basis!=='market-percycle')return {err:'Unknown basis "'+j.basis+'" — expected market-percycle'};
+  if(!Array.isArray(j.entries)||!j.entries.length)return {err:'Pack has no entries'};
+  const probs=[];
+  j.entries.forEach(e=>{
+    const fp=fpPack(e.cycles);
+    e._fpOk=(fp===e.fingerprint);
+    if(!e._fpOk)probs.push('#'+e.id+' '+e.label+': fp recompute '+fp+' ≠ pack '+e.fingerprint);
+    e._core=(e.cycles||[]).filter(c=>!c.isInitial);
+    if(e.stats?.coreYld==null)probs.push('#'+e.id+' '+e.label+': coreYld null — cannot anchor yield scaling');
+    if(!e._core.length)probs.push('#'+e.id+' '+e.label+': no core cycles');
+  });
+  if(j.entries[0]?.params?.published!==true)probs.push('entry #0 is not marked published:true — incumbent-first pack expected');
+  return {pack:j,probs};
+}
+
+function showPack(res){
+  const box=$('pboxP');
+  if(res.err){box.innerHTML='<span class="bad">'+res.err+'</span>';return null;}
+  const j=res.pack;
+  let h='schema <b>'+j.schema+'</b> · basis <b>'+(j.basis||'?')+'</b> · app <b>'+(j.app||'?')+'</b> · DM <b>'+(j.dmUpdated||'?')
+    +'</b> · sweep evals <b>'+(j.sweepEvals??'?')+'</b> · considered '+(j.considered??'?')
+    +' → distinct <b>'+(j.distinct??j.entries.length)+'</b>\n';
+  j.entries.forEach(e=>{
+    h+='#'+e.id+' '+e.label+(e.aliases&&e.aliases.length?' (+'+e.aliases.length+' alias)':'')
+      +' · fp '+e.fingerprint+(e._fpOk?' <span class="ok">✓</span>':' <span class="bad">✗ MISMATCH</span>')
+      +' · core '+(e.stats?.coreYld!=null?e.stats.coreYld.toFixed(1)+'%':'—')
+      +' · '+e._core.length+' core cycles\n';
+  });
+  if(res.probs.length)h+='<span class="'+(res.probs.some(p=>p.includes('fp recompute'))?'bad':'wn')+'">'
+    +res.probs.length+' issue(s): '+res.probs[0]+(res.probs.length>1?' (+'+(res.probs.length-1)+' more)':'')+'</span>';
+  box.innerHTML=h;
+  return res;
+}
+
+function gateP(){
+  let msg='';
+  if(!PK||!PK.pack)msg='Load a ledger pack first';
+  else if(PK.pack.entries.some(e=>!e._fpOk))msg='✗ fingerprint mismatch — pack integrity failed; re-export from the backtester';
+  else if(PK.pack.entries.some(e=>e.stats?.coreYld==null||!e._core.length))msg='✗ entry missing coreYld or core cycles — cannot run';
+  $('runP').disabled=!!msg;
+  $('gateMsgP').textContent=msg;
+}
+$('loadP').onclick=()=>$('fileP').click();
+$('fileP').onchange=()=>{
+  const f=$('fileP').files&&$('fileP').files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{PK=showPack(parsePack(String(rd.result)));gateP();};
+  rd.onerror=()=>{$('pboxP').innerHTML='<span class="bad">File read failed.</span>';};
+  rd.readAsText(f);$('fileP').value='';
+};
+gateP();
+
+$('runP').onclick=()=>{
+  const j=PK.pack,E=j.entries,B=Math.max(100,+$('nBP').value||10000),seed=+$('seedP').value||42;
+  const Ls=[3,7,14];
+  // Union calendar window across all entries' core cycles (exit-date attribution)
+  let minD=Infinity,maxD=-Infinity;
+  E.forEach(e=>e._core.forEach(c=>{const t=Date.parse(c.exitDate+'T00:00:00Z');
+    if(t<minD)minD=t;if(t>maxD)maxD=t;}));
+  const W=Math.round((maxD-minD)/86400000)+1;
+  // Per-entry prefix sums of P&L by calendar day index — O(1) wrapped block sums
+  const pref=E.map(e=>{
+    const a=new Float64Array(W+1);
+    e._core.forEach(c=>{a[dayIdx(c.exitDate,minD)+1]+=c.pnl;});
+    for(let i=1;i<=W;i++)a[i]+=a[i-1];
+    return a;
+  });
+  const Pobs=E.map((e,i)=>pref[i][W]);
+  const yObs=E.map(e=>e.stats.coreYld);
+  const blockSum=(pe,s,L)=>{const en=s+L;
+    return en<=W?pe[en]-pe[s]:(pe[W]-pe[s])+pe[en-W];}; // circular wrap
+  const res={}; // res[L] = {win:[], dq:[[p05,p50,p95,Pgt0] per entry], drawCk}
+  Ls.forEach((L,li)=>{
+    const nb=Math.ceil(W/L),rng=mulberry32(seed*1000+li+1); // stream disjoint from legacy (seed*100+L[+50])
+    const win=new Array(E.length).fill(0);
+    const dArr=E.map(()=>new Float64Array(B));
+    let ck=2166136261>>>0,ckN=0;
+    const ys=new Float64Array(E.length);
+    for(let b=0;b<B;b++){
+      ys.fill(0);
+      for(let k=0;k<nb;k++){
+        const s=Math.floor(rng()*W);
+        if(ckN<8){const st=String(s);for(let q=0;q<st.length;q++){ck^=st.charCodeAt(q);ck=Math.imul(ck,16777619);}ckN++;}
+        for(let e=0;e<E.length;e++)ys[e]+=blockSum(pref[e],s,L);
+      }
+      const tf=W/(nb*L); // constant per L — identical for every entry (shared clock)
+      let bi=0;
+      for(let e=0;e<E.length;e++){
+        ys[e]=yObs[e]*(ys[e]/Pobs[e])*tf;
+        if(ys[e]>ys[bi])bi=e; // strict argmax; exact ties → lower id
+        if(e>0)dArr[e][b]=ys[e]-ys[0];
+      }
+      win[bi]++;
+    }
+    const dq=dArr.map((a,e)=>{
+      if(e===0)return null;
+      const v=Array.from(a).sort((x,y)=>x-y);
+      const q=f=>v[Math.min(B-1,Math.floor(f*B))];
+      return {p05:q(.05),p50:q(.50),p95:q(.95),pgt:v.filter(x=>x>0).length/B};
+    });
+    res[L]={win,dq,drawCk:(ck>>>0).toString(16).padStart(8,'0'),nb};
+  });
+
+  // ── Render ──
+  const stamp=etStamp(new Date(),false);
+  const hdr='bootstrap '+BS_VERSION+' · pack mode · '+stamp
+    +' · seed '+seed+' · B '+B+' · L {3,7,14}cd · window '+W+'d'
+    +'\npack: app '+(j.app||'?')+' · DM '+(j.dmUpdated||'?')+' · basis '+(j.basis||'?')+' · distinct '+E.length
+    +' · draw ck {'+Ls.map(L=>res[L].drawCk).join(', ')+'}';
+  const out=['<div class="card"><h2>Pack run header — copy into the session record</h2>'
+    +'<div class="runhdr">'+hdr+'</div>'];
+
+  let wt='<table><tr><th>Entry</th><th>core yObs</th>';
+  Ls.forEach(L=>wt+='<th>win% L='+L+'</th>');wt+='</tr>';
+  E.forEach((e,i)=>{wt+='<tr><td>#'+e.id+' '+e.label+'</td><td>'+yObs[i].toFixed(1)+'%</td>';
+    Ls.forEach(L=>{const w=res[L].win[i]/B*100;
+      wt+='<td'+(w===Math.max(...res[L].win)/B*100?' style="font-weight:700"':'')+'>'+w.toFixed(1)+'</td>';});
+    wt+='</tr>';});
+  wt+='</table>';
+  out.push('<h2 style="margin-top:14px">Win frequency — share of '+B.toLocaleString()+' resampled worlds each machine ranks #1</h2>'+wt);
+
+  let dt='<table><tr><th>Δ vs #0 (pp)</th>';
+  Ls.forEach(L=>dt+='<th>L='+L+': p05 / med / p95 · P(Δ&gt;0)</th>');dt+='</tr>';
+  E.forEach((e,i)=>{if(i===0)return;dt+='<tr><td>#'+e.id+' '+e.label+'</td>';
+    Ls.forEach(L=>{const d=res[L].dq[i];
+      dt+='<td>'+d.p05.toFixed(2)+' / <b>'+d.p50.toFixed(2)+'</b> / '+d.p95.toFixed(2)
+        +' · '+(d.pgt*100).toFixed(0)+'%</td>';});
+    dt+='</tr>';});
+  dt+='</table>';
+  out.push('<h2>Paired Δ vs incumbent (#0) — shared draws, divergent segments only</h2>'+dt);
+
+  // Verdicts
+  const vTxt=[];
+  const inc=res[61].win[0]/B*100;
+  const chall=E.map((e,i)=>i===0?null:{i,w:res[61].win[i]/B*100,p:res[61].dq[i].pgt*100})
+    .filter(x=>x).sort((a,b)=>b.p-a.p||a.i-b.i); // v1.3.1: paired P(Δ>0) decides; ties → lower id; win% descriptive
+  const top=chall[0];
+  const v1='P-P1 — incumbent wins '+inc.toFixed(0)+'% of worlds at L=61'
+    +(top?'; strongest challenger #'+E[top.i].id+' ('+E[top.i].label+') P(Δ>0) '+top.p.toFixed(0)
+      +'% (paired), wins '+top.w.toFixed(0)+'% of worlds':'')
+    +' → '+(top&&top.p>=90?'challenger CLEARS the paired bar — walk-forward candidate'
+      :top&&top.p>=60?'suggestive, NOT resolved — more tape or more cycles'
+      :'ranking is sampling luck at this depth — no motion');
+  vTxt.push(v1);out.push('<div class="verdict '+(top&&top.p>=90?'fail':'pass')+'">'+v1+'</div>');
+  const stab=E.every((e,i)=>i===0||Ls.every(L=>Math.abs(res[L].dq[i].pgt-res[61].dq[i].pgt)<=0.10));
+  const v2='P-P2 — P(Δ>0) drift across L {3,7,14}: '+(stab?'STABLE (≤10pp per entry)':'BLOCK-LENGTH FRAGILE — treat verdicts as unresolved');
+  vTxt.push(v2);out.push('<div class="verdict '+(stab?'pass':'fail')+'">'+v2+'</div>');
+  const mth='Method: circular calendar-day moving-block · ONE shared draw sequence per resample across all entries '
+    +'(paired) · exit-date attribution · core cycles only · y = coreYld·(P&L_b/P&L_obs)·(W/(nb·L)) · '
+    +'strict argmax (ties → lower id) · adjudication only, no policy machinery.';
+  out.push('<p class="note">'+mth+'</p>'
+    +'<div class="row" style="margin-top:10px"><button class="ghost" id="dlP">Download pack results log</button></div></div>');
+  $('outP').innerHTML=out.join('');
+
+  // Plain-text report
+  const rep=['═══════════════════════════════════════════════════════════',
+    'LEDGER-PACK BOOTSTRAP — N-WAY RESULTS REPORT',
+    '═══════════════════════════════════════════════════════════',hdr,'','Entries:'];
+  E.forEach((e,i)=>rep.push('  #'+e.id+' '+e.label+(e.aliases&&e.aliases.length?' (+'+e.aliases.length+' alias)':'')
+    +' · fp '+e.fingerprint+' · core '+yObs[i].toFixed(1)+'% · '+e._core.length+' core cycles'));
+  rep.push('','Win frequency (% of '+B+' worlds ranked #1):');
+  E.forEach((e,i)=>rep.push('  #'+e.id+' '+String(e.label).padEnd(24)
+    +Ls.map(L=>('L'+L+' '+(res[L].win[i]/B*100).toFixed(1)+'%').padStart(12)).join('')));
+  rep.push('','Paired Δ vs #0 (pp) — p05 / median / p95 · P(Δ>0):');
+  E.forEach((e,i)=>{if(i===0)return;
+    rep.push('  #'+e.id+' '+String(e.label).padEnd(24)
+      +Ls.map(L=>{const d=res[L].dq[i];return ('L'+L+' '+d.p05.toFixed(2)+'/'+d.p50.toFixed(2)+'/'
+        +d.p95.toFixed(2)+' '+(d.pgt*100).toFixed(0)+'%').padStart(28);}).join(''));});
+  rep.push('');vTxt.forEach(v=>rep.push(v));rep.push('',mth);
+  reportTxtP=rep.join('\n')+'\n';
+  const fn='bootstrap_pack_'+etStamp(new Date(),true)+'.txt';
+  $('dlP').onclick=()=>{
+    const blob=new Blob([reportTxtP],{type:'text/plain'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download=fn;
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);
+  };
+};
+</script>
+</body>
+</html>
