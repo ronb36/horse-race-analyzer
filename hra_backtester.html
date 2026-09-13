@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.7</title>
+<title>HRA Backtester v0.3.8</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -260,7 +260,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.7'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.8'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9803,6 +9803,7 @@ async function loadLedger() {
         if (d < 5e-9) exact++; else worst.push({ race: k, horse: row.name, stored, recomputed: row.rating, d });
         row.odds = (lg.odds === null || lg.odds === undefined) ? row.odds : Number(lg.odds);  // chart odds win
         row.finish_pos = lg.finish_pos; row.is_winner = !!lg.is_winner; row.pay_win = lg.pay_win;
+        if (lg.post !== null && lg.post !== undefined) row.post = Number(lg.post);   // v0.3.8 [fix]
       }
       race.raceInfo = info;
       race.results = rows.sort((a, b) => (a.scratched === b.scratched ? b.rating - a.rating : a.scratched ? 1 : -1));
@@ -9811,11 +9812,13 @@ async function loadLedger() {
   // v0.3.5 — attach the backfilled morning line. Match on horse name (the same key that
   // reproduced 1211/1211 ratings); fall back to post only if the name misses.
   let mlAttached = 0, mlRaces = 0, mlMiss = 0;
+  let selRaces = 0;
   for (const e of ents) {
     for (const er of (e.entries || [])) {
-      if (!Array.isArray(er.ml)) continue;
       const race = races.get(rkey(e.track, e.race_date, er.raceNumber));
       if (!race || !race.results) continue;
+      if (er.selections) { race.selections = er.selections; selRaces++; }   // v0.3.8 [fix] — independent of ML
+      if (!Array.isArray(er.ml)) continue;
       mlRaces++;
       const byName = new Map(er.ml.map((m) => [String(m.horse || '').trim().toUpperCase(), m.ml]));
       const byPost = new Map(er.ml.map((m) => [Number(m.post), m.ml]));
@@ -9826,11 +9829,11 @@ async function loadLedger() {
         row.ml = Number(v); mlAttached++;
       }
       race.hasML = true;
-      race.selections = er.selections || null;   // Brisnet handicapper's top four, by post
     }
   }
   logMsg('  morning line: ' + mlRaces + ' races · ' + mlAttached + ' horses attached · ' + mlMiss + ' live horses unmatched',
          mlMiss ? 'yellow' : 'green');
+  logMsg('  handicapper selections attached: ' + selRaces + ' races');
 
   const wired = [...races.values()].filter((r) => r.results);
   _ledger = { races: [...races.values()], wired, bets, counts: { matched, exact, missing, cards: cards.length, log: log.length } };
@@ -9982,10 +9985,12 @@ function runHandicapper() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
   const H = [], R = [], F = [];
   const dH = [], dR = [];          // the subset where HRA and the handicapper disagree
-  let pool = 0, agree = 0, hcapIsFav = 0, ratedIsFav = 0;
+  let pool = 0, agree = 0, hcapIsFav = 0, ratedIsFav = 0, noSel = 0, noMatch = 0;
   for (const race of _ledger.wired) {
     const h = hcapTop(race), t = topRated(race), f = favourite(race);
-    if (!h || !t) continue;
+    if (!race.selections) { noSel++; continue; }
+    if (!h) { noMatch++; continue; }
+    if (!t) continue;
     pool++;
     H.push(asBet(race, h)); R.push(asBet(race, t)); if (f) F.push(asBet(race, f));
     if (f && h === f) hcapIsFav++;
@@ -9997,7 +10002,9 @@ function runHandicapper() {
   const line = (nm, s) => '   ' + nm.padEnd(26) + ' bets ' + String(s.n).padStart(3) + '  won ' + String(s.w).padStart(3)
       + '  hit ' + s.hit.toFixed(1).padStart(5) + '%  ROI ' + ((s.roi >= 0 ? '+' : '') + s.roi.toFixed(1)).padStart(7) + '%';
   logMsg('── HANDICAPPER BENCHMARK ──────────────────────────────');
-  logMsg('   races with a stored selection: ' + pool + ' of ' + _ledger.wired.length);
+  logMsg('   races scored: ' + pool + ' of ' + _ledger.wired.length
+       + '   (no selection stored: ' + noSel + ' · selected post not among live runners: ' + noMatch + ')',
+         noMatch > pool * 0.1 ? 'red' : '');
   logMsg(line('Brisnet top pick', sH));
   logMsg(line('HRA top-rated (unfiltered)', sR));
   logMsg(line('public favourite', sF));
