@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.8</title>
+<title>HRA Backtester v0.2.9</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -64,6 +64,9 @@ select.display-box { cursor:pointer; outline:none; }
 .pq { font-size:8px; letter-spacing:.1em; opacity:.65; margin-left:4px; }
 .pv { font-family:var(--mono); font-size:22px; color:var(--accent); margin:6px 0 2px; }
 .ps { font-size:10px; color:var(--muted); opacity:.7; }
+.scrollpane { max-height:440px; overflow:auto; }
+.roll-table thead th { position:sticky; top:0; background:var(--surface); z-index:2; box-shadow:0 1px 0 var(--border); }
+#progress-log.scrollpane { max-height:460px; }
 .panehead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
 .panehead .mono { font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--muted); }
 .constline { font-family:var(--mono); font-size:10px; color:var(--muted); opacity:.75; margin-top:12px; }
@@ -216,7 +219,7 @@ select.display-box { cursor:pointer; outline:none; }
           <button class="tab-btn" onclick="downloadLog()">Download</button>
         </span>
       </div>
-      <pre id="runlog-mirror2" class="log"></pre>
+      <pre id="progress-log" class="log scrollpane"></pre>
     </div>
     <div id="tab-mart" style="display:none">
       <div class="tab-bar" style="margin-bottom:10px">
@@ -227,7 +230,6 @@ select.display-box { cursor:pointer; outline:none; }
       <div id="dm-horses" style="display:none"></div>
     </div>
   </div>
-  <pre id="progress-log" class="log"></pre>
   <pre id="runlog-mirror" class="log" style="display:none"></pre>
   <div id="err-banner" style="display:none"></div>
   <div id="progress-bar" style="display:none"></div>
@@ -241,7 +243,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.8'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.9'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -1313,8 +1315,7 @@ function showTab(tab) {
     const src = $('progress-log');
     const dst = $('runlog-mirror');
     if (src && dst) { dst.innerHTML = src.innerHTML; dst.scrollTop = dst.scrollHeight; }
-    const d2 = $('runlog-mirror2');
-    if (src && d2) { d2.innerHTML = src.innerHTML; d2.scrollTop = d2.scrollHeight; }
+
   }
 }
 
@@ -9808,6 +9809,7 @@ async function loadLedger() {
   _ledger.gateA = passA;
   diagFieldSize();
   renderRaces();
+  if (passA) { try { await runAll(); } catch (e) { logMsg('auto-score failed: ' + e.message, 'red'); } }
   return _ledger;
 }
 
@@ -10215,7 +10217,6 @@ async function runAll() {
          Math.abs(mo.length - 60) <= 1 ? 'green' : 'red');
   logMsg('  T2-SPDCLS-v1 fires: ' + sp + ' (frequency only — blind holds, no outcome computed)');
   renderBets({ v2, v3, mo }, { okB });
-  showTab('trades');
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -10290,7 +10291,7 @@ function renderBets(sets, meta) {
            + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>'; }).join('');
   const blot = (nm, b) => { let run = 0;
     return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets</p>'
-      + '<table class="roll-table"><thead><tr><th>#</th><th>race</th><th>horse</th><th>odds</th><th>finish</th>'
+      + '<div class="scrollpane"><table class="roll-table"><thead><tr><th>#</th><th>race</th><th>horse</th><th>odds</th><th>finish</th>'
       + '<th>result</th><th>P&amp;L</th><th>running</th></tr></thead><tbody>'
       + b.map((x, i) => { const pl = x.won ? 2 * (Number(x.odds) || 0) : -2; run += pl;
           return '<tr><td class="muted">' + (i + 1) + '</td><td>' + x.race + '</td><td>' + x.horse + '</td><td>'
@@ -10299,7 +10300,7 @@ function renderBets(sets, meta) {
             + (x.won ? 'WON' : 'lost') + '</td><td class="' + (pl >= 0 ? 'green' : 'red') + '">'
             + (pl >= 0 ? '+' : '\u2212') + '$' + Math.abs(pl).toFixed(2) + '</td><td class="'
             + (run >= 0 ? 'green' : 'red') + '">' + (run >= 0 ? '+' : '\u2212') + '$' + Math.abs(run).toFixed(2)
-            + '</td></tr>'; }).join('') + '</tbody></table>'; };
+            + '</td></tr>'; }).join('') + '</tbody></table></div>'; };
   el.innerHTML = '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
     + rows + '</tbody></table>'
     + blot('v2 \u00b7 tau 8 \u00b7 gap 6', sets.v2) + blot('v3 \u00b7 tau 28 \u00b7 gap 8', sets.v3)
