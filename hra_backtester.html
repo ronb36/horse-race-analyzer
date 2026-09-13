@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.7</title>
+<title>HRA Backtester v0.2.8</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -212,6 +212,7 @@ select.display-box { cursor:pointer; outline:none; }
       <div class="panehead"><span class="mono">RUN LOG</span>
         <span style="display:flex;gap:8px">
           <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
+          <button class="tab-btn" onclick="runOverlap()">Gate overlap</button>
           <button class="tab-btn" onclick="downloadLog()">Download</button>
         </span>
       </div>
@@ -240,7 +241,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.7'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.8'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10093,6 +10094,105 @@ function renderSweeps(tRows, fRows) {
       + '</td><td>' + r.bets + '</td><td>' + r.won + '</td><td>' + r.blockedP + '</td></tr>').join('') + '</tbody></table>';
   el.innerHTML = '<p class="sub">TAU sweep · gap 8 · floor 0.15. TAU is a calibration parameter — its value comes from the MLE, not from a bet count.</p>'
     + t + '<p class="sub">pModel-floor sweep · TAU 28 · gap 8. Shown as information. Selecting the floor that reproduces a desired bet count would be fitting to the outcome we expected.</p>' + f;
+}
+
+// ── v0.2.8 — are the pModel floor and the gap gate the same test? ──────────
+// The leader's pModel is exp(0/TAU) over sum exp((r_i - top)/TAU): it is large exactly
+// when the ratings behind it are far back. So the floor may BE a gap gate, softened by
+// field size and scaled by TAU. Note the two gates read different horses — the gap gate
+// tests the TOP-RATED horse, simVerdict tests the TOP-EDGE horse.
+function overlapAt(tau, floor, gapGate) {
+  _TAU = tau;
+  let eligible = 0, entryBlk = 0, priceBlk = 0, edgeBlk = 0, thin = 0;
+  let fOnly = 0, gOnly = 0, both = 0, neither = 0;
+  const pairs = [], survGaps = [];
+  for (const race of _ledger.wired) {
+    const { overlay } = scoreRaceRows(race.results);
+    const live = overlay.filter((r) => !r.scratched && r.rating !== null && r.rating !== undefined);
+    if (live.length < 2) { thin++; continue; }
+    const byR = [...live].sort((a, b) => b.rating - a.rating);
+    const gap = byR[0].rating - byR[1].rating;
+    if (byR[0].pModel !== null && byR[0].pModel !== undefined) pairs.push([gap, byR[0].pModel]);
+    const liveE = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
+    if (!liveE.length) { thin++; continue; }
+    const best = liveE.reduce((a, b) => (b.edge > a.edge ? b : a));
+    if (best.edge < 0.10) { edgeBlk++; continue; }
+    if (entryDoctrine(race.raceInfo || {})) { entryBlk++; continue; }
+    if (byR[0].odds !== null && byR[0].odds !== undefined && byR[0].odds < 1) { priceBlk++; continue; }
+    eligible++;
+    const fBlk = best.pModel < floor, gBlk = gap < gapGate;
+    if (fBlk && gBlk) both++; else if (fBlk) fOnly++; else if (gBlk) gOnly++;
+    else { neither++; survGaps.push(gap); }
+    if (!fBlk) survGaps.length;  // survivors of the floor tracked below
+  }
+  // gap profile of races surviving the FLOOR alone, at this TAU
+  let n = 0, sum = 0; const gs = [];
+  _TAU = tau;
+  for (const race of _ledger.wired) {
+    const { overlay } = scoreRaceRows(race.results);
+    const live = overlay.filter((r) => !r.scratched && r.rating !== null);
+    if (live.length < 2) continue;
+    const byR = [...live].sort((a, b) => b.rating - a.rating);
+    const liveE = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
+    if (!liveE.length) continue;
+    const best = liveE.reduce((a, b) => (b.edge > a.edge ? b : a));
+    if (best.edge < 0.10 || best.pModel < floor) continue;
+    const g = byR[0].rating - byR[1].rating; gs.push(g); sum += g; n++;
+  }
+  gs.sort((a, b) => a - b);
+  const med = gs.length ? gs[Math.floor(gs.length / 2)] : 0;
+  // Pearson r between gap and top-rated pModel
+  const N = pairs.length;
+  const mx = pairs.reduce((a, p) => a + p[0], 0) / (N || 1);
+  const my = pairs.reduce((a, p) => a + p[1], 0) / (N || 1);
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const [x, y] of pairs) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+  const r = (sxx && syy) ? sxy / Math.sqrt(sxx * syy) : 0;
+  return { tau, floor, gapGate, eligible, entryBlk, priceBlk, edgeBlk, thin,
+           fOnly, gOnly, both, neither, r, floorSurvivors: n, meanGap: sum / (n || 1), medGap: med };
+}
+
+function runOverlap() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  logMsg('── GATE OVERLAP: is the floor already a gap gate? ─────');
+  const cases = [[8, 0.15, 8], [28, 0.15, 8], [28, 0.09, 8], [28, 0.06, 8]];
+  const res = cases.map((c) => overlapAt(c[0], c[1], c[2]));
+  res.forEach((o) => {
+    logMsg('   TAU ' + o.tau + '  floor ' + o.floor.toFixed(2) + '  gap ' + o.gapGate
+         + '   eligible ' + o.eligible + '  (entry ' + o.entryBlk + ' · price ' + o.priceBlk + ' · edge ' + o.edgeBlk + ')');
+    logMsg('       floor-only ' + o.fOnly + '   GAP-ONLY ' + o.gOnly + '   both ' + o.both + '   neither(bet) ' + o.neither,
+           o.gOnly === 0 ? 'yellow' : '');
+    logMsg('       floor survivors ' + o.floorSurvivors + '   their mean gap ' + o.meanGap.toFixed(1)
+         + '   median ' + o.medGap.toFixed(1) + '   ·  corr(gap, top pModel) r=' + o.r.toFixed(3));
+  });
+  logMsg('   floor x gap cross-tab (bets):');
+  const tab = [];
+  for (const f of [0.06, 0.09, 0.15]) {
+    const row = { f, g6: doctrineCount(28, 6, f), g8: doctrineCount(28, 8, f) };
+    tab.push(row);
+    logMsg('     floor ' + f.toFixed(2) + '   gap 6: ' + String(row.g6.bets).padStart(3) + ' bets / '
+         + row.g6.won + ' won      gap 8: ' + String(row.g8.bets).padStart(3) + ' bets / ' + row.g8.won + ' won'
+         + '   ·  gap gate costs ' + (row.g6.bets - row.g8.bets));
+  }
+  renderOverlap(res, tab);
+  showTab('mart'); showMart('races');
+  _TAU = 28; _GAP = 8;
+}
+
+function renderOverlap(res, tab) {
+  const el = $('dm-races'); if (!el) return;
+  const a = '<table class="roll-table"><thead><tr><th>TAU</th><th>floor</th><th>gap</th><th>eligible</th>'
+    + '<th>floor-only</th><th>gap-only</th><th>both</th><th>bet</th><th>floor survivors mean gap</th><th>r(gap,p)</th></tr></thead><tbody>'
+    + res.map((o) => '<tr><td>' + o.tau + '</td><td>' + o.floor.toFixed(2) + '</td><td>' + o.gapGate + '</td><td>'
+      + o.eligible + '</td><td>' + o.fOnly + '</td><td class="' + (o.gOnly === 0 ? 'yellow' : '') + '">' + o.gOnly
+      + '</td><td>' + o.both + '</td><td>' + o.neither + '</td><td>' + o.meanGap.toFixed(1) + '</td><td>'
+      + o.r.toFixed(3) + '</td></tr>').join('') + '</tbody></table>';
+  const b = '<table class="roll-table"><thead><tr><th>floor (TAU 28)</th><th>gap 6</th><th>gap 8</th><th>gap gate costs</th></tr></thead><tbody>'
+    + tab.map((t) => '<tr><td>' + t.f.toFixed(2) + '</td><td>' + t.g6.bets + '</td><td>' + t.g8.bets + '</td><td>'
+      + (t.g6.bets - t.g8.bets) + '</td></tr>').join('') + '</tbody></table>';
+  el.innerHTML = '<p class="sub">Gate overlap. The gap gate reads the top-RATED horse; simVerdict reads the top-EDGE horse. '
+    + 'A gap-only count near zero means the gap gate rejects nothing the floor had not already rejected.</p>' + a
+    + '<p class="sub">Floor &times; gap cross-tab at TAU 28. The last column is what the gap gate contributes once the floor is rescaled.</p>' + b;
 }
 
 async function runAll() {
