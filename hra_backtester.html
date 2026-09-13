@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.5</title>
+<title>HRA Backtester v0.3.7</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -181,8 +181,10 @@ select.display-box { cursor:pointer; outline:none; }
   <!-- session banner — SPY's position strip; here it carries the credential and the run controls -->
   <div class="banner">
     <span class="bl">Session</span>
-    <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)" class="keyin">
-    <button class="tab-btn" onclick="boot()">Load ledger</button>
+    <span id="key-wrap" style="display:none;flex:1 1 320px">
+      <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)" class="keyin" style="width:100%">
+    </span>
+    <button class="tab-btn" onclick="boot()">Reload ledger</button>
     <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
     <button class="tab-btn" onclick="runGrid()">TAU &times; gap grid</button>
     <button class="tab-btn" onclick="runVerdictDiag()">Verdict inputs</button>
@@ -230,6 +232,7 @@ select.display-box { cursor:pointer; outline:none; }
           <button class="tab-btn" onclick="runMLCheck()">ML check</button>
           <button class="tab-btn" onclick="runPriceRealization()">Price realization</button>
           <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
+          <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
           <button class="tab-btn" id="download-log-btn" onclick="downloadLog()">\u2b07 Download</button>
         </span>
       </div>
@@ -257,7 +260,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.5'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.7'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9823,6 +9826,7 @@ async function loadLedger() {
         row.ml = Number(v); mlAttached++;
       }
       race.hasML = true;
+      race.selections = er.selections || null;   // Brisnet handicapper's top four, by post
     }
   }
   logMsg('  morning line: ' + mlRaces + ' races · ' + mlAttached + ' horses attached · ' + mlMiss + ' live horses unmatched',
@@ -9948,6 +9952,83 @@ function runMoff() {
                  odds: best.r.odds, won: !!best.r.is_winner, finish: best.r.finish_pos, edge: best.edge });
   }
   return out;
+}
+
+// ── v0.3.7 — the handicapper benchmark ─────────────────────────────────────
+// Benter (1994) built a model from 48 newspaper tipsters' picks: R^2 .1014, statistically
+// indistinguishable from his 9-factor fundamental model at .1016. Combined with the public,
+// the fundamental added .0090 and the tipster .0002. Standalone skill could not tell them
+// apart. Every entries page carries Brisnet's top four, already stored as `selections`, so
+// HRA can be measured against a human for the first time — every prior comparison in this
+// project has been HRA against itself.
+// No fitter here, so no pseudo-R^2. The DISAGREEMENT subset is the substitute: if HRA only
+// wins where it already agrees with the handicapper, it is an imitator.
+function hcapTop(race) {
+  if (!race.selections) return null;
+  const first = String(race.selections).split(',')[0];
+  const post = parseInt(first, 10);
+  if (!post) return null;
+  return race.results.find((r) => !r.scratched && Number(r.post) === post) || null;
+}
+const topRated = (race) => race.results.find((r) => !r.scratched) || null;
+const favourite = (race) => {
+  const live = race.results.filter((r) => !r.scratched && r.odds !== null && r.odds !== undefined);
+  return live.length ? live.reduce((a, b) => (Number(b.odds) < Number(a.odds) ? b : a)) : null;
+};
+const asBet = (race, h) => h && ({ race: rkey(race.track, race.race_date, race.race_no), horse: h.name,
+                                   odds: h.odds, won: !!h.is_winner, finish: h.finish_pos });
+
+function runHandicapper() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const H = [], R = [], F = [];
+  const dH = [], dR = [];          // the subset where HRA and the handicapper disagree
+  let pool = 0, agree = 0, hcapIsFav = 0, ratedIsFav = 0;
+  for (const race of _ledger.wired) {
+    const h = hcapTop(race), t = topRated(race), f = favourite(race);
+    if (!h || !t) continue;
+    pool++;
+    H.push(asBet(race, h)); R.push(asBet(race, t)); if (f) F.push(asBet(race, f));
+    if (f && h === f) hcapIsFav++;
+    if (f && t === f) ratedIsFav++;
+    if (h === t) agree++; else { dH.push(asBet(race, h)); dR.push(asBet(race, t)); }
+  }
+  if (!pool) { logMsg('no races carry a handicapper selection — is the ML/entries load working?', 'red'); return; }
+  const sH = stat(H), sR = stat(R), sF = stat(F), sdH = stat(dH), sdR = stat(dR);
+  const line = (nm, s) => '   ' + nm.padEnd(26) + ' bets ' + String(s.n).padStart(3) + '  won ' + String(s.w).padStart(3)
+      + '  hit ' + s.hit.toFixed(1).padStart(5) + '%  ROI ' + ((s.roi >= 0 ? '+' : '') + s.roi.toFixed(1)).padStart(7) + '%';
+  logMsg('── HANDICAPPER BENCHMARK ──────────────────────────────');
+  logMsg('   races with a stored selection: ' + pool + ' of ' + _ledger.wired.length);
+  logMsg(line('Brisnet top pick', sH));
+  logMsg(line('HRA top-rated (unfiltered)', sR));
+  logMsg(line('public favourite', sF));
+  logMsg('   HRA top-rated == handicapper top pick in ' + agree + '/' + pool
+       + ' (' + (100 * agree / pool).toFixed(0) + '%)');
+  logMsg('   handicapper picks the favourite ' + (100 * hcapIsFav / pool).toFixed(0)
+       + '% of the time · HRA picks it ' + (100 * ratedIsFav / pool).toFixed(0) + '%');
+  logMsg('   ── where they DISAGREE (' + dH.length + ' races) ──');
+  logMsg(line('  handicapper', sdH));
+  logMsg(line('  HRA', sdR));
+  logMsg('   Flat $2 win at final odds. All in-sample; no fitter here, so no pseudo-R^2.', 'yellow');
+  renderHandicapper({ sH, sR, sF, sdH, sdR, pool, agree, hcapIsFav, ratedIsFav, dis: dH.length });
+  showTab('mart'); showMart('races');
+}
+
+function renderHandicapper(x) {
+  const el = $('dm-races'); if (!el) return;
+  const row = (nm, s) => '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
+    + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>';
+  el.innerHTML = '<p class="sub">Brisnet\'s handicapper vs the machine, over ' + x.pool + ' races carrying a stored selection. '
+    + 'Flat $2 win at final odds, top pick only, no doctrine filter on any arm.</p>'
+    + '<table class="roll-table"><thead><tr><th>picker</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
+    + row('Brisnet top pick', x.sH) + row('HRA top-rated', x.sR) + row('public favourite', x.sF) + '</tbody></table>'
+    + '<p class="sub">They name the same horse in ' + x.agree + ' of ' + x.pool + ' races ('
+    + (100 * x.agree / x.pool).toFixed(0) + '%). The handicapper takes the favourite '
+    + (100 * x.hcapIsFav / x.pool).toFixed(0) + '% of the time; HRA takes it '
+    + (100 * x.ratedIsFav / x.pool).toFixed(0) + '%.</p>'
+    + '<p class="sub">Where they disagree \u2014 ' + x.dis + ' races. This is the part that matters: a model that only '
+    + 'wins where it already agrees with a human has not added anything.</p>'
+    + '<table class="roll-table"><thead><tr><th>picker</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
+    + row('handicapper', x.sdH) + row('HRA', x.sdR) + '</tbody></table>';
 }
 
 // ── v0.3.5 — T2-MOFF-v1 scored off the MORNING LINE ────────────────────────
@@ -10554,30 +10635,44 @@ function renderBets(sets, meta) {
   put('bets-moff', 'T2-MOFF-v1', sets.mo);
 }
 
+function storedKey() {
+  try { return localStorage.getItem('hra_supa_key') || localStorage.getItem('hra_bt_key') || ''; }
+  catch (e) { return ''; }
+}
+function revealKeyBox(msg) {
+  const w = $('key-wrap'); if (w) w.style.display = 'block';
+  const sl = $('status-line');
+  if (sl && msg) { sl.textContent = msg; sl.style.color = 'var(--red)'; }
+}
+
 async function boot() {
-  _sbKey = (($('sb-key') || {}).value || '').trim();
-  if (!_sbKey) { logMsg('paste the anon key first', 'red'); return; }
+  _sbKey = (($('sb-key') || {}).value || '').trim() || storedKey();
+  if (!_sbKey) { revealKeyBox('No stored key — paste the anon key, then press Reload ledger.'); return; }
   // Saved under the backtester's OWN key. index.html owns 'hra_supa_key' and this never
   // writes it — a read-only tool must not be able to clobber the app's credential.
   try { localStorage.setItem('hra_bt_key', _sbKey); } catch (e) {}
   logMsg('endpoint ' + SB_URL);
-  try { await loadLedger(); } catch (e) { logMsg('LOAD FAILED — ' + e.message, 'red'); showError(String(e.stack || e)); }
+  try { await loadLedger(); }
+  catch (e) {
+    logMsg('LOAD FAILED — ' + e.message, 'red'); showError(String(e.stack || e));
+    // 401/403 means the stored key is wrong or rotated — that is the one case where the
+    // box has to come back, rather than leaving the user with a dead Reload button.
+    if (/\b(401|403)\b/.test(e.message)) revealKeyBox('Stored key rejected — paste a current anon key.');
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   showTab("trades");
-  // Same origin as index.html, so the app's stored credential is already readable here.
-  // Prefer it; fall back to anything this tool saved itself.
-  try {
-    const el = $('sb-key');
-    const k = localStorage.getItem('hra_supa_key') || localStorage.getItem('hra_bt_key');
-    if (el && k) {
-      el.value = k;
-      const src = localStorage.getItem('hra_supa_key') ? 'app settings' : 'this tool';
-      const sl = $('status-line');
-      if (sl) sl.textContent = 'Key loaded from ' + src + '. Press Load ledger.';
-    }
-  } catch (e) {}
+  // v0.3.6 — SPY boots straight into its data mart. Same here: the app already stores the
+  // credential on this origin, so there is nothing to ask for. The key box stays hidden
+  // unless there is no stored key, or the stored one is rejected.
+  const k = storedKey();
+  if (!k) { revealKeyBox('No stored key found — paste the anon key, then press Reload ledger.'); }
+  else {
+    const el = $('sb-key'); if (el) el.value = k;
+    const sl = $('status-line'); if (sl) sl.textContent = 'Loading ledger\u2026';
+    boot();
+  }
   const c = $('const-line'); if (c) c.textContent =
     'Constants: dirt only · no straight claiming · 6\u20139f · speedScale beyer · fence 1 md5 '
     + HRA_F1_MD5.slice(0, 8) + '\u2026 · model v3 BELMONT';
