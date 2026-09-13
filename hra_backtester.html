@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.1</title>
+<title>HRA Backtester v0.2.2</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -190,7 +190,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9719,6 +9719,7 @@ async function loadLedger() {
       }));
       for (const row of rows) {
         const lg = byName.get(String(row.name || '').trim().toUpperCase());
+        row._inLog = !!lg;                      // v0.2.2 diagnostic only — nothing reads this for selection
         if (!lg) { missing++; continue; }
         matched++;
         const stored = Number(lg.rating);
@@ -9745,8 +9746,42 @@ async function loadLedger() {
       logMsg('    ' + w.race + ' ' + w.horse + '  stored ' + w.stored + '  recomputed ' + w.recomputed.toFixed(6), 'red'));
   }
   _ledger.gateA = passA;
+  diagFieldSize();
   renderRaces();
   return _ledger;
+}
+
+// ── v0.2.2 field-size diagnostic ───────────────────────────────────────────
+// Reports only. The log carries one row per runner, so for every race the card's
+// live (unscratched) horses should equal its log rows. Anything else means the
+// replay is running a different field than the one that ran.
+function diagFieldSize() {
+  let flaggedScr = 0, unflaggedNoLog = 0, liveNoLog = 0, agree = 0;
+  const rows = [];
+  for (const race of _ledger.wired) {
+    const cardLive = race.results.filter((r) => !r.scratched);
+    const logRows  = race.rows.length;
+    const liveMissing = cardLive.filter((r) => !r._inLog).length;
+    liveNoLog += liveMissing;
+    for (const r of race.results) {
+      if (!r._inLog) { if (r.scratched) flaggedScr++; else unflaggedNoLog++; }
+    }
+    const d = cardLive.length - logRows;
+    if (d === 0) agree++; else rows.push({ k: rkey(race.track, race.race_date, race.race_no), cardLive: cardLive.length, logRows, d, liveMissing });
+  }
+  logMsg('── FIELD SIZE (diagnostic, nothing changed) ───────────');
+  logMsg('  unmatched card rows flagged scratched : ' + flaggedScr);
+  logMsg('  unmatched card rows NOT flagged       : ' + unflaggedNoLog, unflaggedNoLog ? 'red' : 'green');
+  logMsg('  live-in-card horses with no log row   : ' + liveNoLog, liveNoLog ? 'red' : 'green');
+  logMsg('  races where card live == log rows     : ' + agree + '/' + _ledger.wired.length,
+         agree === _ledger.wired.length ? 'green' : 'red');
+  if (rows.length) {
+    const over = rows.filter((r) => r.d > 0).length, under = rows.filter((r) => r.d < 0).length;
+    logMsg('  mismatched races: ' + rows.length + '  (card has MORE live: ' + over + ' · card has FEWER: ' + under + ')');
+    rows.sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 12).forEach((r) =>
+      logMsg('    ' + r.k + '  card live ' + r.cardLive + '  log ' + r.logRows + '  delta ' + (r.d > 0 ? '+' : '') + r.d + '  (live w/o log ' + r.liveMissing + ')'));
+  }
+  _ledger.diag = { flaggedScr, unflaggedNoLog, liveNoLog, agree, mismatched: rows.length };
 }
 
 // ── scorer ─────────────────────────────────────────────────────────────────
@@ -9841,7 +9876,13 @@ function renderRaces() {
     + [['cards', c.cards], ['race_log rows', c.log], ['races (log)', _ledger.races.length],
        ['races wired to a card', _ledger.wired.length], ['horse rows matched', c.matched],
        ['ratings exact', c.exact], ['unmatched card rows', c.missing],
-       ['GATE A', _ledger.gateA ? 'PASS' : 'FAIL']]
+       ['GATE A', _ledger.gateA ? 'PASS' : 'FAIL'],
+       ['— field size —', ''],
+       ['unmatched, flagged scratched', (_ledger.diag || {}).flaggedScr],
+       ['unmatched, NOT flagged', (_ledger.diag || {}).unflaggedNoLog],
+       ['live horses with no log row', (_ledger.diag || {}).liveNoLog],
+       ['races card-live == log rows', (_ledger.diag || {}).agree + '/' + _ledger.wired.length],
+       ['mismatched races', (_ledger.diag || {}).mismatched]]
       .map((r) => '<tr><td class="muted">' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('')
     + '</tbody></table>';
 }
