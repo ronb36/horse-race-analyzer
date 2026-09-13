@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.1</title>
+<title>HRA Backtester v0.3.2</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -211,14 +211,14 @@ select.display-box { cursor:pointer; outline:none; }
       <button class="tab-btn"        id="tab-btn-mart"   onclick="showTab('mart')">Data Mart</button>
     </div>
     <div id="tab-log">
-      <div class="tab-bar" style="margin-bottom:10px">
-        <button class="tab-btn active" id="bt-btn-sum"  onclick="showBets('sum')">Summary</button>
-        <button class="tab-btn"        id="bt-btn-v2"   onclick="showBets('v2')">v2</button>
+      <div class="panehead"><span class="mono">PERFORMANCE \u2014 SARATOGA REPLAY</span></div>
+      <div id="bets-sum">No run yet. Load the ledger to populate.</div>
+      <div class="tab-bar" style="margin:14px 0 10px">
+        <button class="tab-btn active" id="bt-btn-v2"   onclick="showBets('v2')">v2</button>
         <button class="tab-btn"        id="bt-btn-v3"   onclick="showBets('v3')">v3</button>
         <button class="tab-btn"        id="bt-btn-moff" onclick="showBets('moff')">MOFF</button>
       </div>
-      <div id="bets-sum">No run yet. Load the ledger to populate.</div>
-      <div id="bets-v2"   style="display:none"></div>
+      <div id="bets-v2"></div>
       <div id="bets-v3"   style="display:none"></div>
       <div id="bets-moff" style="display:none"></div>
     </div>
@@ -227,7 +227,7 @@ select.display-box { cursor:pointer; outline:none; }
         <span style="display:flex;gap:8px">
           <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
           <button class="tab-btn" onclick="runOverlap()">Gate overlap</button>
-          <button class="tab-btn" onclick="downloadLog()">Download</button>
+          <button class="tab-btn" id="download-log-btn" onclick="downloadLog()">\u2b07 Download</button>
         </span>
       </div>
       <pre id="progress-log" class="log scrollpane"></pre>
@@ -244,7 +244,7 @@ select.display-box { cursor:pointer; outline:none; }
   <pre id="runlog-mirror" class="log" style="display:none"></pre>
   <div id="err-banner" style="display:none"></div>
   <div id="progress-bar" style="display:none"></div>
-  <button id="download-log-btn" onclick="downloadLog()">Download log</button>
+
   <!-- seam placeholders: nodes the kept infrastructure addresses; panes arrive with their modules -->
   <div id="run-btn" style="display:none"></div><div id="run-eval-count" style="display:none"></div>
   <div id="run-publish-card" style="display:none"></div><div id="roll-table-container" style="display:none"></div>
@@ -254,7 +254,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -546,7 +546,7 @@ function downloadLog() {
     + String(now.getDate()).padStart(2,'0') + '_'
     + String(now.getHours()).padStart(2,'0')
     + String(now.getMinutes()).padStart(2,'0');
-  const filename = `HRA_Bench_Log_${ts}.txt`;
+  const filename = `HRA_Backtester_Log_${ts}.txt`;
   const blob = new Blob([text], { type: 'text/plain' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
@@ -10280,10 +10280,10 @@ function renderRaces() {
 }
 
 function showBets(which) {
-  const ids = { sum: 'bets-sum', v2: 'bets-v2', v3: 'bets-v3', moff: 'bets-moff' };
+  const ids = { v2: 'bets-v2', v3: 'bets-v3', moff: 'bets-moff' };   // summary is always on
   for (const k of Object.keys(ids)) {
     const el = $(ids[k]); if (el) el.style.display = k === which ? 'block' : 'none';
-    const b = $('bt-btn-' + (k === 'sum' ? 'sum' : k)); if (b) b.classList.toggle('active', k === which);
+    const b = $('bt-btn-' + k); if (b) b.classList.toggle('active', k === which);
   }
 }
 
