@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.2</title>
+<title>HRA Backtester v0.2.4</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -44,6 +44,26 @@ select.display-box { cursor:pointer; outline:none; }
 .btn-primary { background:var(--accent); color:#fff; }
 .btn-primary:hover { opacity:.85; }
 .btn-primary:disabled { opacity:.4; cursor:not-allowed; }
+
+/* v0.2.3 — SPY header / banner / parameter cards */
+.eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--accent); margin-bottom:2px; }
+.statline { font-size:13px; color:var(--muted); margin:4px 0 6px; }
+.verrow { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.verrow .mono { font-family:var(--mono); font-size:13px; color:var(--muted); }
+.pill { font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:var(--muted);
+        border:1px solid var(--border); border-radius:4px; padding:2px 8px; }
+.banner { border:1px solid var(--accent); border-radius:6px; padding:12px 14px; margin-bottom:12px;
+          display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--surface); }
+.banner .bl { font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--muted); }
+.keyin { flex:1 1 320px; min-width:200px; background:var(--surface2); border:1px solid var(--border);
+         border-radius:4px; color:var(--text); font-size:11px; padding:9px 10px; font-family:var(--mono); }
+.pgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+.pcard { border:1px solid var(--border); border-left:2px solid var(--accent); border-radius:6px; padding:12px 14px; background:var(--surface2); }
+.pl { font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--muted); }
+.pq { font-size:8px; letter-spacing:.1em; opacity:.65; margin-left:4px; }
+.pv { font-family:var(--mono); font-size:22px; color:var(--accent); margin:6px 0 2px; }
+.ps { font-size:10px; color:var(--muted); opacity:.7; }
+.constline { font-family:var(--mono); font-size:10px; color:var(--muted); opacity:.75; margin-top:12px; }
 
 /* Toggle buttons */
 .toggle-group { display:flex; }
@@ -147,20 +167,32 @@ select.display-box { cursor:pointer; outline:none; }
 </head>
 <body>
 <div class="wrap">
-  <h1>HRA Backtester <span id="app-ver" class="mono"></span></h1>
-  <p class="sub">Fork of the SPY backtester (v7.2.13). Infrastructure live; SPY domain
-  logic commented in place, not deleted — un-rem as HRA equivalents are built.
-  Milestone 2: Supabase loader, fence 1 verbatim, Gate A on stored ratings,
-  and a scorer for v2 / v3 / T2-MOFF-v1. Read-only — nothing here writes.</p>
+  <div class="eyebrow">HORSE RACE ANALYZER</div>
+  <h1>Backtest &amp; Model Replay</h1>
+  <div id="status-line" class="statline">Ledger not loaded</div>
+  <div class="verrow"><span id="app-ver" class="mono"></span><span class="pill">Read-only</span></div>
+
+  <!-- session banner — SPY's position strip; here it carries the credential and the run controls -->
+  <div class="banner">
+    <span class="bl">Session</span>
+    <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)" class="keyin">
+    <button class="tab-btn" onclick="boot()">Load ledger</button>
+    <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
+    <button class="tab-btn" onclick="runGrid()">TAU &times; gap grid</button>
+  </div>
+
+  <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
   <div class="panel" style="margin-bottom:12px">
-    <input id="sb-url" type="text" placeholder="Supabase project URL (https://xxxx.supabase.co)"
-           style="width:100%;max-width:420px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:9px 10px;font-family:var(--mono);margin-bottom:8px">
-    <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)"
-           style="width:100%;max-width:420px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:9px 10px;font-family:var(--mono)">
-    <div style="margin-top:8px;display:flex;gap:8px">
-      <button class="tab-btn" onclick="boot()">Load ledger</button>
-      <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
+    <div class="pgrid">
+      <div class="pcard"><div class="pl">TAU <span class="pq">SIM</span></div><div class="pv">28</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">GAP GATE <span class="pq">DOCTRINE</span></div><div class="pv">8.0</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">EDGE FLOOR <span class="pq">VERDICT</span></div><div class="pv">0.10</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">WIN% FLOOR <span class="pq">VERDICT</span></div><div class="pv">15%</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">PRICE FLOOR <span class="pq">DOCTRINE</span></div><div class="pv">EVENS</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">DISTANCE <span class="pq">DOCTRINE</span></div><div class="pv">6&ndash;9f</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">MOFF EDGE <span class="pq">TAG</span></div><div class="pv">0.04</div><div class="ps">Not wired</div></div>
     </div>
+    <div id="const-line" class="constline"></div>
   </div>
   <div class="panel">
     <!-- SPY tab ids kept verbatim so showTab() transfers unmodified; labels are HRA's.
@@ -190,14 +222,14 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.2'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.4'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
-let SB_URL = '';  // v0.2.1 [fix] — was a hardcoded SPY project ref carried over by the
-                  // fork and never resolved ("TODO: HRA project URL"). A valid key sent
-                  // to the wrong project returns 401 Invalid API key. Runtime input now,
-                  // exactly as index.html takes it.
+// v0.2.3 — HRA project ref, hardcoded as SPY does it. Not a credential: the URL is
+// in every request anyway. The KEY stays a runtime field — hra_race_log and hra_bets
+// carry anon DELETE policies, and a private repo does NOT make a Pages site private.
+const SB_URL = 'https://wudmxqtnrhqlbkdqqunb.supabase.co/rest/v1';
 const SB_ANON = '';  // TODO: HRA anon key
 const HRA_TABLES = { cards:'hra_cards', raceLog:'hra_race_log', bets:'hra_bets' };
 let _mode='test', _debugMode=false;  // referenced by logDbg (kept live)
@@ -9716,6 +9748,10 @@ async function loadLedger() {
       const rows = (cached.horses || []).map((h, i) => ({
         i, name: h.name || ('Horse ' + (i + 1)), post: h.postPosition, scratched: !!h.scratched,
         odds: parseOdds(h.mlOdds), ...rateHorse(h, info, SPEED_SCALE),
+        // v0.2.4 [fix] — rateHorse returns { components, rating }. v0.2.2 spread it and then
+        // read r.earlySpeed etc, which were undefined: MOFF scored every edge at 0 (0 fires)
+        // and SPDCLS saw every component as 0 so both "top" tests hit element 0 (163 fires).
+        ...(rateHorse(h, info, SPEED_SCALE).components || {}),
       }));
       for (const row of rows) {
         const lg = byName.get(String(row.name || '').trim().toUpperCase());
@@ -9735,6 +9771,9 @@ async function loadLedger() {
   const wired = [...races.values()].filter((r) => r.results);
   _ledger = { races: [...races.values()], wired, bets, counts: { matched, exact, missing, cards: cards.length, log: log.length } };
 
+  const sl = $('status-line');
+  if (sl) { sl.textContent = '\u2713 Ledger loaded \u2014 ' + races.size + ' races · ' + log.length
+            + ' rows · ' + cards.length + ' cards · era 2 SAR'; sl.style.color = 'var(--green)'; }
   logMsg('  races in log: ' + races.size + '  ·  races wired to a card: ' + wired.length);
   logMsg('  horse rows matched: ' + matched + '  ·  unmatched card rows: ' + missing);
 
@@ -9845,6 +9884,41 @@ const stat = (bets) => {
   return { n, w, hit: n ? (100 * w / n) : 0, roi: stake ? (100 * ret / stake) : 0 };
 };
 
+// v0.2.4 — separates TAU from the gap gate. v2 moved both at once, so neither
+// the golden 25 nor the golden 20 can be attributed from a single pair.
+function runGrid() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  logMsg('── TAU x GAP GRID ─────────────────────────────────────');
+  logMsg('   golden master (FOUNDATION 7, 164-race fixture): tau8/gap6 = 25 bets/8 won · tau28/gap8 = 20/8');
+  const out = [];
+  for (const tau of [8, 28]) {
+    for (const gap of [6, 8]) {
+      const b = runDoctrine(tau, gap), st = stat(b);
+      out.push({ tau, gap, n: st.n, w: st.w, roi: st.roi });
+      logMsg('   tau ' + String(tau).padStart(2) + '  gap ' + gap + '   bets ' + String(st.n).padStart(3)
+           + '   won ' + String(st.w).padStart(3) + '   ROI ' + (st.roi >= 0 ? '+' : '') + st.roi.toFixed(1) + '%');
+    }
+  }
+  const t8g6 = out.find((o) => o.tau === 8 && o.gap === 6).n;
+  const t8g8 = out.find((o) => o.tau === 8 && o.gap === 8).n;
+  const t28g6 = out.find((o) => o.tau === 28 && o.gap === 6).n;
+  logMsg('   TAU effect at gap 6: ' + t8g6 + ' -> ' + t28g6 + '   (FOUNDATION says TAU does not touch selection)',
+         t8g6 === t28g6 ? 'green' : 'red');
+  logMsg('   GAP effect at tau 8: ' + t8g6 + ' -> ' + t8g8 + '   (golden says 25 -> 20)');
+  renderGrid(out);
+  showTab('heatmap');
+}
+function renderGrid(out) {
+  const el = $('tab-heatmap'); if (!el) return;
+  el.innerHTML = '<table class="roll-table"><thead><tr><th>TAU</th><th>gap</th><th>bets</th><th>won</th><th>ROI</th><th>golden</th></tr></thead><tbody>'
+    + out.map((o) => {
+        const g = (o.tau === 8 && o.gap === 6) ? '25 / 8' : (o.tau === 28 && o.gap === 8) ? '20 / 8' : '—';
+        return '<tr><td>' + o.tau + '</td><td>' + o.gap + '</td><td>' + o.n + '</td><td>' + o.w + '</td><td class="'
+             + (o.roi >= 0 ? 'green' : 'red') + '">' + (o.roi >= 0 ? '+' : '') + o.roi.toFixed(1) + '%</td><td class="muted">' + g + '</td></tr>';
+      }).join('')
+    + '</tbody></table><p class="sub">Golden-master counts are from the 164-race fixture; era 2 is now 163 races, so a shortfall of one is expected.</p>';
+}
+
 async function runAll() {
   if (!_ledger) { logMsg('load first', 'red'); return; }
   if (!_ledger.gateA) { logMsg('GATE A failed — nothing downstream is trustworthy. Not scoring.', 'red'); return; }
@@ -9903,17 +9977,16 @@ function renderBets(sets, meta) {
 
 async function boot() {
   _sbKey = (($('sb-key') || {}).value || '').trim();
-  const u = (($('sb-url') || {}).value || '').trim().replace(/\/+$/, '');
-  if (!u || !_sbKey) { logMsg('project URL and anon key are both required', 'red'); return; }
-  SB_URL = /\/rest\/v1$/.test(u) ? u : u + '/rest/v1';
+  if (!_sbKey) { logMsg('paste the anon key first', 'red'); return; }
   logMsg('endpoint ' + SB_URL);
-  try { localStorage.setItem('hra_bt_url', u); } catch (e) {}
   try { await loadLedger(); } catch (e) { logMsg('LOAD FAILED — ' + e.message, 'red'); showError(String(e.stack || e)); }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   showTab("mart");
-  try { const v = localStorage.getItem('hra_bt_url'); if (v && $('sb-url')) $('sb-url').value = v; } catch (e) {}
+  const c = $('const-line'); if (c) c.textContent =
+    'Constants: dirt only · no straight claiming · 6\u20139f · speedScale beyer · fence 1 md5 '
+    + HRA_F1_MD5.slice(0, 8) + '\u2026 · model v3 BELMONT';
 });
 </script>
 </body>
