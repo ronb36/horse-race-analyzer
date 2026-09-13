@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester</title>
+<title>HRA Backtester v0.2.1</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -153,6 +153,8 @@ select.display-box { cursor:pointer; outline:none; }
   Milestone 2: Supabase loader, fence 1 verbatim, Gate A on stored ratings,
   and a scorer for v2 / v3 / T2-MOFF-v1. Read-only — nothing here writes.</p>
   <div class="panel" style="margin-bottom:12px">
+    <input id="sb-url" type="text" placeholder="Supabase project URL (https://xxxx.supabase.co)"
+           style="width:100%;max-width:420px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:9px 10px;font-family:var(--mono);margin-bottom:8px">
     <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)"
            style="width:100%;max-width:420px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:9px 10px;font-family:var(--mono)">
     <div style="margin-top:8px;display:flex;gap:8px">
@@ -188,11 +190,14 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.1'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
-const SB_URL  = 'https://pepdnkwytziegjvgkofq.supabase.co/rest/v1'; // TODO: HRA project URL
+let SB_URL = '';  // v0.2.1 [fix] — was a hardcoded SPY project ref carried over by the
+                  // fork and never resolved ("TODO: HRA project URL"). A valid key sent
+                  // to the wrong project returns 401 Invalid API key. Runtime input now,
+                  // exactly as index.html takes it.
 const SB_ANON = '';  // TODO: HRA anon key
 const HRA_TABLES = { cards:'hra_cards', raceLog:'hra_race_log', bets:'hra_bets' };
 let _mode='test', _debugMode=false;  // referenced by logDbg (kept live)
@@ -9856,12 +9861,19 @@ function renderBets(sets, meta) {
 }
 
 async function boot() {
-  _sbKey = ($('sb-key') || {}).value || '';
-  if (!_sbKey) { logMsg('paste the Supabase anon key first', 'red'); return; }
+  _sbKey = (($('sb-key') || {}).value || '').trim();
+  const u = (($('sb-url') || {}).value || '').trim().replace(/\/+$/, '');
+  if (!u || !_sbKey) { logMsg('project URL and anon key are both required', 'red'); return; }
+  SB_URL = /\/rest\/v1$/.test(u) ? u : u + '/rest/v1';
+  logMsg('endpoint ' + SB_URL);
+  try { localStorage.setItem('hra_bt_url', u); } catch (e) {}
   try { await loadLedger(); } catch (e) { logMsg('LOAD FAILED — ' + e.message, 'red'); showError(String(e.stack || e)); }
 }
 
-document.addEventListener("DOMContentLoaded", () => showTab("mart"));
+document.addEventListener("DOMContentLoaded", () => {
+  showTab("mart");
+  try { const v = localStorage.getItem('hra_bt_url'); if (v && $('sb-url')) $('sb-url').value = v; } catch (e) {}
+});
 </script>
 </body>
 </html>
