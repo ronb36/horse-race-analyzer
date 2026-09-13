@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.5</title>
+<title>HRA Backtester v0.2.6</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -181,6 +181,7 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
     <button class="tab-btn" onclick="runGrid()">TAU &times; gap grid</button>
     <button class="tab-btn" onclick="runVerdictDiag()">Verdict inputs</button>
+    <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -225,7 +226,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.5'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.6'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9982,6 +9983,100 @@ function renderVerdict(a, b, flips) {
     + '<p class="sub">simVerdict gates the top-edge horse: edge &ge; 0.10, then pModel &ge; 0.15. TAU is the softmax '
     + 'temperature in fence 2, so a higher TAU flattens pWin and lowers the leader\'s pModel. '
     + flips.length + ' races flip their verdict between the two settings.</p>';
+}
+
+// ── v0.2.6 sweeps — diagnostic. Neither picks a value. ─────────────────────
+// simVerdict's 0.15 pModel floor is INSIDE fence 1, which has stayed byte-identical.
+// Rather than parameterize it there, this is a replica, proven equivalent to the real
+// simVerdict at 0.15 before any swept value is reported. If the replica and the fence
+// disagree on even one race, the sweep is suppressed.
+function verdictAtFloor(rows, floor) {
+  const live = rows.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
+  if (!live.length) return { action: 'NONE', horse: null };
+  const best = live.reduce((a, b) => (b.edge > a.edge ? b : a));
+  if (best.edge < 0.10) return { action: 'PASS', horse: best };
+  if (best.pModel >= floor) return { action: 'WIN', horse: best };
+  if ((best.pPlace ?? 0) >= 0.35) return { action: 'PLACE', horse: best };
+  if ((best.pShow ?? 0) >= 0.50) return { action: 'SHOW', horse: best };
+  return { action: 'PASS', horse: best };
+}
+
+function doctrineCount(tau, gap, floor) {
+  _TAU = tau; _GAP = gap;
+  let bets = 0, won = 0, passes = 0, blockedP = 0, blockedE = 0, sumP = 0, n = 0;
+  for (const race of _ledger.wired) {
+    const { overlay } = scoreRaceRows(race.results);
+    const v = verdictAtFloor(overlay, floor);
+    const live = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
+    if (live.length) {
+      const best = live.reduce((a, b) => (b.edge > a.edge ? b : a));
+      sumP += best.pModel; n++;
+      if (best.edge < 0.10) blockedE++; else if (best.pModel < floor) blockedP++;
+    }
+    if (!['WIN', 'PLACE', 'SHOW'].includes(v.action)) { passes++; continue; }
+    const d = doctrineFilter(overlay, race.raceInfo || {});
+    if (!d || !d.bet) continue;
+    bets++; if (d.bet.is_winner) won++;
+  }
+  return { tau, gap, floor, bets, won, passes, blockedP, blockedE, meanP: sumP / (n || 1) };
+}
+
+function replicaEquivalent() {
+  let checked = 0, diff = 0;
+  for (const tau of [8, 28]) {
+    _TAU = tau;
+    for (const race of _ledger.wired) {
+      const { overlay, verdict } = scoreRaceRows(race.results);
+      const rep = verdictAtFloor(overlay, 0.15);
+      checked++;
+      if (rep.action !== verdict.action) diff++;
+    }
+  }
+  return { checked, diff };
+}
+
+function runSweeps() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const eq = replicaEquivalent();
+  logMsg('── SWEEPS ─────────────────────────────────────────────');
+  logMsg('   replica vs fence simVerdict @0.15: ' + (eq.checked - eq.diff) + '/' + eq.checked
+       + (eq.diff ? '  MISMATCH — sweep suppressed' : '  EQUIVALENT'), eq.diff ? 'red' : 'green');
+  if (eq.diff) { _TAU = 28; _GAP = 8; return; }
+
+  logMsg('   TAU sweep at gap 8, floor 0.15 (MLE 28.0, 95% CI 18.9-51.5):');
+  const taus = [8, 10, 12, 14, 16, 18.9, 20, 22, 24, 28, 32, 36, 40, 51.5];
+  const tRows = taus.map((t) => doctrineCount(t, 8, 0.15));
+  tRows.forEach((r) => logMsg('     tau ' + String(r.tau).padStart(4) + '   bets ' + String(r.bets).padStart(3)
+       + '   won ' + String(r.won).padStart(2) + '   PASS ' + String(r.passes).padStart(3)
+       + '   blocked-p ' + String(r.blockedP).padStart(3) + '   mean top p ' + r.meanP.toFixed(3)
+       + (Math.abs(r.tau - 18.9) < 0.01 ? '   <- CI low' : Math.abs(r.tau - 51.5) < 0.01 ? '   <- CI high'
+         : r.tau === 28 ? '   <- MLE' : '')));
+
+  logMsg('   pModel-floor sweep at TAU 28, gap 8 (INFORMATION ONLY — choosing a floor to hit a bet count is circular):');
+  const floors = [];
+  for (let f = 0.04; f <= 0.2001; f += 0.01) floors.push(Math.round(f * 100) / 100);
+  const fRows = floors.map((f) => doctrineCount(28, 8, f));
+  fRows.forEach((r) => logMsg('     floor ' + r.floor.toFixed(2) + '   bets ' + String(r.bets).padStart(3)
+       + '   won ' + String(r.won).padStart(2) + '   blocked-p ' + String(r.blockedP).padStart(3)));
+
+  renderSweeps(tRows, fRows);
+  showTab('heatmap');
+  _TAU = 28; _GAP = 8;
+}
+
+function renderSweeps(tRows, fRows) {
+  const el = $('tab-heatmap'); if (!el) return;
+  const t = '<table class="roll-table"><thead><tr><th>TAU</th><th>bets</th><th>won</th><th>PASS</th>'
+    + '<th>blocked by pModel</th><th>mean top pModel</th><th></th></tr></thead><tbody>'
+    + tRows.map((r) => '<tr' + (r.tau === 28 ? ' class="best-row"' : '') + '><td>' + r.tau + '</td><td>' + r.bets
+      + '</td><td>' + r.won + '</td><td>' + r.passes + '</td><td>' + r.blockedP + '</td><td>' + r.meanP.toFixed(3)
+      + '</td><td class="muted">' + (Math.abs(r.tau - 18.9) < 0.01 ? 'CI low' : Math.abs(r.tau - 51.5) < 0.01 ? 'CI high'
+        : r.tau === 28 ? 'MLE' : r.tau === 8 ? 'v2' : '') + '</td></tr>').join('') + '</tbody></table>';
+  const f = '<table class="roll-table"><thead><tr><th>pModel floor</th><th>bets</th><th>won</th><th>blocked by pModel</th></tr></thead><tbody>'
+    + fRows.map((r) => '<tr' + (Math.abs(r.floor - 0.15) < 0.001 ? ' class="best-row"' : '') + '><td>' + r.floor.toFixed(2)
+      + '</td><td>' + r.bets + '</td><td>' + r.won + '</td><td>' + r.blockedP + '</td></tr>').join('') + '</tbody></table>';
+  el.innerHTML = '<p class="sub">TAU sweep · gap 8 · floor 0.15. TAU is a calibration parameter — its value comes from the MLE, not from a bet count.</p>'
+    + t + '<p class="sub">pModel-floor sweep · TAU 28 · gap 8. Shown as information. Selecting the floor that reproduces a desired bet count would be fitting to the outcome we expected.</p>' + f;
 }
 
 async function runAll() {
