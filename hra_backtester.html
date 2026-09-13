@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.6</title>
+<title>HRA Backtester v0.2.7</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -64,6 +64,8 @@ select.display-box { cursor:pointer; outline:none; }
 .pq { font-size:8px; letter-spacing:.1em; opacity:.65; margin-left:4px; }
 .pv { font-family:var(--mono); font-size:22px; color:var(--accent); margin:6px 0 2px; }
 .ps { font-size:10px; color:var(--muted); opacity:.7; }
+.panehead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.panehead .mono { font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--muted); }
 .constline { font-family:var(--mono); font-size:10px; color:var(--muted); opacity:.75; margin-top:12px; }
 
 /* Toggle buttons */
@@ -181,7 +183,6 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
     <button class="tab-btn" onclick="runGrid()">TAU &times; gap grid</button>
     <button class="tab-btn" onclick="runVerdictDiag()">Verdict inputs</button>
-    <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -202,15 +203,28 @@ select.display-box { cursor:pointer; outline:none; }
     <!-- SPY tab ids kept verbatim so showTab() transfers unmodified; labels are HRA's.
          mart=Races  trades/tab-log=Bets  heatmap=Sweep  runlog=Run Log -->
     <div class="tab-bar" id="tabs">
-      <button class="tab-btn active" id="tab-btn-mart"    onclick="showTab('mart')">Races</button>
-      <button class="tab-btn"        id="tab-btn-trades"  onclick="showTab('trades')">Bets</button>
-      <button class="tab-btn"        id="tab-btn-heatmap" onclick="showTab('heatmap')">Sweep</button>
-      <button class="tab-btn"        id="tab-btn-runlog"  onclick="showTab('runlog')">Run Log</button>
+      <button class="tab-btn active" id="tab-btn-trades" onclick="showTab('trades')">Activity</button>
+      <button class="tab-btn"        id="tab-btn-runlog" onclick="showTab('runlog')">Logs</button>
+      <button class="tab-btn"        id="tab-btn-mart"   onclick="showTab('mart')">Data Mart</button>
     </div>
-    <div id="tab-mart">Not loaded. Paste the anon key and press Load ledger.</div>
-    <div id="tab-log" style="display:none">No run yet.</div>
-    <div id="tab-heatmap" style="display:none">Beta sweep — milestone 4 (seam: optimization, line ~4980 of origin).</div>
-    <div id="tab-runlog" style="display:none"></div>
+    <div id="tab-log">No run yet. Press Score to populate the blotter.</div>
+    <div id="tab-runlog" style="display:none">
+      <div class="panehead"><span class="mono">RUN LOG</span>
+        <span style="display:flex;gap:8px">
+          <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
+          <button class="tab-btn" onclick="downloadLog()">Download</button>
+        </span>
+      </div>
+      <pre id="runlog-mirror2" class="log"></pre>
+    </div>
+    <div id="tab-mart" style="display:none">
+      <div class="tab-bar" style="margin-bottom:10px">
+        <button class="tab-btn active" id="dm-btn-races"  onclick="showMart('races')">Races</button>
+        <button class="tab-btn"        id="dm-btn-horses" onclick="showMart('horses')">Horses</button>
+      </div>
+      <div id="dm-races">Not loaded. Paste the anon key and press Load ledger.</div>
+      <div id="dm-horses" style="display:none"></div>
+    </div>
   </div>
   <pre id="progress-log" class="log"></pre>
   <pre id="runlog-mirror" class="log" style="display:none"></pre>
@@ -226,7 +240,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.6'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.2.7'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -1298,6 +1312,8 @@ function showTab(tab) {
     const src = $('progress-log');
     const dst = $('runlog-mirror');
     if (src && dst) { dst.innerHTML = src.innerHTML; dst.scrollTop = dst.scrollHeight; }
+    const d2 = $('runlog-mirror2');
+    if (src && d2) { d2.innerHTML = src.innerHTML; d2.scrollTop = d2.scrollHeight; }
   }
 }
 
@@ -9910,10 +9926,10 @@ function runGrid() {
          t8g6 === t28g6 ? 'green' : 'red');
   logMsg('   GAP effect at tau 8: ' + t8g6 + ' -> ' + t8g8 + '   (golden says 25 -> 20)');
   renderGrid(out);
-  showTab('heatmap');
+  showTab('mart'); showMart('races');
 }
 function renderGrid(out) {
-  const el = $('tab-heatmap'); if (!el) return;
+  const el = $('dm-races'); if (!el) return;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>TAU</th><th>gap</th><th>bets</th><th>won</th><th>ROI</th><th>golden</th></tr></thead><tbody>'
     + out.map((o) => {
         const g = (o.tau === 8 && o.gap === 6) ? '25 / 8' : (o.tau === 28 && o.gap === 8) ? '20 / 8' : '—';
@@ -9968,12 +9984,12 @@ function runVerdictDiag() {
        + '   tau8 p=' + f.pA.toFixed(3) + ' e=' + f.eA.toFixed(3) + ' ' + f.aA
        + '   |  tau28 p=' + f.pB.toFixed(3) + ' e=' + f.eB.toFixed(3) + ' ' + f.aB));
   renderVerdict(a, b, flips);
-  showTab('trades');
+  showTab('runlog');
   _TAU = 28;
 }
 
 function renderVerdict(a, b, flips) {
-  const el = $('tab-log'); if (!el) return;
+  const el = $('dm-races'); if (!el) return;
   const row = (r) => '<tr><td>' + r.tau + '</td><td>' + r.n + '</td><td>' + r.meanP.toFixed(3) + '</td><td>'
     + r.meanE.toFixed(3) + '</td><td>' + (r.acts.PASS || 0) + '</td><td>' + (r.acts.WIN || 0) + '</td><td>'
     + r.failEdge + '</td><td>' + r.failP + '</td></tr>';
@@ -10060,12 +10076,12 @@ function runSweeps() {
        + '   won ' + String(r.won).padStart(2) + '   blocked-p ' + String(r.blockedP).padStart(3)));
 
   renderSweeps(tRows, fRows);
-  showTab('heatmap');
+  showTab('mart'); showMart('races');
   _TAU = 28; _GAP = 8;
 }
 
 function renderSweeps(tRows, fRows) {
-  const el = $('tab-heatmap'); if (!el) return;
+  const el = $('dm-races'); if (!el) return;
   const t = '<table class="roll-table"><thead><tr><th>TAU</th><th>bets</th><th>won</th><th>PASS</th>'
     + '<th>blocked by pModel</th><th>mean top pModel</th><th></th></tr></thead><tbody>'
     + tRows.map((r) => '<tr' + (r.tau === 28 ? ' class="best-row"' : '') + '><td>' + r.tau + '</td><td>' + r.bets
@@ -10104,7 +10120,7 @@ async function runAll() {
 
 // ── render ─────────────────────────────────────────────────────────────────
 function renderRaces() {
-  const el = $('tab-mart'); if (!el || !_ledger) return;
+  const el = $('dm-races'); if (!el || !_ledger) return;
   const c = _ledger.counts;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>metric</th><th>value</th></tr></thead><tbody>'
     + [['cards', c.cards], ['race_log rows', c.log], ['races (log)', _ledger.races.length],
@@ -10121,14 +10137,73 @@ function renderRaces() {
     + '</tbody></table>';
 }
 
+function showMart(which) {
+  const r = $('dm-races'), h = $('dm-horses');
+  if (r) r.style.display = which === 'races' ? 'block' : 'none';
+  if (h) h.style.display = which === 'horses' ? 'block' : 'none';
+  const br = $('dm-btn-races'), bh = $('dm-btn-horses');
+  if (br) br.classList.toggle('active', which === 'races');
+  if (bh) bh.classList.toggle('active', which === 'horses');
+  if (which === 'horses') renderHorses();
+}
+
+// Horses we actually bet — hra_bets is the only source for betting claims (two-ledger rule),
+// hra_race_log the only source for model claims. Joined here for display only.
+function renderHorses() {
+  const el = $('dm-horses'); if (!el || !_ledger) return;
+  const mine = new Map();
+  for (const b of _ledger.bets) {
+    const k = String(b.horse || '').trim().toUpperCase();
+    if (!k) continue;
+    if (!mine.has(k)) mine.set(k, { name: b.horse, bets: 0, staked: 0, ret: 0, won: 0 });
+    const m = mine.get(k);
+    m.bets++; m.staked += Number(b.amount) || 0;
+    m.ret += Number(b.payout) || 0; if (b.won) m.won++;
+  }
+  for (const race of _ledger.wired) {
+    for (const r of race.rows) {
+      const k = String(r.horse || '').trim().toUpperCase();
+      const m = mine.get(k); if (!m) continue;
+      m.starts = (m.starts || 0) + 1;
+      const f = Number(r.finish_pos);
+      if (f === 1) m.w = (m.w || 0) + 1;
+      if (f === 2) m.p = (m.p || 0) + 1;
+      if (f === 3) m.s = (m.s || 0) + 1;
+    }
+  }
+  const rows = [...mine.values()].sort((a, b) => (b.ret - b.staked) - (a.ret - a.staked));
+  el.innerHTML = '<table class="roll-table"><thead><tr><th>horse</th><th>starts</th><th>W</th><th>P</th><th>S</th>'
+    + '<th>my bets</th><th>won</th><th>staked</th><th>returned</th><th>net</th></tr></thead><tbody>'
+    + rows.map((m) => { const net = m.ret - m.staked;
+        return '<tr><td>' + m.name + '</td><td>' + (m.starts || 0) + '</td><td>' + (m.w || 0) + '</td><td>'
+          + (m.p || 0) + '</td><td>' + (m.s || 0) + '</td><td>' + m.bets + '</td><td>' + m.won + '</td><td>$'
+          + m.staked.toFixed(2) + '</td><td>$' + m.ret.toFixed(2) + '</td><td class="' + (net >= 0 ? 'green' : 'red')
+          + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'; }).join('')
+    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended.</p>';
+}
+
 function renderBets(sets, meta) {
-  const el = $('tab-trades'); if (!el) return;
+  const el = $('tab-log'); if (!el) return;
   const rows = [['v2  tau 8 · gap 6', sets.v2], ['v3  tau 28 · gap 8', sets.v3], ['T2-MOFF-v1', sets.mo]]
     .map(([nm, b]) => { const s = stat(b);
       return '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
            + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>'; }).join('');
+  const blot = (nm, b) => { let run = 0;
+    return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets</p>'
+      + '<table class="roll-table"><thead><tr><th>#</th><th>race</th><th>horse</th><th>odds</th><th>finish</th>'
+      + '<th>result</th><th>P&amp;L</th><th>running</th></tr></thead><tbody>'
+      + b.map((x, i) => { const pl = x.won ? 2 * (Number(x.odds) || 0) : -2; run += pl;
+          return '<tr><td class="muted">' + (i + 1) + '</td><td>' + x.race + '</td><td>' + x.horse + '</td><td>'
+            + (x.odds === null || x.odds === undefined ? '\u2014' : Number(x.odds).toFixed(2)) + '</td><td>'
+            + (x.finish == null ? '\u2014' : x.finish) + '</td><td class="' + (x.won ? 'green' : 'muted') + '">'
+            + (x.won ? 'WON' : 'lost') + '</td><td class="' + (pl >= 0 ? 'green' : 'red') + '">'
+            + (pl >= 0 ? '+' : '\u2212') + '$' + Math.abs(pl).toFixed(2) + '</td><td class="'
+            + (run >= 0 ? 'green' : 'red') + '">' + (run >= 0 ? '+' : '\u2212') + '$' + Math.abs(run).toFixed(2)
+            + '</td></tr>'; }).join('') + '</tbody></table>'; };
   el.innerHTML = '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
     + rows + '</tbody></table>'
+    + blot('v2 \u00b7 tau 8 \u00b7 gap 6', sets.v2) + blot('v3 \u00b7 tau 28 \u00b7 gap 8', sets.v3)
+    + blot('T2-MOFF-v1', sets.mo)
     + '<p class="sub">Flat $2 win, final odds (hra_race_log.odds) for every rule — the only price basis covering all races. '
     + 'Pre-race prices exist on ~40 bet rows only; Chat 12 measured median drift -10.8%, so these ROIs are an upper bound. '
     + 'v2, v3 and T2-MOFF-v1 were all fitted or tuned on these races. This is a replay, not a test.</p>'
@@ -10143,7 +10218,7 @@ async function boot() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  showTab("mart");
+  showTab("trades");
   const c = $('const-line'); if (c) c.textContent =
     'Constants: dirt only · no straight claiming · 6\u20139f · speedScale beyer · fence 1 md5 '
     + HRA_F1_MD5.slice(0, 8) + '\u2026 · model v3 BELMONT';
