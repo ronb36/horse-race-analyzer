@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.3</title>
+<title>HRA Backtester v0.3.5</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -227,6 +227,9 @@ select.display-box { cursor:pointer; outline:none; }
         <span style="display:flex;gap:8px">
           <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
           <button class="tab-btn" onclick="runOverlap()">Gate overlap</button>
+          <button class="tab-btn" onclick="runMLCheck()">ML check</button>
+          <button class="tab-btn" onclick="runPriceRealization()">Price realization</button>
+          <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
           <button class="tab-btn" id="download-log-btn" onclick="downloadLog()">\u2b07 Download</button>
         </span>
       </div>
@@ -254,7 +257,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.3'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.5'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -263,7 +266,7 @@ document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementByI
 // carry anon DELETE policies, and a private repo does NOT make a Pages site private.
 const SB_URL = 'https://wudmxqtnrhqlbkdqqunb.supabase.co/rest/v1';
 const SB_ANON = '';  // TODO: HRA anon key
-const HRA_TABLES = { cards:'hra_cards', raceLog:'hra_race_log', bets:'hra_bets' };
+const HRA_TABLES = { cards:'hra_cards', raceLog:'hra_race_log', bets:'hra_bets', entries:'hra_entries' };
 let _mode='test', _debugMode=false;  // referenced by logDbg (kept live)
 
 // ══ SEAM STUBS ══ no-ops standing in for commented SPY modules that the kept
@@ -9753,7 +9756,8 @@ async function loadLedger() {
   const log   = await sbFetchAll(HRA_TABLES.raceLog,
       'track,race_date,race_no,horse,post,rating,odds,is_winner,finish_pos,surface,distance_f,distance,purse,race_type,pay_win',
       'race_date.asc,race_no.asc,horse.asc');
-  const bets  = await sbFetchAll(HRA_TABLES.bets, 'track,race_date,race_no,horse,amount,payout,won,settled', 'race_date.asc,race_no.asc');
+  const bets  = await sbFetchAll(HRA_TABLES.bets, 'track,race_date,race_no,horse,amount,payout,won,settled,odds_at_bet', 'race_date.asc,race_no.asc');
+  const ents  = await sbFetchAll(HRA_TABLES.entries, 'track,race_date,entries', 'race_date.asc');
   if (!cards.length || !log.length) throw new Error('load aborted — empty cards or race_log');
 
   // index the log by race
@@ -9780,7 +9784,7 @@ async function loadLedger() {
       const byName = new Map(race.rows.map((x) => [String(x.horse || '').trim().toUpperCase(), x]));
       const rows = (cached.horses || []).map((h, i) => ({
         i, name: h.name || ('Horse ' + (i + 1)), post: h.postPosition, scratched: !!h.scratched,
-        odds: parseOdds(h.mlOdds), ...rateHorse(h, info, SPEED_SCALE),
+        odds: parseOdds(h.mlOdds), cardOdds: parseOdds(h.mlOdds), ...rateHorse(h, info, SPEED_SCALE),
         // v0.2.4 [fix] — rateHorse returns { components, rating }. v0.2.2 spread it and then
         // read r.earlySpeed etc, which were undefined: MOFF scored every edge at 0 (0 fires)
         // and SPDCLS saw every component as 0 so both "top" tests hit element 0 (163 fires).
@@ -9801,6 +9805,29 @@ async function loadLedger() {
       race.results = rows.sort((a, b) => (a.scratched === b.scratched ? b.rating - a.rating : a.scratched ? 1 : -1));
     }
   }
+  // v0.3.5 — attach the backfilled morning line. Match on horse name (the same key that
+  // reproduced 1211/1211 ratings); fall back to post only if the name misses.
+  let mlAttached = 0, mlRaces = 0, mlMiss = 0;
+  for (const e of ents) {
+    for (const er of (e.entries || [])) {
+      if (!Array.isArray(er.ml)) continue;
+      const race = races.get(rkey(e.track, e.race_date, er.raceNumber));
+      if (!race || !race.results) continue;
+      mlRaces++;
+      const byName = new Map(er.ml.map((m) => [String(m.horse || '').trim().toUpperCase(), m.ml]));
+      const byPost = new Map(er.ml.map((m) => [Number(m.post), m.ml]));
+      for (const row of race.results) {
+        let v = byName.get(String(row.name || '').trim().toUpperCase());
+        if (v === undefined) v = byPost.get(Number(row.post));
+        if (v === undefined) { if (!row.scratched) mlMiss++; continue; }
+        row.ml = Number(v); mlAttached++;
+      }
+      race.hasML = true;
+    }
+  }
+  logMsg('  morning line: ' + mlRaces + ' races · ' + mlAttached + ' horses attached · ' + mlMiss + ' live horses unmatched',
+         mlMiss ? 'yellow' : 'green');
+
   const wired = [...races.values()].filter((r) => r.results);
   _ledger = { races: [...races.values()], wired, bets, counts: { matched, exact, missing, cards: cards.length, log: log.length } };
 
@@ -9921,6 +9948,80 @@ function runMoff() {
                  odds: best.r.odds, won: !!best.r.is_winner, finish: best.r.finish_pos, edge: best.edge });
   }
   return out;
+}
+
+// ── v0.3.5 — T2-MOFF-v1 scored off the MORNING LINE ────────────────────────
+// Two arms, both PAID at final odds because that is what a ticket actually returns.
+// They differ only in which price forms q, the offset the model is built on:
+//   FINAL — q from hra_race_log.odds. Ex post. This is the registered tag's frame.
+//   ML    — q from the backfilled morning line. Ex ante: a price that existed before
+//           the race, for the whole field, which odds_at_bet never gave us.
+// CAVEAT the numbers cannot express: the betas were FITTED with the final-odds offset.
+// Feeding a different offset uses them outside their fitted frame. The clean version is
+// a refit with the ML offset, which needs a fitter this tool does not have yet.
+function moffPick(race, priceOf) {
+  const live = race.results.filter((r) => !r.scratched);
+  const q = [], rows = [];
+  for (const r of live) {
+    const p = priceOf(r);
+    if (p === null || p === undefined || !isFinite(p)) return null;   // whole race unusable
+    q.push(1 / (Number(p) + 1)); rows.push(r);
+  }
+  if (rows.length < 2) return null;
+  const qs = q.reduce((a, b) => a + b, 0) || 1;
+  const lin = rows.map((r) => Object.keys(MOFF_BETA).reduce((s, k) => s + MOFF_BETA[k] * (Number(r[k]) || 0), 0));
+  const w = rows.map((v, i) => (q[i] / qs) * Math.exp(lin[i]));
+  const ws = w.reduce((a, b) => a + b, 0) || 1;
+  let best = null;
+  rows.forEach((r, i) => {
+    const edge = w[i] / ws - q[i] / qs;
+    if (!best || edge > best.edge) best = { r, edge };
+  });
+  return best && best.edge >= MOFF_EDGE ? best : null;
+}
+
+function runMLShadow() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const pool = _ledger.wired.filter((r) => r.hasML && r.results.every((x) => x.scratched || x.ml !== undefined));
+  logMsg('── T2-MOFF-v1 ON THE MORNING LINE ─────────────────────');
+  logMsg('   races with a complete ML field: ' + pool.length + ' of ' + _ledger.wired.length
+       + '   (3 SAR days have no ML and never will)');
+  if (!pool.length) { logMsg('   no ML coverage — did the backfill run?', 'red'); return; }
+
+  const A = [], B = [];
+  let agree = 0, both = 0;
+  for (const race of pool) {
+    const a = moffPick(race, (r) => r.odds);
+    const b = moffPick(race, (r) => r.ml);
+    const k = rkey(race.track, race.race_date, race.race_no);
+    if (a) A.push({ race: k, horse: a.r.name, odds: a.r.odds, won: !!a.r.is_winner, finish: a.r.finish_pos });
+    if (b) B.push({ race: k, horse: b.r.name, odds: b.r.odds, won: !!b.r.is_winner, finish: b.r.finish_pos, ml: b.r.ml });
+    if (a && b) { both++; if (a.r === b.r) agree++; }
+  }
+  const sa = stat(A), sb = stat(B);
+  logMsg('   FINAL offset (registered frame)  bets ' + String(sa.n).padStart(3) + '  won ' + String(sa.w).padStart(2)
+       + '  hit ' + sa.hit.toFixed(1) + '%  ROI ' + (sa.roi >= 0 ? '+' : '') + sa.roi.toFixed(1) + '%');
+  logMsg('   ML offset (ex ante selection)    bets ' + String(sb.n).padStart(3) + '  won ' + String(sb.w).padStart(2)
+       + '  hit ' + sb.hit.toFixed(1) + '%  ROI ' + (sb.roi >= 0 ? '+' : '') + sb.roi.toFixed(1) + '%');
+  logMsg('   same horse picked in ' + agree + ' of ' + both + ' races where both fired'
+       + (both ? '  (' + (100 * agree / both).toFixed(0) + '%)' : ''));
+  logMsg('   Both arms are PAID at final odds. Only the offset differs.', 'yellow');
+  logMsg('   Betas were fitted with the final-odds offset; the ML arm runs them outside that frame.', 'yellow');
+  renderMLShadow(sa, sb, A, B, agree, both, pool.length);
+  showTab('mart'); showMart('races');
+}
+
+function renderMLShadow(sa, sb, A, B, agree, both, pool) {
+  const el = $('dm-races'); if (!el) return;
+  const row = (nm, s) => '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
+    + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>';
+  el.innerHTML = '<p class="sub">T2-MOFF-v1 over ' + pool + ' races with a complete morning line. Both arms are paid at '
+    + 'final odds; they differ only in which price forms the offset q.</p>'
+    + '<table class="roll-table"><thead><tr><th>offset</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
+    + row('final odds \u00b7 ex post', sa) + row('morning line \u00b7 ex ante', sb) + '</tbody></table>'
+    + '<p class="sub">Same horse selected in ' + agree + ' of ' + both + ' races where both fired. '
+    + 'The betas were fitted with the final-odds offset, so the ML arm applies them outside their fitted frame \u2014 '
+    + 'a proper test needs a refit, not a re-score. Neither arm is out of sample: these are the races the tag was fitted on.</p>';
 }
 
 // T2-SPDCLS-v1 — blind: frequency ONLY. FOUNDATION 10 / Chat 12 addendum.
@@ -10130,6 +10231,95 @@ function renderSweeps(tRows, fRows) {
       + '</td><td>' + r.bets + '</td><td>' + r.won + '</td><td>' + r.blockedP + '</td></tr>').join('') + '</tbody></table>';
   el.innerHTML = '<p class="sub">TAU sweep · gap 8 · floor 0.15. TAU is a calibration parameter — its value comes from the MLE, not from a bet count.</p>'
     + t + '<p class="sub">pModel-floor sweep · TAU 28 · gap 8. Shown as information. Selecting the floor that reproduces a desired bet count would be fitting to the outcome we expected.</p>' + f;
+}
+
+// ── v0.3.4 — is the morning line recoverable? ──────────────────────────────
+// FOUNDATION 4: stageChartRace OVERWRITES mlOdds with chart odds at staging, and odds have
+// been chart-accurate for every runner since 08/08. So for most of era 2 the card no longer
+// holds a morning line at all. This measures how much, if any, survives.
+function runMLCheck() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  logMsg('── MORNING LINE RECOVERABILITY ────────────────────────');
+  const byDate = new Map();
+  let same = 0, diff = 0, missing = 0;
+  for (const race of _ledger.wired) {
+    const d = String(race.race_date);
+    if (!byDate.has(d)) byDate.set(d, { same: 0, diff: 0, missing: 0 });
+    const acc = byDate.get(d);
+    for (const r of race.results) {
+      if (r.scratched) continue;
+      const c = r.cardOdds, f = r.odds;
+      if (c === null || c === undefined || f === null || f === undefined) { missing++; acc.missing++; continue; }
+      if (Math.abs(Number(c) - Number(f)) < 1e-9) { same++; acc.same++; } else { diff++; acc.diff++; }
+    }
+  }
+  logMsg('   card mlOdds identical to chart odds : ' + same + '   (morning line destroyed)');
+  logMsg('   card mlOdds differs from chart odds : ' + diff + '   (a genuine pre-race price survives)',
+         diff ? 'green' : 'red');
+  logMsg('   one side missing                    : ' + missing);
+  const dates = [...byDate.keys()].sort();
+  logMsg('   by race day (only days with survivors shown):');
+  let anyDay = 0;
+  for (const d of dates) {
+    const a = byDate.get(d);
+    if (!a.diff) continue;
+    anyDay++;
+    logMsg('     ' + d + '   survives ' + a.diff + '   overwritten ' + a.same);
+  }
+  if (!anyDay) logMsg('     none — the morning line is unrecoverable for every race day in era 2', 'red');
+  renderML(byDate, { same, diff, missing });
+  showTab('mart'); showMart('races');
+}
+
+function renderML(byDate, tot) {
+  const el = $('dm-races'); if (!el) return;
+  const dates = [...byDate.keys()].sort();
+  el.innerHTML = '<p class="sub">Morning-line recoverability. stageChartRace overwrites the card\'s mlOdds with the '
+    + 'chart price at staging, so a row where the two are identical has lost its morning line.</p>'
+    + '<table class="roll-table"><thead><tr><th>race day</th><th>ML survives</th><th>overwritten</th></tr></thead><tbody>'
+    + dates.map((d) => { const a = byDate.get(d);
+        return '<tr><td>' + d + '</td><td class="' + (a.diff ? 'green' : 'muted') + '">' + a.diff + '</td><td class="muted">'
+          + a.same + '</td></tr>'; }).join('')
+    + '</tbody></table><p class="sub">Totals \u2014 survives ' + tot.diff + ' \u00b7 overwritten ' + tot.same
+    + ' \u00b7 one side missing ' + tot.missing + '</p>';
+}
+
+// ── v0.3.4 — price realization on MOFF's own picks ─────────────────────────
+// A genuine pre-race MOFF is NOT computable: hra_bets.odds_at_bet holds a pre-race price for
+// ONE horse (the one Ron bet), and MOFF needs the whole field's q to form p - q. So this does
+// not re-select. It measures what MOFF's existing picks would have paid at a price that
+// actually existed, on the subset where MOFF's pick and a logged bet are the same horse.
+function runPriceRealization() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const picks = runMoff();
+  const betIx = new Map();
+  for (const b of _ledger.bets) {
+    const k = rkey(b.track, b.race_date, b.race_no) + '|' + String(b.horse || '').trim().toUpperCase();
+    const pre = parseOdds(b.odds_at_bet);
+    if (pre !== null) betIx.set(k, pre);
+  }
+  const rows = [];
+  for (const p of picks) {
+    const pre = betIx.get(p.race + '|' + String(p.horse || '').trim().toUpperCase());
+    if (pre === null || pre === undefined) continue;
+    rows.push({ ...p, pre, fin: Number(p.odds) });
+  }
+  logMsg('── PRICE REALIZATION ON MOFF PICKS ────────────────────');
+  logMsg('   MOFF picks ' + picks.length + '   ·  with a matching logged pre-race price: ' + rows.length);
+  if (!rows.length) { logMsg('   no overlap — MOFF and the doctrine picked different horses in every bet race', 'yellow'); return; }
+  const plF = rows.reduce((a, r) => a + (r.won ? 2 * r.fin : -2), 0);
+  const plP = rows.reduce((a, r) => a + (r.won ? 2 * r.pre : -2), 0);
+  const stake = rows.length * 2;
+  const shorter = rows.filter((r) => r.pre > r.fin).length;
+  const drift = rows.map((r) => (r.fin - r.pre) / (r.pre || 1));
+  drift.sort((a, b) => a - b);
+  const med = drift[Math.floor(drift.length / 2)];
+  logMsg('   at FINAL odds     ROI ' + (100 * plF / stake).toFixed(1) + '%');
+  logMsg('   at PRE-RACE odds  ROI ' + (100 * plP / stake).toFixed(1) + '%');
+  logMsg('   shortened by post time: ' + shorter + '/' + rows.length + '   median drift ' + (100 * med).toFixed(1) + '%');
+  rows.forEach((r) => logMsg('     ' + r.race + '  ' + r.horse + '   pre ' + r.pre.toFixed(2)
+       + '   final ' + r.fin.toFixed(2) + '   ' + (r.won ? 'WON' : 'lost')));
+  logMsg('   NOTE: this does not re-select. A true pre-race MOFF needs the whole field\'s pre-race board, which was never captured.', 'yellow');
 }
 
 // ── v0.2.8 — are the pModel floor and the gap gate the same test? ──────────
