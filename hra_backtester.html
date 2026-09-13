@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.2</title>
+<title>HRA Backtester v0.3.3</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -254,7 +254,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.2'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.3'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10367,12 +10367,27 @@ function renderBets(sets, meta) {
 async function boot() {
   _sbKey = (($('sb-key') || {}).value || '').trim();
   if (!_sbKey) { logMsg('paste the anon key first', 'red'); return; }
+  // Saved under the backtester's OWN key. index.html owns 'hra_supa_key' and this never
+  // writes it — a read-only tool must not be able to clobber the app's credential.
+  try { localStorage.setItem('hra_bt_key', _sbKey); } catch (e) {}
   logMsg('endpoint ' + SB_URL);
   try { await loadLedger(); } catch (e) { logMsg('LOAD FAILED — ' + e.message, 'red'); showError(String(e.stack || e)); }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   showTab("trades");
+  // Same origin as index.html, so the app's stored credential is already readable here.
+  // Prefer it; fall back to anything this tool saved itself.
+  try {
+    const el = $('sb-key');
+    const k = localStorage.getItem('hra_supa_key') || localStorage.getItem('hra_bt_key');
+    if (el && k) {
+      el.value = k;
+      const src = localStorage.getItem('hra_supa_key') ? 'app settings' : 'this tool';
+      const sl = $('status-line');
+      if (sl) sl.textContent = 'Key loaded from ' + src + '. Press Load ledger.';
+    }
+  } catch (e) {}
   const c = $('const-line'); if (c) c.textContent =
     'Constants: dirt only · no straight claiming · 6\u20139f · speedScale beyer · fence 1 md5 '
     + HRA_F1_MD5.slice(0, 8) + '\u2026 · model v3 BELMONT';
