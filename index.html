@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v3.1.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v3.1.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -419,6 +419,50 @@ function simVerdict(rows) {
 }
 /* SIM-CORE END */
 
+// 3.1.1 [fix] — the morning line, captured. Deliberately OUTSIDE the fence: parseEntriesText
+// is sim-core, and this adds data rather than changing any rating. The entries page is the
+// ONLY place the ML exists — stageChartRace overwrites card mlOdds with the chart price at
+// staging, so by the time a race is logged the morning line is already gone.
+function parseEntriesML(text) {
+  // pdfFileToText joins every item on a page with spaces, so the whole page arrives as one
+  // line. Work flowed — never rely on newlines.
+  let t = String(text)
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\d{1,2}\/\d{1,2}\/\d{2},?\s*\d{1,2}\s*:?\s*\d{2}\s*[AP]?M?/gi, ' ')
+    .replace(/Page\s+\d+\s+of\s+\d+/gi, ' ')
+    .replace(/\s+/g, ' ');
+  const sw = t.search(/S\s*c\s*r\s*a\s*t\s*c\s*h\s+W\s*a\s*t\s*c\s*h/i);
+  if (sw >= 0) t = t.slice(0, sw);
+
+  // The anchor is the WHOLE row: post · name · ML · jockey · weight(3 digits).
+  // Consuming through the weight is what stops a lazy name from running into the next
+  // row's post number — the failure that silently dropped three runners in testing.
+  const ROW = /(\d{1,2})\s+([A-Za-z][A-Za-z .,'’\u2019\-&()]{1,32}?)\s+(\d{1,3})\s*\/\s*(\d{1,3})\s+([A-Z][A-Za-z.,'\u2019\- ]{2,30}?)\s+(\d{3})(?!\d)/g;
+  const out = [];
+  const parts = t.split(/(\d{1,2})(?:st|nd|rd|th)\s+Race\s*-\s*/);
+  for (let i = 1; i < parts.length; i += 2) {
+    const no = parseInt(parts[i], 10);
+    let block = parts[i + 1] || '';
+    const h = block.search(/#\s*Horse\s*Odds\s*Jockey/i);
+    if (h < 0) continue;
+    block = block.slice(h);
+    const o = block.search(/\bOwners\s*:/i);
+    if (o >= 0) block = block.slice(0, o);
+    const seen = new Set(), ml = [];
+    let m;
+    ROW.lastIndex = 0;
+    while ((m = ROW.exec(block))) {
+      const post = parseInt(m[1], 10);
+      const name = m[2].trim().replace(/\s*\([A-Z]{2,3}\)\s*$/, '').replace(/\s+/g, ' ');
+      if (!post || post > 30 || seen.has(post) || !name) continue;
+      seen.add(post);
+      ml.push({ post, horse: name, ml: Math.round((parseInt(m[3], 10) / parseInt(m[4], 10)) * 1000) / 1000 });
+    }
+    if (ml.length) out.push({ raceNumber: no, ml });
+  }
+  return out;
+}
+
 // ---- RESULTS CHART PARSER (module-level, fence-free) ----
 // 2.30.0: official finishing positions for the whole field.
 // The running-line table is printed in finish order, but row order cannot express a tie —
@@ -611,7 +655,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.1.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -1896,6 +1940,12 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         const ymd0 = parsed.ymd || entriesDateToYmd(parsed.dateStr);
         let races = parsed.races.map((r) => ({ ...r, ...qualify(r) }));
         if (isEtd) races = await mergeStoredPostTimes(key, ymd0, races);
+        // 3.1.1 — attach the morning line. Read from the RAW text: parseEntriesML does its
+        // own footer strip, and works flowed because pdfFileToText returns one line per page.
+        try {
+          const mlByRace = new Map(parseEntriesML(text).map((x) => [x.raceNumber, x.ml]));
+          races = races.map((r) => (mlByRace.has(r.raceNumber) ? { ...r, ml: mlByRace.get(r.raceNumber) } : r));
+        } catch (mlErr) { console.error("ML parse", mlErr); }
         setPostTimes((prev) => ({ ...prev, [key + "|" + ymd0]: Object.fromEntries(races.map((r) => [r.raceNumber, { t: r.postTime, sel: r.selections || null, watch: r.watch || [] }])) }));
         await saveEntries(key, parsed.track, ymd0, races);
         found.push({ track: parsed.track, code: parsed.trackCode, ymd: ymd0, dateStr: parsed.dateStr || ymdToDisplay(ymd0), races });
