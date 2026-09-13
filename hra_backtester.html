@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.2.9</title>
+<title>HRA Backtester v0.3.0</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -194,7 +194,7 @@ select.display-box { cursor:pointer; outline:none; }
       <div class="pcard"><div class="pl">TAU <span class="pq">SIM</span></div><div class="pv">28</div><div class="ps">Not wired</div></div>
       <div class="pcard"><div class="pl">GAP GATE <span class="pq">DOCTRINE</span></div><div class="pv">8.0</div><div class="ps">Not wired</div></div>
       <div class="pcard"><div class="pl">EDGE FLOOR <span class="pq">VERDICT</span></div><div class="pv">0.10</div><div class="ps">Not wired</div></div>
-      <div class="pcard"><div class="pl">WIN% FLOOR <span class="pq">VERDICT</span></div><div class="pv">15%</div><div class="ps">Not wired</div></div>
+      <div class="pcard"><div class="pl">pMODEL FLOOR <span class="pq">VERDICT</span></div><div class="pv">15%</div><div class="ps">deployed &middot; v3.1 proposes 9%</div></div>
       <div class="pcard"><div class="pl">PRICE FLOOR <span class="pq">DOCTRINE</span></div><div class="pv">EVENS</div><div class="ps">Not wired</div></div>
       <div class="pcard"><div class="pl">DISTANCE <span class="pq">DOCTRINE</span></div><div class="pv">6&ndash;9f</div><div class="ps">Not wired</div></div>
       <div class="pcard"><div class="pl">MOFF EDGE <span class="pq">TAG</span></div><div class="pv">0.04</div><div class="ps">Not wired</div></div>
@@ -206,11 +206,19 @@ select.display-box { cursor:pointer; outline:none; }
     <!-- SPY tab ids kept verbatim so showTab() transfers unmodified; labels are HRA's.
          mart=Races  trades/tab-log=Bets  heatmap=Sweep  runlog=Run Log -->
     <div class="tab-bar" id="tabs">
-      <button class="tab-btn active" id="tab-btn-trades" onclick="showTab('trades')">Activity</button>
-      <button class="tab-btn"        id="tab-btn-runlog" onclick="showTab('runlog')">Logs</button>
-      <button class="tab-btn"        id="tab-btn-mart"   onclick="showTab('mart')">Data Mart</button>
+      <button class="tab-btn active" id="tab-btn-trades"   onclick="showTab('trades')">Activity</button>
+      <button class="tab-btn"        id="tab-btn-heatmap"  onclick="showTab('heatmap')">v2</button>
+      <button class="tab-btn"        id="tab-btn-gaps"     onclick="showTab('gaps')">v3</button>
+      <button class="tab-btn"        id="tab-btn-scan"     onclick="showTab('scan')">v3.1</button>
+      <button class="tab-btn"        id="tab-btn-research" onclick="showTab('research')">MOFF</button>
+      <button class="tab-btn"        id="tab-btn-runlog"   onclick="showTab('runlog')">Logs</button>
+      <button class="tab-btn"        id="tab-btn-mart"     onclick="showTab('mart')">Data Mart</button>
     </div>
-    <div id="tab-log">No run yet. Press Score to populate the blotter.</div>
+    <div id="tab-log">No run yet. Load the ledger to populate.</div>
+    <div id="tab-heatmap"  style="display:none">No run yet.</div>
+    <div id="tab-gaps"     style="display:none">No run yet.</div>
+    <div id="tab-scan"     style="display:none">No run yet.</div>
+    <div id="tab-research" style="display:none">No run yet.</div>
     <div id="tab-runlog" style="display:none">
       <div class="panehead"><span class="mono">RUN LOG</span>
         <span style="display:flex;gap:8px">
@@ -243,7 +251,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.2.9'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -259,7 +267,7 @@ let _mode='test', _debugMode=false;  // referenced by logDbg (kept live)
 // infrastructure calls. Each dies when its module's HRA equivalent is un-remmed.
 function renderMartCards(){}      // seam: data mart viewer
 function renderPerfPanel(){}      // seam: common-window performance
-function renderResearchTab(){}    // seam: walk-forward registry
+function renderResearchTab(){}    // seam: walk-forward registry — MOFF pane is rendered by renderBets
 function setChartView(){}         // seam: equity/price charts
 function setChatContext(){}       // seam: chat panels
 function anySweepActive(){return false;} // seam: optimization sweep
@@ -9863,6 +9871,26 @@ function runDoctrine(tau, gap) {
   return out;
 }
 
+// v3.1 — TAU 28, gap 8, pModel floor 0.09. The floor is rescaled to preserve the share
+// of races it rejected at TAU 8 (32 of 163, exactly matched at 0.09), NOT chosen for its
+// bet count. simVerdict's 0.15 is inside fence 1, so this runs through verdictAtFloor,
+// which runAll proves equivalent to the fence at 0.15 before reporting anything.
+function runDoctrineFloor(tau, gap, floor) {
+  _TAU = tau; _GAP = gap;
+  const out = [];
+  for (const race of _ledger.wired) {
+    const { overlay } = scoreRaceRows(race.results);
+    const v = verdictAtFloor(overlay, floor);
+    if (!['WIN', 'PLACE', 'SHOW'].includes(v.action)) continue;
+    const d = doctrineFilter(overlay, race.raceInfo || {});
+    if (!d || !d.bet) continue;
+    const h = d.bet;
+    out.push({ race: rkey(race.track, race.race_date, race.race_no), horse: h.name,
+               odds: h.odds, won: !!h.is_winner, finish: h.finish_pos });
+  }
+  return out;
+}
+
 // T2-MOFF-v1 — Plackett-Luce, board as fixed offset. Frozen betas, Chat 12.
 const MOFF_BETA = { earlySpeed: 0.006211, recentForm: -0.017229, speed: -0.008434,
                     class: -0.097994, consistency: 0.022391, freshness: 0.039219, post: 0.0 };
@@ -10201,7 +10229,12 @@ async function runAll() {
   if (!_ledger) { logMsg('load first', 'red'); return; }
   if (!_ledger.gateA) { logMsg('GATE A failed — nothing downstream is trustworthy. Not scoring.', 'red'); return; }
   logMsg('── SCORE ──────────────────────────────────────────────');
-  const v2 = runDoctrine(8, 6), v3 = runDoctrine(28, 8), mo = runMoff(), sp = runSpdclsFrequency();
+  const eq = replicaEquivalent();
+  logMsg('  replica vs fence simVerdict @0.15: ' + (eq.checked - eq.diff) + '/' + eq.checked
+       + (eq.diff ? '  MISMATCH — v3.1 suppressed' : '  EQUIVALENT'), eq.diff ? 'red' : 'green');
+  const v2 = runDoctrine(8, 6), v3 = runDoctrine(28, 8);
+  const v31 = eq.diff ? [] : runDoctrineFloor(28, 8, 0.09);
+  const mo = runMoff(), sp = runSpdclsFrequency();
 
   // ── GATE B — replay against the golden-master counts (FOUNDATION 7) ───────
   // Those were cut on the 164-race fixture: 2.30.1 -> 25 bets/8 won, 2.32.0 -> 20/8.
@@ -10216,7 +10249,8 @@ async function runAll() {
   logMsg('  GATE C  T2-MOFF-v1 fires ' + mo.length + ' vs registered 60  ' + (Math.abs(mo.length - 60) <= 1 ? 'PASS' : 'FAIL'),
          Math.abs(mo.length - 60) <= 1 ? 'green' : 'red');
   logMsg('  T2-SPDCLS-v1 fires: ' + sp + ' (frequency only — blind holds, no outcome computed)');
-  renderBets({ v2, v3, mo }, { okB });
+  logMsg('  v3.1  tau 28 · gap 8 · floor 0.09   bets ' + v31.length + '   won ' + v31.filter((b) => b.won).length);
+  renderBets({ v2, v3, v31, mo }, { okB });
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -10285,7 +10319,8 @@ function renderHorses() {
 
 function renderBets(sets, meta) {
   const el = $('tab-log'); if (!el) return;
-  const rows = [['v2  tau 8 · gap 6', sets.v2], ['v3  tau 28 · gap 8', sets.v3], ['T2-MOFF-v1', sets.mo]]
+  const rows = [['v2  tau 8 · gap 6', sets.v2], ['v3  tau 28 · gap 8 · floor 0.15', sets.v3],
+                ['v3.1  tau 28 · gap 8 · floor 0.09', sets.v31 || []], ['T2-MOFF-v1', sets.mo]]
     .map(([nm, b]) => { const s = stat(b);
       return '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
            + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>'; }).join('');
@@ -10303,12 +10338,16 @@ function renderBets(sets, meta) {
             + '</td></tr>'; }).join('') + '</tbody></table></div>'; };
   el.innerHTML = '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
     + rows + '</tbody></table>'
-    + blot('v2 \u00b7 tau 8 \u00b7 gap 6', sets.v2) + blot('v3 \u00b7 tau 28 \u00b7 gap 8', sets.v3)
-    + blot('T2-MOFF-v1', sets.mo)
+
     + '<p class="sub">Flat $2 win, final odds (hra_race_log.odds) for every rule — the only price basis covering all races. '
     + 'Pre-race prices exist on ~40 bet rows only; Chat 12 measured median drift -10.8%, so these ROIs are an upper bound. '
     + 'v2, v3 and T2-MOFF-v1 were all fitted or tuned on these races. This is a replay, not a test.</p>'
     + (meta && meta.okB ? '' : '<p class="sub" style="color:var(--red)">GATE B did not pass — treat the table as diagnostics, not results.</p>');
+  const put = (id, nm, b) => { const p = $(id); if (p) p.innerHTML = blot(nm, b || []); };
+  put('tab-heatmap',  'v2 \u00b7 tau 8 \u00b7 gap 6', sets.v2);
+  put('tab-gaps',     'v3 \u00b7 tau 28 \u00b7 gap 8 \u00b7 floor 0.15  (deployed)', sets.v3);
+  put('tab-scan',     'v3.1 \u00b7 tau 28 \u00b7 gap 8 \u00b7 floor 0.09  (proposed)', sets.v31);
+  put('tab-research', 'T2-MOFF-v1', sets.mo);
 }
 
 async function boot() {
