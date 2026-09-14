@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.5.1</title>
+<title>HRA Backtester v0.5.2</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -198,7 +198,6 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
     <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
     <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
-    <button class="tab-btn" onclick="runMatched()">Matched subset</button>
     <button class="tab-btn" onclick="runLedgerDiff()">Ledger diff</button>
     <button class="tab-btn" onclick="runRepeats()">Repeats</button>
   </div>
@@ -260,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.5.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.5.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10284,8 +10283,15 @@ function runRepeats() {
   logMsg('     ran more than once at the meet: ' + mineMulti.length + '/' + mine.length
        + '  (' + (100 * mineMulti.length / (mine.length || 1)).toFixed(0) + '%)'
        + '   ·  total starts by bet horses: ' + mine.reduce((a, m) => a + m.n, 0));
-  if (noLog.length) logMsg('     ⚠ ' + noLog.length + ' bet horses have NO log row: '
-       + noLog.map((m) => m.name).join(', '), 'red');
+  // A scratched horse gets a refund and never appears in hra_race_log — expected, not a
+  // name mismatch. Only a horse with neither a log row nor a refund is a real defect.
+  const refunded = new Set(splitTickets(_ledger.bets || []).refund.map((b) => nameKey(b.horse)));
+  const scratched = noLog.filter((m) => refunded.has(nameKey(m.name)));
+  const orphan    = noLog.filter((m) => !refunded.has(nameKey(m.name)));
+  if (scratched.length) logMsg('     no log row, refunded (scratched — expected): '
+       + scratched.map((m) => m.name).join(', '));
+  if (orphan.length) logMsg('     ⚠ ' + orphan.length + ' bet horses have NO log row and NO refund: '
+       + orphan.map((m) => m.name).join(', '), 'red');
   logMsg('   ── every horse bet, by starts at the meet ──');
   mine.forEach((m) => logMsg('     ' + String(m.n) + ' start' + (m.n === 1 ? ' ' : 's')
        + '  · ' + String(m.w) + ' win' + (m.w === 1 ? ' ' : 's')
@@ -10355,26 +10361,13 @@ function runHandicapper() {
   logMsg(line('  handicapper', sdH));
   logMsg(line('  HRA', sdR));
   logMsg('   Flat $2 win at final odds. All in-sample; no fitter here, so no pseudo-R^2.', 'yellow');
+  // v0.5.2 — the matched subset is the same data asking a narrower question, so it runs
+  // here rather than behind its own button: given that the doctrine says a race is worth
+  // playing, does the machine pick a better horse than the human?
+  runMatched();
   showTab('runlog');
 }
 
-function renderHandicapper(x) {
-  const el = $('dm-races'); if (!el) return;
-  const row = (nm, s) => '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
-    + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>';
-  el.innerHTML = '<p class="sub">Brisnet\'s handicapper vs the machine, over ' + x.pool + ' races carrying a stored selection. '
-    + 'Flat $2 win at final odds, top pick only, no doctrine filter on any arm.</p>'
-    + '<table class="roll-table"><thead><tr><th>picker</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
-    + row('Brisnet top pick', x.sH) + row('HRA top-rated', x.sR) + row('public favourite', x.sF) + '</tbody></table>'
-    + '<p class="sub">They name the same horse in ' + x.agree + ' of ' + x.pool + ' races ('
-    + (100 * x.agree / x.pool).toFixed(0) + '%). The handicapper takes the favourite '
-    + (100 * x.hcapIsFav / x.pool).toFixed(0) + '% of the time; HRA takes it '
-    + (100 * x.ratedIsFav / x.pool).toFixed(0) + '%.</p>'
-    + '<p class="sub">Where they disagree \u2014 ' + x.dis + ' races. This is the part that matters: a model that only '
-    + 'wins where it already agrees with a human has not added anything.</p>'
-    + '<table class="roll-table"><thead><tr><th>picker</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
-    + row('handicapper', x.sdH) + row('HRA', x.sdR) + '</tbody></table>';
-}
 
 // ── v0.3.5 — T2-MOFF-v1 scored off the MORNING LINE ────────────────────────
 // Two arms, both PAID at final odds because that is what a ticket actually returns.
@@ -10437,18 +10430,6 @@ function runMLShadow() {
   showTab('runlog');
 }
 
-function renderMLShadow(sa, sb, A, B, agree, both, pool) {
-  const el = $('dm-races'); if (!el) return;
-  const row = (nm, s) => '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
-    + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>';
-  el.innerHTML = '<p class="sub">T2-MOFF-v1 over ' + pool + ' races with a complete morning line. Both arms are paid at '
-    + 'final odds; they differ only in which price forms the offset q.</p>'
-    + '<table class="roll-table"><thead><tr><th>offset</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
-    + row('final odds \u00b7 ex post', sa) + row('morning line \u00b7 ex ante', sb) + '</tbody></table>'
-    + '<p class="sub">Same horse selected in ' + agree + ' of ' + both + ' races where both fired. '
-    + 'The betas were fitted with the final-odds offset, so the ML arm applies them outside their fitted frame \u2014 '
-    + 'a proper test needs a refit, not a re-score. Neither arm is out of sample: these are the races the tag was fitted on.</p>';
-}
 
 // T2-SPDCLS-v1 — blind: frequency ONLY. FOUNDATION 10 / Chat 12 addendum.
 function runSpdclsFrequency() {
@@ -10468,110 +10449,9 @@ const stat = (bets) => {
   return { n, w, hit: n ? (100 * w / n) : 0, roi: stake ? (100 * ret / stake) : 0 };
 };
 
-// v0.2.4 — separates TAU from the gap gate. v2 moved both at once, so neither
-// the golden 25 nor the golden 20 can be attributed from a single pair.
-function runGrid() {
-  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  logMsg('── TAU x GAP GRID ─────────────────────────────────────');
-  logMsg('   scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
-  if (scopeIsFull())
-    logMsg('   golden master (FOUNDATION 7, 164-race fixture): tau8/gap6 = 25 bets/8 won · tau28/gap8 = 20/8');
-  else
-    logMsg('   golden comparison SUPPRESSED — it was cut on the full fixture and says nothing about a window.', 'yellow');
-  const out = [];
-  for (const tau of [8, 28]) {
-    for (const gap of [6, 8]) {
-      const b = runDoctrine(tau, gap), st = stat(b);
-      out.push({ tau, gap, n: st.n, w: st.w, roi: st.roi });
-      logMsg('   tau ' + String(tau).padStart(2) + '  gap ' + gap + '   bets ' + String(st.n).padStart(3)
-           + '   won ' + String(st.w).padStart(3) + '   ROI ' + (st.roi >= 0 ? '+' : '') + st.roi.toFixed(1) + '%');
-    }
-  }
-  const t8g6 = out.find((o) => o.tau === 8 && o.gap === 6).n;
-  const t8g8 = out.find((o) => o.tau === 8 && o.gap === 8).n;
-  const t28g6 = out.find((o) => o.tau === 28 && o.gap === 6).n;
-  logMsg('   TAU effect at gap 6: ' + t8g6 + ' -> ' + t28g6 + '   (FOUNDATION says TAU does not touch selection)',
-         t8g6 === t28g6 ? 'green' : 'red');
-  logMsg('   GAP effect at tau 8: ' + t8g6 + ' -> ' + t8g8 + '   (golden says 25 -> 20)');
-  renderGrid(out);
-  showTab('mart'); showMart('races');
-}
-function renderGrid(out) {
-  const el = $('dm-races'); if (!el) return;
-  el.innerHTML = '<table class="roll-table"><thead><tr><th>TAU</th><th>gap</th><th>bets</th><th>won</th><th>ROI</th><th>golden</th></tr></thead><tbody>'
-    + out.map((o) => {
-        const g = !scopeIsFull() ? 'n/a' : (o.tau === 8 && o.gap === 6) ? '25 / 8' : (o.tau === 28 && o.gap === 8) ? '20 / 8' : '—';
-        return '<tr><td>' + o.tau + '</td><td>' + o.gap + '</td><td>' + o.n + '</td><td>' + o.w + '</td><td class="'
-             + (o.roi >= 0 ? 'green' : 'red') + '">' + (o.roi >= 0 ? '+' : '') + o.roi.toFixed(1) + '%</td><td class="muted">' + g + '</td></tr>';
-      }).join('')
-    + '</tbody></table><p class="sub">' + scopeStamp() + '. '
-    + (scopeIsFull()
-        ? 'Golden-master counts are from the 164-race fixture; era 2 is now 163 races, so a shortfall of one is expected.'
-        : 'Golden-master counts were cut on the full fixture and are not comparable to a window, so the column reads n/a.')
-    + '</p>';
-}
 
-// v0.2.5 — why does TAU move selection? simVerdict gates on the top-edge horse:
-// edge >= 0.10 then pModel >= 0.15. TAU is the softmax temperature, so raising it
-// flattens pWin and must lower the leader's pModel. This prints the gate inputs.
-function verdictProbe(tau) {
-  _TAU = tau;
-  const acts = {}, recs = [];
-  let sumP = 0, sumE = 0, n = 0, failEdge = 0, failP = 0;
-  for (const race of scopedRaces()) {
-    const { overlay, verdict } = scoreRaceRows(race.results);
-    const live = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
-    if (!live.length) continue;
-    const best = live.reduce((a, b) => (b.edge > a.edge ? b : a));
-    acts[verdict.action] = (acts[verdict.action] || 0) + 1;
-    if (best.edge < 0.10) failEdge++;
-    else if (best.pModel < 0.15) failP++;
-    sumP += best.pModel; sumE += best.edge; n++;
-    recs.push({ k: rkey(race.track, race.race_date, race.race_no), horse: best.name,
-                p: best.pModel, e: best.edge, a: verdict.action });
-  }
-  return { tau, acts, meanP: sumP / (n || 1), meanE: sumE / (n || 1), failEdge, failP, n, recs };
-}
 
-function runVerdictDiag() {
-  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  const a = verdictProbe(8), b = verdictProbe(28);
-  logMsg('── VERDICT INPUTS: TAU 8 vs TAU 28 ────────────────────');
-  for (const r of [a, b]) {
-    logMsg('   TAU ' + String(r.tau).padStart(2) + '   races ' + r.n
-         + '   mean top pModel ' + r.meanP.toFixed(3)
-         + '   mean top edge ' + r.meanE.toFixed(3));
-    logMsg('        actions ' + Object.keys(r.acts).sort().map((k) => k + ':' + r.acts[k]).join('  ')
-         + '   ·  blocked by edge<0.10: ' + r.failEdge + '   blocked by pModel<0.15: ' + r.failP);
-  }
-  const flips = [];
-  const bMap = new Map(b.recs.map((x) => [x.k, x]));
-  for (const x of a.recs) {
-    const y = bMap.get(x.k); if (!y) continue;
-    const betA = ['WIN', 'PLACE', 'SHOW'].includes(x.a), betB = ['WIN', 'PLACE', 'SHOW'].includes(y.a);
-    if (betA !== betB) flips.push({ k: x.k, horse: x.horse, pA: x.p, eA: x.e, aA: x.a, pB: y.p, eB: y.e, aB: y.a });
-  }
-  logMsg('   races whose verdict flips between TAU 8 and TAU 28: ' + flips.length, flips.length ? 'yellow' : 'green');
-  flips.slice(0, 12).forEach((f) => logMsg('     ' + f.k + '  ' + f.horse
-       + '   tau8 p=' + f.pA.toFixed(3) + ' e=' + f.eA.toFixed(3) + ' ' + f.aA
-       + '   |  tau28 p=' + f.pB.toFixed(3) + ' e=' + f.eB.toFixed(3) + ' ' + f.aB));
-  renderVerdict(a, b, flips);
-  showTab('runlog');
-  _TAU = 28;
-}
 
-function renderVerdict(a, b, flips) {
-  const el = $('dm-races'); if (!el) return;
-  const row = (r) => '<tr><td>' + r.tau + '</td><td>' + r.n + '</td><td>' + r.meanP.toFixed(3) + '</td><td>'
-    + r.meanE.toFixed(3) + '</td><td>' + (r.acts.PASS || 0) + '</td><td>' + (r.acts.WIN || 0) + '</td><td>'
-    + r.failEdge + '</td><td>' + r.failP + '</td></tr>';
-  el.innerHTML = '<table class="roll-table"><thead><tr><th>TAU</th><th>races</th><th>mean top pModel</th>'
-    + '<th>mean top edge</th><th>PASS</th><th>WIN</th><th>edge&lt;.10</th><th>pModel&lt;.15</th></tr></thead><tbody>'
-    + row(a) + row(b) + '</tbody></table>'
-    + '<p class="sub">simVerdict gates the top-edge horse: edge &ge; 0.10, then pModel &ge; 0.15. TAU is the softmax '
-    + 'temperature in fence 2, so a higher TAU flattens pWin and lowers the leader\'s pModel. '
-    + flips.length + ' races flip their verdict between the two settings.</p>';
-}
 
 // ── v0.2.6 sweeps — diagnostic. Neither picks a value. ─────────────────────
 // simVerdict's 0.15 pModel floor is INSIDE fence 1, which has stayed byte-identical.
@@ -10651,208 +10531,12 @@ function runSweeps() {
   _TAU = 28; _GAP = 8;
 }
 
-function renderSweeps(tRows, fRows) {
-  const el = $('dm-races'); if (!el) return;
-  const t = '<table class="roll-table"><thead><tr><th>TAU</th><th>bets</th><th>won</th><th>PASS</th>'
-    + '<th>blocked by pModel</th><th>mean top pModel</th><th></th></tr></thead><tbody>'
-    + tRows.map((r) => '<tr' + (r.tau === 28 ? ' class="best-row"' : '') + '><td>' + r.tau + '</td><td>' + r.bets
-      + '</td><td>' + r.won + '</td><td>' + r.passes + '</td><td>' + r.blockedP + '</td><td>' + r.meanP.toFixed(3)
-      + '</td><td class="muted">' + (Math.abs(r.tau - 18.9) < 0.01 ? 'CI low' : Math.abs(r.tau - 51.5) < 0.01 ? 'CI high'
-        : r.tau === 28 ? 'MLE' : r.tau === 8 ? 'v2' : '') + '</td></tr>').join('') + '</tbody></table>';
-  const f = '<table class="roll-table"><thead><tr><th>pModel floor</th><th>bets</th><th>won</th><th>blocked by pModel</th></tr></thead><tbody>'
-    + fRows.map((r) => '<tr' + (Math.abs(r.floor - 0.15) < 0.001 ? ' class="best-row"' : '') + '><td>' + r.floor.toFixed(2)
-      + '</td><td>' + r.bets + '</td><td>' + r.won + '</td><td>' + r.blockedP + '</td></tr>').join('') + '</tbody></table>';
-  el.innerHTML = '<p class="sub">TAU sweep · gap 8 · floor 0.15. TAU is a calibration parameter — its value comes from the MLE, not from a bet count.</p>'
-    + t + '<p class="sub">pModel-floor sweep · TAU 28 · gap 8. Shown as information. Selecting the floor that reproduces a desired bet count would be fitting to the outcome we expected.</p>' + f;
-}
 
-// ── v0.3.4 — is the morning line recoverable? ──────────────────────────────
-// FOUNDATION 4: stageChartRace OVERWRITES mlOdds with chart odds at staging, and odds have
-// been chart-accurate for every runner since 08/08. So for most of era 2 the card no longer
-// holds a morning line at all. This measures how much, if any, survives.
-function runMLCheck() {
-  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  logMsg('── MORNING LINE RECOVERABILITY ────────────────────────');
-  const byDate = new Map();
-  let same = 0, diff = 0, missing = 0;
-  for (const race of _ledger.wired) {
-    const d = String(race.race_date);
-    if (!byDate.has(d)) byDate.set(d, { same: 0, diff: 0, missing: 0 });
-    const acc = byDate.get(d);
-    for (const r of race.results) {
-      if (r.scratched) continue;
-      const c = r.cardOdds, f = r.odds;
-      if (c === null || c === undefined || f === null || f === undefined) { missing++; acc.missing++; continue; }
-      if (Math.abs(Number(c) - Number(f)) < 1e-9) { same++; acc.same++; } else { diff++; acc.diff++; }
-    }
-  }
-  logMsg('   card mlOdds identical to chart odds : ' + same + '   (morning line destroyed)');
-  logMsg('   card mlOdds differs from chart odds : ' + diff + '   (a genuine pre-race price survives)',
-         diff ? 'green' : 'red');
-  logMsg('   one side missing                    : ' + missing);
-  const dates = [...byDate.keys()].sort();
-  logMsg('   by race day (only days with survivors shown):');
-  let anyDay = 0;
-  for (const d of dates) {
-    const a = byDate.get(d);
-    if (!a.diff) continue;
-    anyDay++;
-    logMsg('     ' + d + '   survives ' + a.diff + '   overwritten ' + a.same);
-  }
-  if (!anyDay) logMsg('     none — the morning line is unrecoverable for every race day in era 2', 'red');
-  renderML(byDate, { same, diff, missing });
-  showTab('mart'); showMart('races');
-}
 
-function renderML(byDate, tot) {
-  const el = $('dm-races'); if (!el) return;
-  const dates = [...byDate.keys()].sort();
-  el.innerHTML = '<p class="sub">Morning-line recoverability. stageChartRace overwrites the card\'s mlOdds with the '
-    + 'chart price at staging, so a row where the two are identical has lost its morning line.</p>'
-    + '<table class="roll-table"><thead><tr><th>race day</th><th>ML survives</th><th>overwritten</th></tr></thead><tbody>'
-    + dates.map((d) => { const a = byDate.get(d);
-        return '<tr><td>' + d + '</td><td class="' + (a.diff ? 'green' : 'muted') + '">' + a.diff + '</td><td class="muted">'
-          + a.same + '</td></tr>'; }).join('')
-    + '</tbody></table><p class="sub">Totals \u2014 survives ' + tot.diff + ' \u00b7 overwritten ' + tot.same
-    + ' \u00b7 one side missing ' + tot.missing + '</p>';
-}
 
-// ── v0.3.4 — price realization on MOFF's own picks ─────────────────────────
-// A genuine pre-race MOFF is NOT computable: hra_bets.odds_at_bet holds a pre-race price for
-// ONE horse (the one Ron bet), and MOFF needs the whole field's q to form p - q. So this does
-// not re-select. It measures what MOFF's existing picks would have paid at a price that
-// actually existed, on the subset where MOFF's pick and a logged bet are the same horse.
-function runPriceRealization() {
-  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  const picks = runMoff();
-  const betIx = new Map();
-  for (const b of _ledger.bets) {
-    const k = rkey(b.track, b.race_date, b.race_no) + '|' + String(b.horse || '').trim().toUpperCase();
-    const pre = parseOdds(b.odds_at_bet);
-    if (pre !== null) betIx.set(k, pre);
-  }
-  const rows = [];
-  for (const p of picks) {
-    const pre = betIx.get(p.race + '|' + String(p.horse || '').trim().toUpperCase());
-    if (pre === null || pre === undefined) continue;
-    rows.push({ ...p, pre, fin: Number(p.odds) });
-  }
-  logMsg('── PRICE REALIZATION ON MOFF PICKS ────────────────────');
-  logMsg('   MOFF picks ' + picks.length + '   ·  with a matching logged pre-race price: ' + rows.length);
-  if (!rows.length) { logMsg('   no overlap — MOFF and the doctrine picked different horses in every bet race', 'yellow'); return; }
-  const plF = rows.reduce((a, r) => a + (r.won ? 2 * r.fin : -2), 0);
-  const plP = rows.reduce((a, r) => a + (r.won ? 2 * r.pre : -2), 0);
-  const stake = rows.length * 2;
-  const shorter = rows.filter((r) => r.pre > r.fin).length;
-  const drift = rows.map((r) => (r.fin - r.pre) / (r.pre || 1));
-  drift.sort((a, b) => a - b);
-  const med = drift[Math.floor(drift.length / 2)];
-  logMsg('   at FINAL odds     ROI ' + (100 * plF / stake).toFixed(1) + '%');
-  logMsg('   at PRE-RACE odds  ROI ' + (100 * plP / stake).toFixed(1) + '%');
-  logMsg('   shortened by post time: ' + shorter + '/' + rows.length + '   median drift ' + (100 * med).toFixed(1) + '%');
-  rows.forEach((r) => logMsg('     ' + r.race + '  ' + r.horse + '   pre ' + r.pre.toFixed(2)
-       + '   final ' + r.fin.toFixed(2) + '   ' + (r.won ? 'WON' : 'lost')));
-  logMsg('   NOTE: this does not re-select. A true pre-race MOFF needs the whole field\'s pre-race board, which was never captured.', 'yellow');
-}
 
-// ── v0.2.8 — are the pModel floor and the gap gate the same test? ──────────
-// The leader's pModel is exp(0/TAU) over sum exp((r_i - top)/TAU): it is large exactly
-// when the ratings behind it are far back. So the floor may BE a gap gate, softened by
-// field size and scaled by TAU. Note the two gates read different horses — the gap gate
-// tests the TOP-RATED horse, simVerdict tests the TOP-EDGE horse.
-function overlapAt(tau, floor, gapGate) {
-  _TAU = tau;
-  let eligible = 0, entryBlk = 0, priceBlk = 0, edgeBlk = 0, thin = 0;
-  let fOnly = 0, gOnly = 0, both = 0, neither = 0;
-  const pairs = [], survGaps = [];
-  for (const race of scopedRaces()) {
-    const { overlay } = scoreRaceRows(race.results);
-    const live = overlay.filter((r) => !r.scratched && r.rating !== null && r.rating !== undefined);
-    if (live.length < 2) { thin++; continue; }
-    const byR = [...live].sort((a, b) => b.rating - a.rating);
-    const gap = byR[0].rating - byR[1].rating;
-    if (byR[0].pModel !== null && byR[0].pModel !== undefined) pairs.push([gap, byR[0].pModel]);
-    const liveE = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
-    if (!liveE.length) { thin++; continue; }
-    const best = liveE.reduce((a, b) => (b.edge > a.edge ? b : a));
-    if (best.edge < 0.10) { edgeBlk++; continue; }
-    if (entryDoctrine(race.raceInfo || {})) { entryBlk++; continue; }
-    if (byR[0].odds !== null && byR[0].odds !== undefined && byR[0].odds < 1) { priceBlk++; continue; }
-    eligible++;
-    const fBlk = best.pModel < floor, gBlk = gap < gapGate;
-    if (fBlk && gBlk) both++; else if (fBlk) fOnly++; else if (gBlk) gOnly++;
-    else { neither++; survGaps.push(gap); }
-    if (!fBlk) survGaps.length;  // survivors of the floor tracked below
-  }
-  // gap profile of races surviving the FLOOR alone, at this TAU
-  let n = 0, sum = 0; const gs = [];
-  _TAU = tau;
-  for (const race of scopedRaces()) {
-    const { overlay } = scoreRaceRows(race.results);
-    const live = overlay.filter((r) => !r.scratched && r.rating !== null);
-    if (live.length < 2) continue;
-    const byR = [...live].sort((a, b) => b.rating - a.rating);
-    const liveE = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
-    if (!liveE.length) continue;
-    const best = liveE.reduce((a, b) => (b.edge > a.edge ? b : a));
-    if (best.edge < 0.10 || best.pModel < floor) continue;
-    const g = byR[0].rating - byR[1].rating; gs.push(g); sum += g; n++;
-  }
-  gs.sort((a, b) => a - b);
-  const med = gs.length ? gs[Math.floor(gs.length / 2)] : 0;
-  // Pearson r between gap and top-rated pModel
-  const N = pairs.length;
-  const mx = pairs.reduce((a, p) => a + p[0], 0) / (N || 1);
-  const my = pairs.reduce((a, p) => a + p[1], 0) / (N || 1);
-  let sxy = 0, sxx = 0, syy = 0;
-  for (const [x, y] of pairs) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
-  const r = (sxx && syy) ? sxy / Math.sqrt(sxx * syy) : 0;
-  return { tau, floor, gapGate, eligible, entryBlk, priceBlk, edgeBlk, thin,
-           fOnly, gOnly, both, neither, r, floorSurvivors: n, meanGap: sum / (n || 1), medGap: med };
-}
 
-function runOverlap() {
-  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  logMsg('── GATE OVERLAP: is the floor already a gap gate? ─────');
-  const cases = [[8, 0.15, 8], [28, 0.15, 8], [28, 0.09, 8], [28, 0.06, 8]];
-  const res = cases.map((c) => overlapAt(c[0], c[1], c[2]));
-  res.forEach((o) => {
-    logMsg('   TAU ' + o.tau + '  floor ' + o.floor.toFixed(2) + '  gap ' + o.gapGate
-         + '   eligible ' + o.eligible + '  (entry ' + o.entryBlk + ' · price ' + o.priceBlk + ' · edge ' + o.edgeBlk + ')');
-    logMsg('       floor-only ' + o.fOnly + '   GAP-ONLY ' + o.gOnly + '   both ' + o.both + '   neither(bet) ' + o.neither,
-           o.gOnly === 0 ? 'yellow' : '');
-    logMsg('       floor survivors ' + o.floorSurvivors + '   their mean gap ' + o.meanGap.toFixed(1)
-         + '   median ' + o.medGap.toFixed(1) + '   ·  corr(gap, top pModel) r=' + o.r.toFixed(3));
-  });
-  logMsg('   floor x gap cross-tab (bets):');
-  const tab = [];
-  for (const f of [0.06, 0.09, 0.15]) {
-    const row = { f, g6: doctrineCount(28, 6, f), g8: doctrineCount(28, 8, f) };
-    tab.push(row);
-    logMsg('     floor ' + f.toFixed(2) + '   gap 6: ' + String(row.g6.bets).padStart(3) + ' bets / '
-         + row.g6.won + ' won      gap 8: ' + String(row.g8.bets).padStart(3) + ' bets / ' + row.g8.won + ' won'
-         + '   ·  gap gate costs ' + (row.g6.bets - row.g8.bets));
-  }
-  renderOverlap(res, tab);
-  showTab('mart'); showMart('races');
-  _TAU = 28; _GAP = 8;
-}
 
-function renderOverlap(res, tab) {
-  const el = $('dm-races'); if (!el) return;
-  const a = '<table class="roll-table"><thead><tr><th>TAU</th><th>floor</th><th>gap</th><th>eligible</th>'
-    + '<th>floor-only</th><th>gap-only</th><th>both</th><th>bet</th><th>floor survivors mean gap</th><th>r(gap,p)</th></tr></thead><tbody>'
-    + res.map((o) => '<tr><td>' + o.tau + '</td><td>' + o.floor.toFixed(2) + '</td><td>' + o.gapGate + '</td><td>'
-      + o.eligible + '</td><td>' + o.fOnly + '</td><td class="' + (o.gOnly === 0 ? 'yellow' : '') + '">' + o.gOnly
-      + '</td><td>' + o.both + '</td><td>' + o.neither + '</td><td>' + o.meanGap.toFixed(1) + '</td><td>'
-      + o.r.toFixed(3) + '</td></tr>').join('') + '</tbody></table>';
-  const b = '<table class="roll-table"><thead><tr><th>floor (TAU 28)</th><th>gap 6</th><th>gap 8</th><th>gap gate costs</th></tr></thead><tbody>'
-    + tab.map((t) => '<tr><td>' + t.f.toFixed(2) + '</td><td>' + t.g6.bets + '</td><td>' + t.g8.bets + '</td><td>'
-      + (t.g6.bets - t.g8.bets) + '</td></tr>').join('') + '</tbody></table>';
-  el.innerHTML = '<p class="sub">Gate overlap. The gap gate reads the top-RATED horse; simVerdict reads the top-EDGE horse. '
-    + 'A gap-only count near zero means the gap gate rejects nothing the floor had not already rejected.</p>' + a
-    + '<p class="sub">Floor &times; gap cross-tab at TAU 28. The last column is what the gap gate contributes once the floor is rescaled.</p>' + b;
-}
 
 async function runAll() {
   if (!_ledger) { logMsg('load first', 'red'); return; }
@@ -10922,8 +10606,6 @@ function showBets(which) {
   }
 }
 
-// v0.3.9 — Data Mart is gone; Horses and Meet are top-level tabs.
-function showMart(which) { if (which === 'horses') renderHorses(); }
 
 // Horses we actually bet — hra_bets is the only source for betting claims (two-ledger rule),
 // hra_race_log the only source for model claims. Joined here for display only.
