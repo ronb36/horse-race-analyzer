@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.8</title>
+<title>HRA Backtester v0.3.9</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -184,10 +184,12 @@ select.display-box { cursor:pointer; outline:none; }
     <span id="key-wrap" style="display:none;flex:1 1 320px">
       <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)" class="keyin" style="width:100%">
     </span>
-    <button class="tab-btn" onclick="boot()">Reload ledger</button>
-    <button class="tab-btn" onclick="runAll()">Score v2 / v3 / MOFF</button>
-    <button class="tab-btn" onclick="runGrid()">TAU &times; gap grid</button>
-    <button class="tab-btn" onclick="runVerdictDiag()">Verdict inputs</button>
+    <button class="tab-btn" onclick="boot()">Reload</button>
+    <button class="tab-btn" onclick="runAll()">Score</button>
+    <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
+    <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
+    <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
+    <button class="tab-btn" onclick="runMatched()">Matched subset</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -209,11 +211,12 @@ select.display-box { cursor:pointer; outline:none; }
          mart=Races  trades/tab-log=Bets  heatmap=Sweep  runlog=Run Log -->
     <div class="tab-bar" id="tabs">
       <button class="tab-btn active" id="tab-btn-trades" onclick="showTab('trades')">Bets</button>
+      <button class="tab-btn"        id="tab-btn-gaps"   onclick="showTab('gaps')">Horses</button>
+      <button class="tab-btn"        id="tab-btn-mart"   onclick="showTab('mart')">Meet</button>
       <button class="tab-btn"        id="tab-btn-runlog" onclick="showTab('runlog')">Logs</button>
-      <button class="tab-btn"        id="tab-btn-mart"   onclick="showTab('mart')">Data Mart</button>
     </div>
     <div id="tab-log">
-      <div class="panehead"><span class="mono">PERFORMANCE \u2014 SARATOGA REPLAY</span></div>
+      <div class="panehead"><span class="mono">PERFORMANCE &mdash; SARATOGA REPLAY</span></div>
       <div id="bets-sum">No run yet. Load the ledger to populate.</div>
       <div class="tab-bar" style="margin:14px 0 10px">
         <button class="tab-btn active" id="bt-btn-v2"   onclick="showBets('v2')">v2</button>
@@ -226,26 +229,12 @@ select.display-box { cursor:pointer; outline:none; }
     </div>
     <div id="tab-runlog" style="display:none">
       <div class="panehead"><span class="mono">RUN LOG</span>
-        <span style="display:flex;gap:8px">
-          <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
-          <button class="tab-btn" onclick="runOverlap()">Gate overlap</button>
-          <button class="tab-btn" onclick="runMLCheck()">ML check</button>
-          <button class="tab-btn" onclick="runPriceRealization()">Price realization</button>
-          <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
-          <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
-          <button class="tab-btn" id="download-log-btn" onclick="downloadLog()">\u2b07 Download</button>
-        </span>
+        <button class="tab-btn" id="download-log-btn" onclick="downloadLog()">Download</button>
       </div>
       <pre id="progress-log" class="log scrollpane"></pre>
     </div>
-    <div id="tab-mart" style="display:none">
-      <div class="tab-bar" style="margin-bottom:10px">
-        <button class="tab-btn active" id="dm-btn-races"  onclick="showMart('races')">Races</button>
-        <button class="tab-btn"        id="dm-btn-horses" onclick="showMart('horses')">Horses</button>
-      </div>
-      <div id="dm-races">Not loaded. Paste the anon key and press Load ledger.</div>
-      <div id="dm-horses" style="display:none"></div>
-    </div>
+    <div id="tab-gaps" style="display:none">Not loaded.</div>
+    <div id="tab-mart" style="display:none">Not loaded.</div>
   </div>
   <pre id="runlog-mirror" class="log" style="display:none"></pre>
   <div id="err-banner" style="display:none"></div>
@@ -260,7 +249,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.8'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.3.9'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9854,6 +9843,7 @@ async function loadLedger() {
   _ledger.gateA = passA;
   diagFieldSize();
   renderRaces();
+  renderHorses();
   if (passA) { try { await runAll(); } catch (e) { logMsg('auto-score failed: ' + e.message, 'red'); } }
   return _ledger;
 }
@@ -9957,6 +9947,45 @@ function runMoff() {
   return out;
 }
 
+// ── v0.3.9 — matched subset: same races, different picker ──────────────────
+// Comparing v3's ROI to the handicapper's is not a comparison of pickers: v3 plays 17 of
+// 163 races and he plays all of them, so v3 wins on selectivity alone. Holding the race set
+// fixed asks the only fair question — given that the doctrine says this race is worth
+// playing, does the machine pick a better horse than the human?
+function runMatched() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const byRace = new Map(_ledger.wired.map((r) => [rkey(r.track, r.race_date, r.race_no), r]));
+  const arms = [
+    ['v3  tau28 gap8 floor .09', runDoctrineFloor(28, 8, 0.09)],
+    ['T2-MOFF-v1', runMoff()],
+  ];
+  logMsg('── MATCHED SUBSET vs THE HANDICAPPER ──────────────────');
+  for (const [nm, bets] of arms) {
+    const mine = [], his = [];
+    let noSel = 0;
+    for (const b of bets) {
+      const race = byRace.get(b.race);
+      const h = race && hcapTop(race);
+      if (!h) { noSel++; continue; }
+      mine.push(b); his.push(asBet(race, h));
+    }
+    if (!mine.length) { logMsg('   ' + nm + ': no overlap with stored selections', 'yellow'); continue; }
+    const sm = stat(mine), sh = stat(his);
+    let same = 0;
+    mine.forEach((b, i) => { if (b.horse === his[i].horse) same++; });
+    const ln = (t, x) => '     ' + t.padEnd(14) + ' bets ' + String(x.n).padStart(3) + '  won ' + String(x.w).padStart(3)
+        + '  hit ' + x.hit.toFixed(1).padStart(5) + '%  ROI ' + ((x.roi >= 0 ? '+' : '') + x.roi.toFixed(1)).padStart(7) + '%';
+    logMsg('   ' + nm + '  —  ' + mine.length + ' races' + (noSel ? '  (' + noSel + ' had no selection)' : ''));
+    logMsg(ln('HRA', sm));
+    logMsg(ln('handicapper', sh));
+    logMsg('     same horse in ' + same + '/' + mine.length + ' ('
+         + (100 * same / mine.length).toFixed(0) + '%)');
+  }
+  logMsg('   Same races, same price basis. Small n: v3 is ~17 bets and settles nothing on its own.', 'yellow');
+  showTab('runlog');
+  _TAU = 28; _GAP = 8;
+}
+
 // ── v0.3.7 — the handicapper benchmark ─────────────────────────────────────
 // Benter (1994) built a model from 48 newspaper tipsters' picks: R^2 .1014, statistically
 // indistinguishable from his 9-factor fundamental model at .1016. Combined with the public,
@@ -10016,8 +10045,7 @@ function runHandicapper() {
   logMsg(line('  handicapper', sdH));
   logMsg(line('  HRA', sdR));
   logMsg('   Flat $2 win at final odds. All in-sample; no fitter here, so no pseudo-R^2.', 'yellow');
-  renderHandicapper({ sH, sR, sF, sdH, sdR, pool, agree, hcapIsFav, ratedIsFav, dis: dH.length });
-  showTab('mart'); showMart('races');
+  showTab('runlog');
 }
 
 function renderHandicapper(x) {
@@ -10095,8 +10123,7 @@ function runMLShadow() {
        + (both ? '  (' + (100 * agree / both).toFixed(0) + '%)' : ''));
   logMsg('   Both arms are PAID at final odds. Only the offset differs.', 'yellow');
   logMsg('   Betas were fitted with the final-odds offset; the ML arm runs them outside that frame.', 'yellow');
-  renderMLShadow(sa, sb, A, B, agree, both, pool.length);
-  showTab('mart'); showMart('races');
+  showTab('runlog');
 }
 
 function renderMLShadow(sa, sb, A, B, agree, both, pool) {
@@ -10301,8 +10328,7 @@ function runSweeps() {
   fRows.forEach((r) => logMsg('     floor ' + r.floor.toFixed(2) + '   bets ' + String(r.bets).padStart(3)
        + '   won ' + String(r.won).padStart(2) + '   blocked-p ' + String(r.blockedP).padStart(3)));
 
-  renderSweeps(tRows, fRows);
-  showTab('mart'); showMart('races');
+  showTab('runlog');
   _TAU = 28; _GAP = 8;
 }
 
@@ -10540,7 +10566,7 @@ async function runAll() {
 
 // ── render ─────────────────────────────────────────────────────────────────
 function renderRaces() {
-  const el = $('dm-races'); if (!el || !_ledger) return;
+  const el = $('tab-mart'); if (!el || !_ledger) return;
   const c = _ledger.counts;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>metric</th><th>value</th></tr></thead><tbody>'
     + [['cards', c.cards], ['race_log rows', c.log], ['races (log)', _ledger.races.length],
@@ -10565,20 +10591,13 @@ function showBets(which) {
   }
 }
 
-function showMart(which) {
-  const r = $('dm-races'), h = $('dm-horses');
-  if (r) r.style.display = which === 'races' ? 'block' : 'none';
-  if (h) h.style.display = which === 'horses' ? 'block' : 'none';
-  const br = $('dm-btn-races'), bh = $('dm-btn-horses');
-  if (br) br.classList.toggle('active', which === 'races');
-  if (bh) bh.classList.toggle('active', which === 'horses');
-  if (which === 'horses') renderHorses();
-}
+// v0.3.9 — Data Mart is gone; Horses and Meet are top-level tabs.
+function showMart(which) { if (which === 'horses') renderHorses(); }
 
 // Horses we actually bet — hra_bets is the only source for betting claims (two-ledger rule),
 // hra_race_log the only source for model claims. Joined here for display only.
 function renderHorses() {
-  const el = $('dm-horses'); if (!el || !_ledger) return;
+  const el = $('tab-gaps'); if (!el || !_ledger) return;
   const mine = new Map();
   for (const b of _ledger.bets) {
     const k = String(b.horse || '').trim().toUpperCase();
