@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.4.1</title>
+<title>HRA Backtester v0.4.2</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -199,6 +199,7 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runMLShadow()">ML shadow</button>
     <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
     <button class="tab-btn" onclick="runMatched()">Matched subset</button>
+    <button class="tab-btn" onclick="runLedgerDiff()">Ledger diff</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -258,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.4.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.4.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9928,11 +9929,14 @@ function scopedRaces() {
   return _ledger.wired.filter((r) => { const d = Number(r.race_date); return d >= s.lo && d <= s.hi; });
 }
 
-// Run fn with the window pinned open, then restore whatever it was.
-function withFullFixture(fn) {
-  const prev = _scopeForce; _scopeForce = 'full';
+// Run fn under a named window, then restore whatever was there. A gate states its own
+// scope rather than inheriting the selector's: what it compares against was computed on
+// a particular set of races and only means anything on that set.
+function withScope(k, fn) {
+  const prev = _scopeForce; if (SCOPES[k]) _scopeForce = k;
   try { return fn(); } finally { _scopeForce = prev; }
 }
+function withFullFixture(fn) { return withScope('full', fn); }
 
 function scopeStamp() {
   const s = activeScope(), rs = scopedRaces();
@@ -10051,6 +10055,137 @@ function runMatched() {
   logMsg('   Same races, same price basis. Small n: v3 is ~17 bets and settles nothing on its own.', 'yellow');
   showTab('runlog');
   _TAU = 28; _GAP = 8;
+}
+
+// ── v0.4.2 — GATE D: THE LEDGER DIFF ───────────────────────────
+// Gate B compares this code against a count produced by a harness since proven
+// incomplete (it never extracted fence 2), on a database that has changed by design
+// since. It cannot go green, and widening its tolerance would be re-baselining to a
+// number this tool computed itself.
+//
+// `hra_bets` is the one independent witness in the project: rows punched in a browser
+// at the rail, months before this tool existed, in a table the model was never fitted
+// on. Under v2's own window the tool returns 19 bets and the ledger holds 19 — and
+// five winners against the ledger's eight. A total that agrees while the winners do
+// not is exactly the shape of a false confirmation, so this gate matches horse by
+// horse and never compares totals alone.
+//
+// Pinned to the v2 window whatever the selector says: it is a claim about the era.
+const ERA_LEDGER = { start: 20260806, bets: 19, won: 8, stake: 38.00, ret: 43.42 };  // FOUNDATION §8
+
+// One normaliser for BOTH sides of the join. A silent type mismatch across a join is
+// what scored 28 races instead of 148 in Chat 13 and produced a complete, plausible,
+// wrong table; the pool size on each side is printed below for the same reason.
+const dRaceKey = (t, d, n) => String(t).trim().toUpperCase() + '|' + Number(d) + '|' + Number(n);
+const dkeyOf = (raceStr) => { const p = String(raceStr).split('|'); return dRaceKey(p[0], p[1], p[2]); };
+const nameKey = (x) => String(x || '').trim().toUpperCase();
+
+// Refund = stake returned on a horse that did not win, i.e. a scratch. The split is
+// asserted against the closing totals below, never trusted.
+function eraTickets() {
+  const rows = (_ledger.bets || []).filter((b) => Number(b.race_date) >= ERA_LEDGER.start);
+  const live = [], refund = [];
+  for (const b of rows) {
+    const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0;
+    (!b.won && pay > 0 && Math.abs(pay - amt) < 0.005 ? refund : live).push(b);
+  }
+  return { rows, live, refund };
+}
+
+function runLedgerDiff() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  logMsg('── GATE D — TOOL vs THE LEDGER ────────────────────');
+
+  // ── D1. read the ledger, and prove the read before diffing anything ──────
+  const { rows, live, refund } = eraTickets();
+  const stake = live.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+  const ret   = live.reduce((a, b) => a + (Number(b.payout) || 0), 0);
+  const lWon  = live.filter((b) => b.won).length;
+  const okL = live.length === ERA_LEDGER.bets && lWon === ERA_LEDGER.won
+           && Math.abs(stake - ERA_LEDGER.stake) < 0.005 && Math.abs(ret - ERA_LEDGER.ret) < 0.005;
+  logMsg('  D1 ledger read   ' + live.length + ' bets · ' + lWon + ' won · $' + stake.toFixed(2)
+       + ' → $' + ret.toFixed(2) + '     FOUNDATION §8: ' + ERA_LEDGER.bets + ' · ' + ERA_LEDGER.won
+       + ' · $' + ERA_LEDGER.stake.toFixed(2) + ' → $' + ERA_LEDGER.ret.toFixed(2)
+       + '   ' + (okL ? 'PASS' : 'FAIL'), okL ? 'green' : 'red');
+  logMsg('     era rows ' + rows.length + '  ·  refunds excluded ' + refund.length + ': '
+       + (refund.map((b) => b.horse).join(', ') || 'none'));
+  if (!okL) {
+    logMsg('     NOT DIFFING. The ledger read does not reproduce the closing record, and a diff '
+         + 'against a misread ledger is worse than no diff.', 'red');
+    showTab('runlog'); return;
+  }
+
+  // ── D2. horse by horse, v2 under its own window ──────────────────────────
+  const bets = withScope('v2', () => runDoctrine(8, 6));
+  _TAU = 28; _GAP = 8;
+  const tool = new Map(bets.map((b) => [dkeyOf(b.race), b]));
+  const tix  = new Map(live.map((b) => [dRaceKey(b.track, b.race_date, b.race_no), b]));
+  let overlap = 0; for (const k of tool.keys()) if (tix.has(k)) overlap++;
+  logMsg('  D2 join          tool ' + bets.length + ' bets / ' + tool.size + ' race keys  ·  ledger '
+       + live.length + ' tickets / ' + tix.size + ' race keys  ·  keys in common ' + overlap,
+       overlap ? '' : 'red');
+  if (!overlap) {
+    logMsg('     ZERO overlap — that is a join failure, not a finding. Keys look like: tool "'
+         + (bets[0] ? dkeyOf(bets[0].race) : '—') + '"  ledger "'
+         + (live[0] ? dRaceKey(live[0].track, live[0].race_date, live[0].race_no) : '—') + '"', 'red');
+    showTab('runlog'); return;
+  }
+
+  const agreed = [], diffHorse = [], toolOnly = [], tixOnly = [];
+  for (const [k, t] of tool) {
+    const x = tix.get(k);
+    if (!x) { toolOnly.push({ k, t }); continue; }
+    (nameKey(t.horse) === nameKey(x.horse) ? agreed : diffHorse).push({ k, t, x });
+  }
+  for (const [k, x] of tix) if (!tool.has(k)) tixOnly.push({ k, x });
+
+  const rc = (k) => { const p = k.split('|'); return p[0] + ' ' + String(p[1]).slice(4) + ' R' + p[2]; };
+  const yn = (b) => (b ? 'WON ' : 'lost');
+  logMsg('     agreed — same race, same horse : ' + agreed.length);
+  logMsg('     same race, DIFFERENT horse     : ' + diffHorse.length, diffHorse.length ? 'yellow' : '');
+  logMsg('     tool bet, no ticket            : ' + toolOnly.length, toolOnly.length ? 'yellow' : '');
+  logMsg('     ticket, tool did not bet       : ' + tixOnly.length, tixOnly.length ? 'yellow' : '');
+
+  if (diffHorse.length) {
+    logMsg('   ── SAME RACE, DIFFERENT HORSE ──');
+    diffHorse.forEach((d) => logMsg('     ' + rc(d.k) + '   tool ' + d.t.horse + ' (' + yn(d.t.won)
+         + ')   ticket ' + d.x.horse + ' (' + yn(d.x.won) + ')', 'yellow'));
+  }
+  if (toolOnly.length) {
+    logMsg('   ── TOOL BET, NO TICKET ──  (expected where the manual decline ran)');
+    toolOnly.forEach((d) => logMsg('     ' + rc(d.k) + '   ' + d.t.horse + ' (' + yn(d.t.won)
+         + ')  odds ' + (d.t.odds == null ? '—' : Number(d.t.odds).toFixed(2)), 'yellow'));
+  }
+  if (tixOnly.length) {
+    logMsg('   ── TICKET, TOOL DID NOT BET ──');
+    tixOnly.forEach((d) => logMsg('     ' + rc(d.k) + '   ' + d.x.horse + ' (' + yn(d.x.won)
+         + ')  $' + (Number(d.x.amount) || 0).toFixed(2) + ' → $' + (Number(d.x.payout) || 0).toFixed(2), 'yellow'));
+  }
+
+  // ── D3. the two ledgers on outcome, where they bet the same horse ────────
+  // hra_race_log.is_winner is the model ledger; hra_bets.won is the money ledger.
+  // They are read separately and never blended; this is the one place they are
+  // compared, and a disagreement here is a data defect, not a modelling result.
+  const wDiff = agreed.filter((a) => !!a.t.won !== !!a.x.won);
+  logMsg('  D3 outcome       ' + agreed.length + ' agreed rows: '
+       + (wDiff.length ? wDiff.length + ' DISAGREE' : 'all agree') + '   '
+       + (wDiff.length ? 'FAIL' : 'PASS'), wDiff.length ? 'red' : 'green');
+  wDiff.forEach((a) => logMsg('     ' + rc(a.k) + '   ' + a.t.horse + '   race_log.is_winner '
+       + (a.t.won ? 'Y' : 'N') + '  ·  bets.won ' + (a.x.won ? 'Y' : 'N')
+       + '  payout $' + (Number(a.x.payout) || 0).toFixed(2), 'red'));
+
+  // ── D4. account for the winner gap, to the horse ─────────────────────────
+  const tWon = bets.filter((b) => b.won).length;
+  const cA = agreed.filter((a) => !!a.x.won).length - agreed.filter((a) => !!a.t.won).length;
+  const cD = diffHorse.filter((d) => d.x.won).length - diffHorse.filter((d) => d.t.won).length;
+  const cO = tixOnly.filter((d) => d.x.won).length - toolOnly.filter((d) => d.t.won).length;
+  const gap = lWon - tWon, acc = cA + cD + cO;
+  logMsg('  D4 winners       tool ' + tWon + ' · ledger ' + lWon + '   gap ' + gap);
+  logMsg('     accounted: outcome disagreements ' + cA + '  ·  different horse ' + cD
+       + '  ·  races only one side bet ' + cO + '   total ' + acc
+       + (acc === gap ? '   ✓ accounts for the gap exactly' : '   ✗ DOES NOT ACCOUNT — the buckets are wrong'),
+       acc === gap ? 'green' : 'red');
+  showTab('runlog');
 }
 
 // ── v0.3.7 — the handicapper benchmark ─────────────────────────────────────
