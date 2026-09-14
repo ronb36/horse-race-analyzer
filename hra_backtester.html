@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.3.9</title>
+<title>HRA Backtester v0.4.0</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -184,6 +184,15 @@ select.display-box { cursor:pointer; outline:none; }
     <span id="key-wrap" style="display:none;flex:1 1 320px">
       <input id="sb-key" type="password" placeholder="Supabase anon key (not service_role)" class="keyin" style="width:100%">
     </span>
+    <span class="ctrl-right" style="gap:6px">
+      <span class="mono" style="font-size:10px;color:var(--muted)">SCOPE</span>
+      <select id="scope-sel" onchange="setScope(this.value)"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;height:30px;padding:0 8px;cursor:pointer;">
+        <option value="full">FULL FIXTURE</option>
+        <option value="v2">V2 AS RUN &middot; 08/06 &rarr;</option>
+        <option value="v1">V1 ONLY &middot; &rarr; 08/05</option>
+      </select>
+    </span>
     <button class="tab-btn" onclick="boot()">Reload</button>
     <button class="tab-btn" onclick="runAll()">Score</button>
     <button class="tab-btn" onclick="runSweeps()">Sweeps</button>
@@ -249,7 +258,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.3.9'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.4.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9883,10 +9892,65 @@ function diagFieldSize() {
 
 // ── scorer ─────────────────────────────────────────────────────────────────
 // v2 / v3 are the app's own path: fence 2 then doctrineFilter.
+// ── v0.4.0 — SCOPE WINDOW ─────────────────────────────────────
+// Every arm used to run the whole 163-race fixture, 07/26 to the close. But
+// doctrineFilter did not ship until 08/06: the days before it ran under v1, with no
+// filter at all. Replaying v2's rules across them answers a counterfactual, and the
+// blotter was presenting it as history.
+//
+// The window is GLOBAL and every scoring arm honours it. Scoping v2 alone would have
+// left v2 on one race set and v3/MOFF on another — the same mismatched-population
+// table the handicapper join produced in Chat 13, and just as plausible-looking.
+//
+// What does NOT honour it, deliberately: Gate A, the field-size diagnostic, the
+// replica-equivalence check, the ML coverage report, Gate B, and the Horses ledger.
+// Those are statements about the data and the harness, and they get stronger with
+// more races, not fewer.
+const V2_START = 20260806;      // the day doctrineFilter shipped
+const V1_END   = 20260805;      // written out, not V2_START-1: these are packed dates
+const SCOPES = {
+  full: { label: 'FULL FIXTURE', lo: 0,        hi: 99999999 },
+  v2:   { label: 'V2 AS RUN',    lo: V2_START, hi: 99999999 },
+  v1:   { label: 'V1 ONLY',      lo: 0,        hi: V1_END   },
+};
+let _SCOPE = 'full';
+let _scopeForce = null;         // pinned to 'full' inside withFullFixture()
+const activeScope = () => SCOPES[_scopeForce || _SCOPE] || SCOPES.full;
+const scopeIsFull = () => (_scopeForce || _SCOPE) === 'full';
+const ymdDisp = (n) => { const t = String(n); return t.length === 8 ? t.slice(4, 6) + '/' + t.slice(6, 8) : t; };
+
+function scopedRaces() {
+  if (!_ledger || !_ledger.wired) return [];
+  const s = activeScope();
+  return _ledger.wired.filter((r) => { const d = Number(r.race_date); return d >= s.lo && d <= s.hi; });
+}
+
+// Run fn with the window pinned open, then restore whatever it was.
+function withFullFixture(fn) {
+  const prev = _scopeForce; _scopeForce = 'full';
+  try { return fn(); } finally { _scopeForce = prev; }
+}
+
+function scopeStamp() {
+  const s = activeScope(), rs = scopedRaces();
+  const d = rs.map((r) => Number(r.race_date)).filter(Boolean).sort((a, b) => a - b);
+  const span = d.length ? ymdDisp(d[0]) + ' \u2192 ' + ymdDisp(d[d.length - 1]) : 'no races';
+  return s.label + ' \u00b7 ' + span + ' \u00b7 ' + rs.length + ' races';
+}
+
+function setScope(k) {
+  if (!SCOPES[k]) return;
+  _SCOPE = k;
+  const el = $('scope-sel'); if (el) el.value = k;
+  logMsg('\u2500\u2500 SCOPE \u2192 ' + scopeStamp(), 'yellow');
+  if (_ledger && _ledger.gateA) runAll();
+  else logMsg('   ledger not loaded (or Gate A failed) \u2014 scope set, nothing rescored.');
+}
+
 function runDoctrine(tau, gap) {
   _TAU = tau; _GAP = gap;
   const out = [];
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay, verdict } = scoreRaceRows(race.results);
     if (!['WIN', 'PLACE', 'SHOW'].includes(verdict.action)) continue;
     const d = doctrineFilter(overlay, race.raceInfo || {});
@@ -9908,7 +9972,7 @@ function runDoctrine(tau, gap) {
 function runDoctrineFloor(tau, gap, floor) {
   _TAU = tau; _GAP = gap;
   const out = [];
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay } = scoreRaceRows(race.results);
     const v = verdictAtFloor(overlay, floor);
     if (!['WIN', 'PLACE', 'SHOW'].includes(v.action)) continue;
@@ -9927,7 +9991,7 @@ const MOFF_BETA = { earlySpeed: 0.006211, recentForm: -0.017229, speed: -0.00843
 const MOFF_EDGE = 0.04;
 function runMoff() {
   const out = [];
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const live = race.results.filter((r) => !r.scratched && r.odds !== null && r.odds !== undefined);
     if (live.length < 2) continue;
     const q = live.map((r) => 1 / (Number(r.odds) + 1));
@@ -9954,7 +10018,7 @@ function runMoff() {
 // playing, does the machine pick a better horse than the human?
 function runMatched() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  const byRace = new Map(_ledger.wired.map((r) => [rkey(r.track, r.race_date, r.race_no), r]));
+  const byRace = new Map(scopedRaces().map((r) => [rkey(r.track, r.race_date, r.race_no), r]));
   const arms = [
     ['v3  tau28 gap8 floor .09', runDoctrineFloor(28, 8, 0.09)],
     ['T2-MOFF-v1', runMoff()],
@@ -10015,7 +10079,7 @@ function runHandicapper() {
   const H = [], R = [], F = [];
   const dH = [], dR = [];          // the subset where HRA and the handicapper disagree
   let pool = 0, agree = 0, hcapIsFav = 0, ratedIsFav = 0, noSel = 0, noMatch = 0;
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const h = hcapTop(race), t = topRated(race), f = favourite(race);
     if (!race.selections) { noSel++; continue; }
     if (!h) { noMatch++; continue; }
@@ -10031,7 +10095,8 @@ function runHandicapper() {
   const line = (nm, s) => '   ' + nm.padEnd(26) + ' bets ' + String(s.n).padStart(3) + '  won ' + String(s.w).padStart(3)
       + '  hit ' + s.hit.toFixed(1).padStart(5) + '%  ROI ' + ((s.roi >= 0 ? '+' : '') + s.roi.toFixed(1)).padStart(7) + '%';
   logMsg('── HANDICAPPER BENCHMARK ──────────────────────────────');
-  logMsg('   races scored: ' + pool + ' of ' + _ledger.wired.length
+  logMsg('   scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
+  logMsg('   races scored: ' + pool + ' of ' + scopedRaces().length
        + '   (no selection stored: ' + noSel + ' · selected post not among live runners: ' + noMatch + ')',
          noMatch > pool * 0.1 ? 'red' : '');
   logMsg(line('Brisnet top pick', sH));
@@ -10098,9 +10163,10 @@ function moffPick(race, priceOf) {
 
 function runMLShadow() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
-  const pool = _ledger.wired.filter((r) => r.hasML && r.results.every((x) => x.scratched || x.ml !== undefined));
+  const pool = scopedRaces().filter((r) => r.hasML && r.results.every((x) => x.scratched || x.ml !== undefined));
   logMsg('── T2-MOFF-v1 ON THE MORNING LINE ─────────────────────');
-  logMsg('   races with a complete ML field: ' + pool.length + ' of ' + _ledger.wired.length
+  logMsg('   scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
+  logMsg('   races with a complete ML field: ' + pool.length + ' of ' + scopedRaces().length
        + '   (3 SAR days have no ML and never will)');
   if (!pool.length) { logMsg('   no ML coverage — did the backfill run?', 'red'); return; }
 
@@ -10142,7 +10208,7 @@ function renderMLShadow(sa, sb, A, B, agree, both, pool) {
 // T2-SPDCLS-v1 — blind: frequency ONLY. FOUNDATION 10 / Chat 12 addendum.
 function runSpdclsFrequency() {
   let fires = 0;
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const live = race.results.filter((r) => !r.scratched);
     if (live.length < 2) continue;
     const top = (k) => live.reduce((a, b) => ((Number(b[k]) || 0) > (Number(a[k]) || 0) ? b : a));
@@ -10162,7 +10228,11 @@ const stat = (bets) => {
 function runGrid() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
   logMsg('── TAU x GAP GRID ─────────────────────────────────────');
-  logMsg('   golden master (FOUNDATION 7, 164-race fixture): tau8/gap6 = 25 bets/8 won · tau28/gap8 = 20/8');
+  logMsg('   scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
+  if (scopeIsFull())
+    logMsg('   golden master (FOUNDATION 7, 164-race fixture): tau8/gap6 = 25 bets/8 won · tau28/gap8 = 20/8');
+  else
+    logMsg('   golden comparison SUPPRESSED — it was cut on the full fixture and says nothing about a window.', 'yellow');
   const out = [];
   for (const tau of [8, 28]) {
     for (const gap of [6, 8]) {
@@ -10185,11 +10255,15 @@ function renderGrid(out) {
   const el = $('dm-races'); if (!el) return;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>TAU</th><th>gap</th><th>bets</th><th>won</th><th>ROI</th><th>golden</th></tr></thead><tbody>'
     + out.map((o) => {
-        const g = (o.tau === 8 && o.gap === 6) ? '25 / 8' : (o.tau === 28 && o.gap === 8) ? '20 / 8' : '—';
+        const g = !scopeIsFull() ? 'n/a' : (o.tau === 8 && o.gap === 6) ? '25 / 8' : (o.tau === 28 && o.gap === 8) ? '20 / 8' : '—';
         return '<tr><td>' + o.tau + '</td><td>' + o.gap + '</td><td>' + o.n + '</td><td>' + o.w + '</td><td class="'
              + (o.roi >= 0 ? 'green' : 'red') + '">' + (o.roi >= 0 ? '+' : '') + o.roi.toFixed(1) + '%</td><td class="muted">' + g + '</td></tr>';
       }).join('')
-    + '</tbody></table><p class="sub">Golden-master counts are from the 164-race fixture; era 2 is now 163 races, so a shortfall of one is expected.</p>';
+    + '</tbody></table><p class="sub">' + scopeStamp() + '. '
+    + (scopeIsFull()
+        ? 'Golden-master counts are from the 164-race fixture; era 2 is now 163 races, so a shortfall of one is expected.'
+        : 'Golden-master counts were cut on the full fixture and are not comparable to a window, so the column reads n/a.')
+    + '</p>';
 }
 
 // v0.2.5 — why does TAU move selection? simVerdict gates on the top-edge horse:
@@ -10199,7 +10273,7 @@ function verdictProbe(tau) {
   _TAU = tau;
   const acts = {}, recs = [];
   let sumP = 0, sumE = 0, n = 0, failEdge = 0, failP = 0;
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay, verdict } = scoreRaceRows(race.results);
     const live = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
     if (!live.length) continue;
@@ -10273,7 +10347,7 @@ function verdictAtFloor(rows, floor) {
 function doctrineCount(tau, gap, floor) {
   _TAU = tau; _GAP = gap;
   let bets = 0, won = 0, passes = 0, blockedP = 0, blockedE = 0, sumP = 0, n = 0;
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay } = scoreRaceRows(race.results);
     const v = verdictAtFloor(overlay, floor);
     const live = overlay.filter((r) => !r.scratched && r.edge !== null && r.pModel !== null);
@@ -10446,7 +10520,7 @@ function overlapAt(tau, floor, gapGate) {
   let eligible = 0, entryBlk = 0, priceBlk = 0, edgeBlk = 0, thin = 0;
   let fOnly = 0, gOnly = 0, both = 0, neither = 0;
   const pairs = [], survGaps = [];
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay } = scoreRaceRows(race.results);
     const live = overlay.filter((r) => !r.scratched && r.rating !== null && r.rating !== undefined);
     if (live.length < 2) { thin++; continue; }
@@ -10468,7 +10542,7 @@ function overlapAt(tau, floor, gapGate) {
   // gap profile of races surviving the FLOOR alone, at this TAU
   let n = 0, sum = 0; const gs = [];
   _TAU = tau;
-  for (const race of _ledger.wired) {
+  for (const race of scopedRaces()) {
     const { overlay } = scoreRaceRows(race.results);
     const live = overlay.filter((r) => !r.scratched && r.rating !== null);
     if (live.length < 2) continue;
@@ -10542,9 +10616,15 @@ async function runAll() {
   const eq = replicaEquivalent();
   logMsg('  replica vs fence simVerdict @0.15: ' + (eq.checked - eq.diff) + '/' + eq.checked
        + (eq.diff ? '  MISMATCH — v3 suppressed' : '  EQUIVALENT'), eq.diff ? 'red' : 'green');
+  logMsg('  scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
   const v2 = runDoctrine(8, 6);
   const v3 = eq.diff ? [] : runDoctrineFloor(28, 8, 0.09);
   const mo = runMoff(), sp = runSpdclsFrequency();
+  // GATE B IS A HARNESS CHECK, NOT A RESULT. It always replays the full fixture,
+  // whatever the window says. Re-baselining the golden master to a number computed
+  // under a scope would retire the only independent check this tool has.
+  const v2Full = scopeIsFull() ? v2 : withFullFixture(() => runDoctrine(8, 6));
+  _TAU = 28; _GAP = 8;
 
   // ── GATE B — replay against the golden-master counts (FOUNDATION 7) ───────
   // Those were cut on the 164-race fixture: 2.30.1 -> 25 bets/8 won, 2.32.0 -> 20/8.
@@ -10555,13 +10635,13 @@ async function runAll() {
     logMsg('  GATE B  ' + nm + '  ' + got + ' bets vs golden ' + want + '  (delta ' + d + ')  ' + (ok ? 'PASS' : 'FAIL'), ok ? 'green' : 'red');
     return ok;
   };
-  const okB = !!chk('v2 tau8 gap6', v2.length, 25);
+  const okB = !!chk('v2 tau8 gap6 · FULL FIXTURE', v2Full.length, 25);
   logMsg('  v3  tau 28 · gap 8 · floor 0.09   bets ' + v3.length + '   won ' + v3.filter((b) => b.won).length
        + '   (no golden comparison — the 2.32.0 replay was cut at floor 0.15 and is superseded)');
   logMsg('  GATE C  T2-MOFF-v1 fires ' + mo.length + ' vs registered 60  ' + (Math.abs(mo.length - 60) <= 1 ? 'PASS' : 'FAIL'),
          Math.abs(mo.length - 60) <= 1 ? 'green' : 'red');
   logMsg('  T2-SPDCLS-v1 fires: ' + sp + ' (frequency only — blind holds, no outcome computed)');
-  renderBets({ v2, v3, mo }, { okB });
+  renderBets({ v2, v3, mo }, { okB, scope: scopeStamp(), full: scopeIsFull() });
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -10570,7 +10650,7 @@ function renderRaces() {
   const c = _ledger.counts;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>metric</th><th>value</th></tr></thead><tbody>'
     + [['cards', c.cards], ['race_log rows', c.log], ['races (log)', _ledger.races.length],
-       ['races wired to a card', _ledger.wired.length], ['horse rows matched', c.matched],
+       ['races wired to a card', _ledger.wired.length], ['races in scope', scopeStamp()], ['horse rows matched', c.matched],
        ['ratings exact', c.exact], ['unmatched card rows', c.missing],
        ['GATE A', _ledger.gateA ? 'PASS' : 'FAIL'],
        ['— field size —', ''],
@@ -10626,7 +10706,7 @@ function renderHorses() {
           + (m.p || 0) + '</td><td>' + (m.s || 0) + '</td><td>' + m.bets + '</td><td>' + m.won + '</td><td>$'
           + m.staked.toFixed(2) + '</td><td>$' + m.ret.toFixed(2) + '</td><td class="' + (net >= 0 ? 'green' : 'red')
           + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'; }).join('')
-    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended.</p>';
+    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture \u2014 the scope window governs rule scoring, not the ledgers.</p>';
 }
 
 function renderBets(sets, meta) {
@@ -10637,7 +10717,7 @@ function renderBets(sets, meta) {
       return '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
            + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>'; }).join('');
   const blot = (nm, b) => { let run = 0;
-    return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets</p>'
+    return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets \u00b7 ' + sc + '</p>'
       + '<div class="scrollpane"><table class="roll-table"><thead><tr><th>#</th><th>race</th><th>horse</th><th>odds</th><th>finish</th>'
       + '<th>result</th><th>P&amp;L</th><th>running</th></tr></thead><tbody>'
       + b.map((x, i) => { const pl = x.won ? 2 * (Number(x.odds) || 0) : -2; run += pl;
@@ -10648,7 +10728,14 @@ function renderBets(sets, meta) {
             + (pl >= 0 ? '+' : '\u2212') + '$' + Math.abs(pl).toFixed(2) + '</td><td class="'
             + (run >= 0 ? 'green' : 'red') + '">' + (run >= 0 ? '+' : '\u2212') + '$' + Math.abs(run).toFixed(2)
             + '</td></tr>'; }).join('') + '</tbody></table></div>'; };
-  el.innerHTML = '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
+  const sc = (meta && meta.scope) || 'full fixture';
+  const full = !meta || meta.full !== false;
+  el.innerHTML = '<p class="sub" style="margin-top:0"><b>SCOPE \u2014 ' + sc + '</b> \u00b7 '
+    + (full
+        ? 'the doctrine filter did not ship until 08/06, so v2\u2019s rules are being replayed over days that ran under v1 with no filter at all. Select V2 AS RUN for the window v2 was actually in force for.'
+        : 'every arm is scored on this window, so the rules stay comparable. Gate B still replays the full fixture.')
+    + '</p>'
+    + '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
     + rows + '</tbody></table>'
 
     + '<p class="sub">Flat $2 win, final odds (hra_race_log.odds) for every rule — the only price basis covering all races. '
