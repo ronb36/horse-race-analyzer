@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.3</title>
+<title>HRA Backtester v0.6.4</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.3'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.4'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9845,7 +9845,9 @@ async function loadLedger() {
   logMsg('  handicapper selections attached: ' + selRaces + ' races');
 
   const wired = [...races.values()].filter((r) => r.results);
-  _ledger = { races: [...races.values()], wired, bets, counts: { matched, exact, missing, cards: cards.length, log: log.length } };
+  // v0.6.4 — keep the entries rows. They were read, used for the morning line, and
+  // discarded; an upcoming card lives in here and nowhere else.
+  _ledger = { races: [...races.values()], wired, bets, ents, counts: { matched, exact, missing, cards: cards.length, log: log.length } };
 
   const sl = $('status-line');
   if (sl) { sl.textContent = '\u2713 Ledger loaded \u2014 ' + races.size + ' races · ' + log.length
@@ -10312,8 +10314,84 @@ function runRepeats() {
   // v0.6.2 — same question from the other side: repetition says how often the circuit sees
   // a horse again; provenance says whether it was the circuit that saw it in the first place.
   runProvenance();
+  // v0.6.4 — and the same question pointed forward, at whatever card is loaded next.
+  runReturning();
   showTab('runlog');
 }
+// ── v0.6.4 — RETURNING HORSES ────────────────────────────────────
+// The closed-population question, asked BEFORE a card runs rather than after. An entries
+// row whose races are not in hra_race_log is an upcoming card; every horse on it either
+// appears in the 957 the model has already rated, or does not.
+//
+// This is entries against the log — names only. It does not know surface, distance or
+// doctrine for a card that has no k-file yet, so it reports every race and leaves the
+// doctrine question to the app, which has the conditions.
+//
+// Names are matched on the same normalisation that reproduced 1211/1211 ratings. A horse
+// that raced at Saratoga under a slightly different spelling will read as new, so the
+// number is a floor, not an exact count.
+function runReturning() {
+  if (!_ledger) { logMsg('load first', 'red'); return; }
+  logMsg('── RETURNING HORSES ───────────────────────────────');
+
+  // everything the model has rated, with its meet record
+  const known = new Map();
+  for (const race of _ledger.races) {
+    for (const r of (race.rows || [])) {
+      const k = nameKey(r.horse); if (!k) continue;
+      if (!known.has(k)) known.set(k, { name: r.horse, n: 0, w: 0 });
+      const m = known.get(k); m.n++; if (r.is_winner) m.w++;
+    }
+  }
+  const raced = new Set(_ledger.races.map((r) => String(r.track) + '|' + Number(r.race_date)));
+
+  const cards = [];
+  for (const e of (_ledger.ents || [])) {
+    const key = String(e.track) + '|' + Number(e.race_date);
+    if (raced.has(key)) continue;                 // already run: that is history, not a lookahead
+    cards.push(e);
+  }
+  if (!cards.length) {
+    logMsg('   No entries card without results — nothing upcoming is loaded.', 'yellow');
+    logMsg('   ' + (_ledger.ents || []).length + ' entries rows present, all of them for races already in the log.');
+    return;
+  }
+
+  for (const e of cards.sort((a, b) => Number(a.race_date) - Number(b.race_date))) {
+    const races = (e.entries || []).slice().sort((a, b) => Number(a.raceNumber) - Number(b.raceNumber));
+    let total = 0, seen = 0, racesWith = 0;
+    const returning = new Map();
+    const perRace = [];
+    for (const er of races) {
+      const field = Array.isArray(er.ml) ? er.ml : [];
+      let s = 0;
+      for (const h of field) {
+        const k = nameKey(h.horse); if (!k) continue;
+        total++;
+        if (known.has(k)) { seen++; s++; if (!returning.has(k)) returning.set(k, known.get(k)); }
+      }
+      if (s) racesWith++;
+      perRace.push({ no: er.raceNumber, n: field.length, seen: s });
+    }
+    logMsg('   ' + esc(e.track) + ' ' + ymdDisp(e.race_date) + '  ·  ' + races.length + ' races · '
+         + total + ' entries');
+    if (!total) { logMsg('     no horse lists on this entries row — nothing to match', 'red'); continue; }
+    logMsg('     already rated by the model: ' + seen + '/' + total + '  ('
+         + (100 * seen / total).toFixed(0) + '%)  ·  ' + returning.size + ' distinct horses  ·  '
+         + racesWith + '/' + races.length + ' races carry at least one');
+    perRace.forEach((p) => logMsg('       R' + String(p.no).padEnd(3) + String(p.n).padStart(3) + ' entries   '
+         + String(p.seen).padStart(3) + ' seen at the meet' + (p.seen ? '' : '   — all new to the model'),
+         p.seen ? '' : 'yellow'));
+    const list = [...returning.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    if (list.length) {
+      logMsg('     ── horses the model has already rated ──');
+      list.forEach((m) => logMsg('       ' + m.n + ' start' + (m.n === 1 ? ' ' : 's') + ' · ' + m.w
+           + ' win' + (m.w === 1 ? ' ' : 's') + '   ' + m.name));
+    }
+    logMsg('     Name-matched against the log, so this is a floor — a different spelling reads as new.', 'yellow');
+  }
+}
+
 // ── v0.6.2 — FORM PROVENANCE ───────────────────────────────────────
 // The panel showed CD lines on several horses, which raises a question the census did not
 // ask: the speed component reads figures earned at other tracks. Each is adjusted by its
