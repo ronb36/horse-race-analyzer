@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.4.2</title>
+<title>HRA Backtester v0.5.0</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -226,14 +226,14 @@ select.display-box { cursor:pointer; outline:none; }
       <button class="tab-btn"        id="tab-btn-runlog" onclick="showTab('runlog')">Logs</button>
     </div>
     <div id="tab-log">
-      <div class="panehead"><span class="mono">PERFORMANCE &mdash; SARATOGA REPLAY</span></div>
+      <div class="panehead"><span class="mono">PERFORMANCE &mdash; SARATOGA</span></div>
       <div id="bets-sum">No run yet. Load the ledger to populate.</div>
       <div class="tab-bar" style="margin:14px 0 10px">
-        <button class="tab-btn active" id="bt-btn-v2"   onclick="showBets('v2')">v2</button>
+        <button class="tab-btn active" id="bt-btn-record" onclick="showBets('record')">Record</button>
         <button class="tab-btn"        id="bt-btn-v3"   onclick="showBets('v3')">v3</button>
         <button class="tab-btn"        id="bt-btn-moff" onclick="showBets('moff')">MOFF</button>
       </div>
-      <div id="bets-v2"></div>
+      <div id="bets-record"></div>
       <div id="bets-v3"   style="display:none"></div>
       <div id="bets-moff" style="display:none"></div>
     </div>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.4.2'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.5.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9892,7 +9892,11 @@ function diagFieldSize() {
 }
 
 // ── scorer ─────────────────────────────────────────────────────────────────
-// v2 / v3 are the app's own path: fence 2 then doctrineFilter.
+// v3 and T2-MOFF-v1 run the app's own path: fence 2 then doctrineFilter.
+// v0.5.0 — runDoctrine(8, 6) is v2's configuration and is NOT a result. It survives as
+// GATE D's instrument only: the picks that get matched against the tickets, 14-for-14 on
+// horse selection in the 14 races both sides played. Nothing displays its bet list and
+// nothing should — see THE RECORD. Gate B, which did display it, is retired.
 // ── v0.4.0 — SCOPE WINDOW ─────────────────────────────────────
 // Every arm used to run the whole 163-race fixture, 07/26 to the close. But
 // doctrineFilter did not ship until 08/06: the days before it ran under v1, with no
@@ -10082,14 +10086,45 @@ const nameKey = (x) => String(x || '').trim().toUpperCase();
 
 // Refund = stake returned on a horse that did not win, i.e. a scratch. The split is
 // asserted against the closing totals below, never trusted.
-function eraTickets() {
-  const rows = (_ledger.bets || []).filter((b) => Number(b.race_date) >= ERA_LEDGER.start);
+function splitTickets(rows) {
   const live = [], refund = [];
   for (const b of rows) {
     const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0;
     (!b.won && pay > 0 && Math.abs(pay - amt) < 0.005 ? refund : live).push(b);
   }
-  return { rows, live, refund };
+  return { live, refund };
+}
+function eraTickets() {
+  const rows = (_ledger.bets || []).filter((b) => Number(b.race_date) >= ERA_LEDGER.start);
+  return { rows, ...splitTickets(rows) };
+}
+
+// \u2500\u2500 v0.5.0 \u2014 THE RECORD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// v2 is not replayed anywhere in this tool. The era is closed, its parameters are
+// retired, and it is the data v3 was fit on \u2014 a replay of it answers a question with
+// no consequence, and Gate D showed the replay disagrees with the tickets on 10 of 19
+// races anyway. What v2 did is read from hra_bets and reported as fact.
+//
+// Scope-independent on purpose. The record has its own two scopes, SEASON and ERA, and
+// they belong to the app's Audit banner, not to this tool's window.
+const SEASON_LEDGER = { bets: 39, won: 11, stake: 78.00, ret: 65.06 };   // FOUNDATION \u00a78
+const ledgerStats = (live) => {
+  const n = live.length, w = live.filter((b) => b.won).length;
+  const stake = live.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+  const ret   = live.reduce((a, b) => a + (Number(b.payout) || 0), 0);
+  return { n, w, stake, ret, hit: n ? 100 * w / n : 0, roi: stake ? 100 * (ret - stake) / stake : 0 };
+};
+function recordBlocks() {
+  const all = _ledger && _ledger.bets ? _ledger.bets : [];
+  const season = splitTickets(all);
+  const era = splitTickets(all.filter((b) => Number(b.race_date) >= ERA_LEDGER.start));
+  const sS = ledgerStats(season.live), sE = ledgerStats(era.live);
+  const near = (x, y) => Math.abs(x - y) < 0.005;
+  const okS = sS.n === SEASON_LEDGER.bets && sS.w === SEASON_LEDGER.won
+           && near(sS.stake, SEASON_LEDGER.stake) && near(sS.ret, SEASON_LEDGER.ret);
+  const okE = sE.n === ERA_LEDGER.bets && sE.w === ERA_LEDGER.won
+           && near(sE.stake, ERA_LEDGER.stake) && near(sE.ret, ERA_LEDGER.ret);
+  return { season, era, sS, sE, okS, okE, ok: okS && okE };
 }
 
 function runLedgerDiff() {
@@ -10755,31 +10790,27 @@ async function runAll() {
   logMsg('  replica vs fence simVerdict @0.15: ' + (eq.checked - eq.diff) + '/' + eq.checked
        + (eq.diff ? '  MISMATCH — v3 suppressed' : '  EQUIVALENT'), eq.diff ? 'red' : 'green');
   logMsg('  scope: ' + scopeStamp(), scopeIsFull() ? '' : 'yellow');
-  const v2 = runDoctrine(8, 6);
   const v3 = eq.diff ? [] : runDoctrineFloor(28, 8, 0.09);
   const mo = runMoff(), sp = runSpdclsFrequency();
-  // THE GATES ARE HARNESS CHECKS, NOT RESULTS. Every one of them replays the full
-  // fixture whatever the window says, because every target they compare against —
-  // golden 25, registered 60, registered 25 — is a full-fixture number. Re-baselining
-  // any of them to a figure computed under a scope would retire the only independent
-  // checks this tool has.
-  const v2Full = scopeIsFull() ? v2 : withFullFixture(() => runDoctrine(8, 6));
+  // THE GATES ARE HARNESS CHECKS, NOT RESULTS. They replay the full fixture whatever
+  // the window says, because the targets they compare against — registered 60,
+  // registered 25 — are full-fixture numbers.
   const moFull = scopeIsFull() ? mo : withFullFixture(() => runMoff());
   const spFull = scopeIsFull() ? sp : withFullFixture(() => runSpdclsFrequency());
   _TAU = 28; _GAP = 8;
 
-  // ── GATE B — replay against the golden-master counts (FOUNDATION 7) ───────
-  // Those were cut on the 164-race fixture: 2.30.1 -> 25 bets/8 won, 2.32.0 -> 20/8.
-  // Era 2 is now 163 races (MTH 07/26 R6 deleted in Chat 12, a losing ticket),
-  // so a shortfall of exactly 1 bet is EXPECTED and anything else is not.
-  const chk = (nm, got, want) => {
-    const d = want - got, ok = (d === 0 || d === 1);
-    logMsg('  GATE B  ' + nm + '  ' + got + ' bets vs golden ' + want + '  (delta ' + d + ')  ' + (ok ? 'PASS' : 'FAIL'), ok ? 'green' : 'red');
-    return ok;
-  };
-  const okB = !!chk('v2 tau8 gap6 · FULL FIXTURE', v2Full.length, 25);
-  logMsg('  v2  tau 8 · gap 6 · floor 0.15   bets ' + v2.length + '   won ' + v2.filter((b) => b.won).length
-       + (scopeIsFull() ? '' : '   ← IN SCOPE (Gate B above is the full fixture)'), scopeIsFull() ? '' : 'yellow');
+  // ── GATE B IS RETIRED (v0.5.0) ─────────────────────────────────
+  // It compared a v2 replay against 25 bets cut by a harness that never extracted
+  // fence 2, on a database since changed by design. It could not go green, and the
+  // thing it checked — the v2 replay — is no longer computed or displayed. GATE D
+  // replaces it: 19 tickets actually punched, matched horse by horse. Weaker coverage
+  // (the era, not the meet), far better provenance.
+  const rec = recordBlocks();
+  const lr = (nm, s, want, ok) => logMsg('  RECORD  ' + nm + '  ' + s.n + ' bets · ' + s.w + ' won · $'
+       + s.stake.toFixed(2) + ' → $' + s.ret.toFixed(2) + ' · ROI ' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1)
+       + '%   vs FOUNDATION §8 ' + want.bets + '/' + want.won + '  ' + (ok ? 'PASS' : 'FAIL'), ok ? 'green' : 'red');
+  lr('season · from 07/26', rec.sS, SEASON_LEDGER, rec.okS);
+  lr('era    · from 08/06', rec.sE, ERA_LEDGER, rec.okE);
   logMsg('  v3  tau 28 · gap 8 · floor 0.09   bets ' + v3.length + '   won ' + v3.filter((b) => b.won).length
        + '   (no golden comparison — the 2.32.0 replay was cut at floor 0.15 and is superseded)');
   logMsg('  GATE C  T2-MOFF-v1 fires ' + moFull.length + ' vs registered 60 · FULL FIXTURE  '
@@ -10789,7 +10820,7 @@ async function runAll() {
        + ' (frequency only — blind holds, no outcome computed)');
   if (!scopeIsFull())
     logMsg('  IN SCOPE  T2-MOFF-v1 ' + mo.length + ' fires · T2-SPDCLS-v1 ' + sp + ' fires', 'yellow');
-  renderBets({ v2, v3, mo }, { okB, scope: scopeStamp(), full: scopeIsFull() });
+  renderBets({ v3, mo }, { record: rec, scope: scopeStamp(), full: scopeIsFull() });
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -10812,7 +10843,7 @@ function renderRaces() {
 }
 
 function showBets(which) {
-  const ids = { v2: 'bets-v2', v3: 'bets-v3', moff: 'bets-moff' };   // summary is always on
+  const ids = { record: 'bets-record', v3: 'bets-v3', moff: 'bets-moff' };   // summary is always on
   for (const k of Object.keys(ids)) {
     const el = $(ids[k]); if (el) el.style.display = k === which ? 'block' : 'none';
     const b = $('bt-btn-' + k); if (b) b.classList.toggle('active', k === which);
@@ -10859,13 +10890,52 @@ function renderHorses() {
 
 function renderBets(sets, meta) {
   const el = $('bets-sum'); if (!el) return;
-  const rows = [['v2  tau 8 · gap 6 · floor 0.15', sets.v2],
-                ['v3  tau 28 · gap 8 · floor 0.09', sets.v3], ['T2-MOFF-v1', sets.mo]]
-    .map(([nm, b]) => { const s = stat(b);
-      return '<tr><td>' + nm + '</td><td>' + s.n + '</td><td>' + s.w + '</td><td>' + s.hit.toFixed(1)
-           + '%</td><td class="' + (s.roi >= 0 ? 'green' : 'red') + '">' + (s.roi >= 0 ? '+' : '') + s.roi.toFixed(1) + '%</td></tr>'; }).join('');
+  const sc  = (meta && meta.scope) || 'full fixture';
+  const rec = (meta && meta.record) || null;
+
+  // \u2500\u2500 BLOCK 1 \u2014 THE RECORD. hra_bets only: real stakes, odds at punch, real payouts.
+  // Nothing in this block is computed by a model, and it is never put in a table beside
+  // one that is. Gated like D1 \u2014 a nearly-right ledger is worse than none.
+  let A = '<div class="panehead"><span class="mono">THE RECORD \u2014 REAL MONEY</span></div>';
+  if (!rec || !rec.ok) {
+    A += '<p class="sub" style="color:var(--red)">The ledger read does not reproduce FOUNDATION \u00a78'
+       + (rec ? ' (season ' + (rec.okS ? 'ok' : 'MISMATCH') + ' \u00b7 era ' + (rec.okE ? 'ok' : 'MISMATCH') + ')' : '')
+       + '. Not rendering the record.</p>';
+  } else {
+    const r = (nm, s2) => '<tr><td>' + nm + '</td><td>' + s2.n + '</td><td>' + s2.w + '</td><td>'
+      + s2.hit.toFixed(1) + '%</td><td>$' + s2.stake.toFixed(2) + '</td><td>$' + s2.ret.toFixed(2)
+      + '</td><td class="' + (s2.roi >= 0 ? 'green' : 'red') + '">' + (s2.roi >= 0 ? '+' : '')
+      + s2.roi.toFixed(1) + '%</td></tr>';
+    A += '<table class="roll-table"><thead><tr><th>scope</th><th>bets</th><th>won</th><th>hit</th>'
+       + '<th>staked</th><th>returned</th><th>ROI</th></tr></thead><tbody>'
+       + r('SEASON \u00b7 from 07/26', rec.sS)
+       + r('ERA \u00b7 v2, from 08/06', rec.sE)
+       + '</tbody></table>'
+       + '<p class="sub">Reproduces FOUNDATION \u00a78 exactly. The season lost money and the era made money \u2014 '
+       + 'that gap is the entire case for the filter. <b>v2 is replayed nowhere in this tool:</b> the era is closed, '
+       + 'its parameters are retired, and it is the data v3 was fit on. What it did is a fact, not a result.</p>';
+  }
+
+  // \u2500\u2500 BLOCK 2 \u2014 REPLAY. Counterfactual by construction, and labelled as one.
+  const rows = [['v3  tau 28 \u00b7 gap 8 \u00b7 floor 0.09', sets.v3], ['T2-MOFF-v1', sets.mo]]
+    .map(([nm, b]) => { const s2 = stat(b);
+      return '<tr><td>' + nm + '</td><td>' + s2.n + '</td><td>' + s2.w + '</td><td>' + s2.hit.toFixed(1)
+           + '%</td><td class="' + (s2.roi >= 0 ? 'green' : 'red') + '">' + (s2.roi >= 0 ? '+' : '')
+           + s2.roi.toFixed(1) + '%</td></tr>'; }).join('');
+  const B = '<div class="panehead" style="margin-top:22px"><span class="mono">REPLAY \u2014 FLAT $2, FINAL ODDS</span></div>'
+    + '<p class="sub" style="margin-top:0"><b>SCOPE \u2014 ' + sc + '</b></p>'
+    + '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
+    + rows + '</tbody></table>'
+    + '<p class="sub">Flat $2 win at final odds (hra_race_log.odds) \u2014 the only price basis covering every race, '
+    + 'and not the price available at the rail. Gate D measured what that costs: over the era, final-odds pricing '
+    + 'flips 10 of 19 decisions. These ROIs are an upper bound and are <b>never</b> comparable to the record above. '
+    + 'v3 and T2-MOFF-v1 were both tuned on these races; this is a replay, not a test.</p>';
+  el.innerHTML = A + B;
+
+  // \u2500\u2500 blotters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   const blot = (nm, b) => { let run = 0;
-    return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets \u00b7 ' + sc + '</p>'
+    return '<p class="sub" style="margin-top:14px">' + nm + ' \u2014 ' + b.length + ' bets \u00b7 ' + sc
+      + ' \u00b7 flat $2 at final odds</p>'
       + '<div class="scrollpane"><table class="roll-table"><thead><tr><th>#</th><th>race</th><th>horse</th><th>odds</th><th>finish</th>'
       + '<th>result</th><th>P&amp;L</th><th>running</th></tr></thead><tbody>'
       + b.map((x, i) => { const pl = x.won ? 2 * (Number(x.odds) || 0) : -2; run += pl;
@@ -10876,24 +10946,41 @@ function renderBets(sets, meta) {
             + (pl >= 0 ? '+' : '\u2212') + '$' + Math.abs(pl).toFixed(2) + '</td><td class="'
             + (run >= 0 ? 'green' : 'red') + '">' + (run >= 0 ? '+' : '\u2212') + '$' + Math.abs(run).toFixed(2)
             + '</td></tr>'; }).join('') + '</tbody></table></div>'; };
-  const sc = (meta && meta.scope) || 'full fixture';
-  const full = !meta || meta.full !== false;
-  el.innerHTML = '<p class="sub" style="margin-top:0"><b>SCOPE \u2014 ' + sc + '</b> \u00b7 '
-    + (full
-        ? 'the doctrine filter did not ship until 08/06, so v2\u2019s rules are being replayed over days that ran under v1 with no filter at all. Select V2 AS RUN for the window v2 was actually in force for.'
-        : 'every arm is scored on this window, so the rules stay comparable. Gate B still replays the full fixture.')
-    + '</p>'
-    + '<table class="roll-table"><thead><tr><th>rule</th><th>bets</th><th>won</th><th>hit</th><th>ROI</th></tr></thead><tbody>'
-    + rows + '</tbody></table>'
 
-    + '<p class="sub">Flat $2 win, final odds (hra_race_log.odds) for every rule — the only price basis covering all races. '
-    + 'Pre-race prices exist on ~40 bet rows only; Chat 12 measured median drift -10.8%, so these ROIs are an upper bound. '
-    + 'v2, v3 and T2-MOFF-v1 were all fitted or tuned on these races. This is a replay, not a test.</p>'
-    + (meta && meta.okB ? '' : '<p class="sub" style="color:var(--red)">GATE B did not pass — treat the table as diagnostics, not results.</p>');
-  const put = (id, nm, b) => { const p = $(id); if (p) p.innerHTML = blot(nm, b || []); };
-  put('bets-v2',   'v2 \u00b7 tau 8 \u00b7 gap 6 \u00b7 floor 0.15', sets.v2);
-  put('bets-v3',   'v3 \u00b7 tau 28 \u00b7 gap 8 \u00b7 floor 0.09', sets.v3);
-  put('bets-moff', 'T2-MOFF-v1', sets.mo);
+  // The record's blotter is the ticket list, in order, with the era boundary marked.
+  // Refunds are shown rather than dropped: 43 rows exist and all 43 should be visible.
+  const recBlot = () => {
+    if (!rec || !rec.ok) return '<p class="sub" style="color:var(--red)">Ledger read failed \u2014 no blotter.</p>';
+    const isRef = new Set(rec.season.refund);
+    const all = [...rec.season.live, ...rec.season.refund].sort((x, y) =>
+      (Number(x.race_date) - Number(y.race_date)) || (Number(x.race_no) - Number(y.race_no)));
+    let run = 0, marked = false;
+    const body = all.map((b) => {
+      const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0, ref = isRef.has(b);
+      if (!ref) run += pay - amt;
+      let pre = '';
+      if (!marked && Number(b.race_date) >= ERA_LEDGER.start) { marked = true;
+        pre = '<tr><td colspan="8" class="yellow" style="text-align:center;letter-spacing:1px;">'
+            + '\u2500\u2500 08/06 \u00b7 DOCTRINE FILTER SHIPS \u00b7 ERA BEGINS \u2500\u2500</td></tr>'; }
+      return pre + '<tr><td class="muted">' + ymdDisp(b.race_date) + '</td><td>' + b.track + ' R' + b.race_no
+        + '</td><td>' + b.horse + '</td><td>'
+        + (b.odds_at_bet === null || b.odds_at_bet === undefined ? '\u2014' : Number(b.odds_at_bet).toFixed(2))
+        + '</td><td>$' + amt.toFixed(2) + '</td><td>$' + pay.toFixed(2) + '</td><td class="'
+        + (ref ? 'yellow' : b.won ? 'green' : 'muted') + '">' + (ref ? 'REFUND' : b.won ? 'WON' : 'lost')
+        + '</td><td class="' + (run >= 0 ? 'green' : 'red') + '">' + (run >= 0 ? '+' : '\u2212')
+        + '$' + Math.abs(run).toFixed(2) + '</td></tr>';
+    }).join('');
+    return '<p class="sub" style="margin-top:14px">Every ticket, in order \u00b7 ' + rec.season.live.length
+      + ' bets and ' + rec.season.refund.length + ' refunds \u00b7 stake, price and payout as recorded \u00b7 '
+      + 'running column is real money</p>'
+      + '<div class="scrollpane"><table class="roll-table"><thead><tr><th>date</th><th>race</th><th>horse</th>'
+      + '<th>odds at bet</th><th>stake</th><th>payout</th><th>result</th><th>running</th></tr></thead><tbody>'
+      + body + '</tbody></table></div>'; };
+
+  const put = (id, html) => { const p = $(id); if (p) p.innerHTML = html; };
+  put('bets-record', recBlot());
+  put('bets-v3',   blot('v3 \u00b7 tau 28 \u00b7 gap 8 \u00b7 floor 0.09', sets.v3 || []));
+  put('bets-moff', blot('T2-MOFF-v1', sets.mo || []));
 }
 
 function storedKey() {
