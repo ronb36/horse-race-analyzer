@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.0</title>
+<title>HRA Backtester v0.6.1</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.1'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10634,8 +10634,12 @@ function showBets(which) {
 let _horses = [];
 let _horseOpen = -1;
 
+// v0.6.1 — the apostrophe is escaped too. In a double-quoted attribute a raw ' is legal
+// HTML, so this fixes nothing today; it makes esc() safe under single-quoted attributes as
+// well, and apostrophes in horse names have already broken this project twice.
 const esc = (x) => String(x === null || x === undefined ? '' : x)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const fmtOdds = (o) => (o === null || o === undefined || o === '' ? '\u2014' : Number(o).toFixed(2));
 const ordinal = (n) => { const v = Number(n); if (!Number.isFinite(v)) return '\u2014';
   return v + (v === 1 ? 'st' : v === 2 ? 'nd' : v === 3 ? 'rd' : 'th'); };
@@ -10676,9 +10680,22 @@ function horsePanel(m) {
     + (esc(v) || '\u2014') + '</div></div>';
 
   // ── identity ─────────────────────────────────────────────────────────────
-  let h = '<div id="horse-panel" class="panel" style="margin-top:14px">'
+  // v0.6.1 — Equibase. The direct profile URL needs the horse's registry reference
+  // number (Results.cfm?type=Horse&refno=N&registry=T) and brisnetHorses does not parse
+  // one, so this is a SEARCH, not a deep link — saying otherwise would be inventing a
+  // URL pattern. If a refno is ever stored on the card, the direct form lights up here
+  // automatically.
+  const refno = bio.refno || (last && last.log && last.log.refno);
+  const eqb = refno
+    ? 'https://www.equibase.com/profiles/Results.cfm?type=Horse&refno=' + encodeURIComponent(refno) + '&registry=T'
+    : 'https://www.google.com/search?q=' + encodeURIComponent('site:equibase.com "' + m.name + '"');
+  let h = '<div id="horse-panel" class="panel" style="margin-top:14px" onclick="event.stopPropagation()">'
     + '<div class="panehead"><span class="mono">' + esc(m.name) + '</span>'
-    + '<button class="tab-btn" onclick="showHorse(-1)">close</button></div>'
+    + '<span style="display:flex;gap:8px;align-items:center">'
+    + '<a class="tab-btn" style="text-decoration:none" target="_blank" rel="noopener noreferrer" href="'
+    + esc(eqb) + '" onclick="event.stopPropagation()">Equibase '
+    + (refno ? '\u2192' : '\u2315') + '</a>'
+    + '<button class="tab-btn" onclick="event.stopPropagation();showHorse(-1)">close</button></span></div>'
     + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px">'
     + cell('trainer', bio.trainer) + cell('jockey', bio.jockey)
     + cell('sire', bio.sire) + cell('dam', bio.dam)
@@ -10708,7 +10725,7 @@ function horsePanel(m) {
              + (L.purse ? '$' + Number(L.purse).toLocaleString() : '\u2014') + '</td><td>'
              + esc(R.post) + '</td><td>' + Number(R.rating).toFixed(1) + '</td><td class="'
              + (st.topRated ? 'yellow' : 'muted') + '">' + st.rank + '/' + st.field + '</td><td>'
-             + (st.gap === null ? '\u2014' : st.gap.toFixed(1)) + '</td><td>' + esc(R.bio && R.bio.mlCard)
+             + (st.gap === null ? '\u2014' : st.gap.toFixed(1)) + '</td><td>' + fmtOdds(R.ml)
              + '</td><td>' + fmtOdds(L.odds) + '</td><td class="'
              + (Number(L.finish_pos) === 1 ? 'green' : 'muted') + '">' + ordinal(L.finish_pos)
              + '</td></tr>'; }).join('')
@@ -10794,14 +10811,20 @@ function renderHorses() {
     + rows.map((m, i) => { const net = m.ret - m.staked;
         // addressed by index, never by name: apostrophes in an onclick attribute are the
         // same class of defect that broke the Chat 13 backfill SQL
+        // v0.6.1 — the panel is injected as a full-width row DIRECTLY BENEATH the horse
+        // tapped, so the list stays as context and nothing scrolls away. An accordion, not
+        // a footer.
         return '<tr onclick="showHorse(' + i + ')" style="cursor:pointer" class="'
           + (i === _horseOpen ? 'yellow' : '') + '"><td>' + (i === _horseOpen ? '\u25be ' : '\u25b8 ')
           + esc(m.name) + '</td><td>' + (m.starts || 0) + '</td><td>' + (m.w || 0) + '</td><td>'
           + (m.p || 0) + '</td><td>' + (m.s || 0) + '</td><td>' + m.bets + '</td><td>' + m.won + '</td><td>$'
           + m.staked.toFixed(2) + '</td><td>$' + m.ret.toFixed(2) + '</td><td class="' + (net >= 0 ? 'green' : 'red')
-          + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'; }).join('')
-    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture \u2014 the scope window governs rule scoring, not the ledgers. <b>Tap any horse for the full detail.</b></p>'
-    + (_horseOpen >= 0 && rows[_horseOpen] ? horsePanel(rows[_horseOpen]) : '');
+          + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'
+          + (i === _horseOpen ? '<tr><td colspan="10" style="padding:0">' + horsePanel(m) + '</td></tr>' : ''); }).join('')
+    + '</tbody></table>'
+    + '<p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are '
+    + 'from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture '
+    + '\u2014 the scope window governs rule scoring, not the ledgers. <b>Tap any horse for the full detail.</b></p>';
 }
 
 function renderBets(sets, meta) {
