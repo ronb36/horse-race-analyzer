@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.2</title>
+<title>HRA Backtester v0.6.3</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.2'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.3'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10772,7 +10772,68 @@ function showHorse(i) {
   const el = $('horse-panel'); if (el && _horseOpen >= 0) el.scrollIntoView({ block: 'nearest' });
 }
 
-function horsePanel(m) {
+// ── v0.6.3 — PHOTOS ────────────────────────────────────────────
+// User-supplied only. The tool never fetches an image on its own — no scraping, no image
+// search, nothing pulled in the background. It renders a URL Ron puts in, and that is his
+// call to make.
+//
+// Stored in localStorage under the backtester's OWN key, never in Supabase and never
+// anywhere the app can see. Per device by design for now: if this turns out to be worth
+// having on both the iPad and the phone it moves to a table, and that is a bigger change
+// than a nice-to-have deserves tonight.
+//
+// URLs only, not image data. Base64 photos would run this store into its 5MB cap within a
+// dozen horses and fail silently — the exact shape of defect this project keeps finding.
+const PHOTO_KEY = 'hra_bt_photos';
+let _photos = {};
+try { _photos = JSON.parse(localStorage.getItem(PHOTO_KEY) || '{}') || {}; } catch (e) { _photos = {}; }
+
+function photoSave(i) {
+  const m = _horses[i]; if (!m) return;
+  const inp = $('photo-in'); if (!inp) return;
+  const url = String(inp.value || '').trim();
+  const note = $('photo-note');
+  if (!url) return;
+  if (!/^https:\/\/|^data:image\//i.test(url)) {
+    if (note) { note.textContent = 'Needs an https:// image URL.'; note.style.color = 'var(--red)'; }
+    return;
+  }
+  _photos[m.key] = url;
+  try { localStorage.setItem(PHOTO_KEY, JSON.stringify(_photos)); }
+  catch (e) { if (note) { note.textContent = 'Could not save — storage full.'; note.style.color = 'var(--red)'; } return; }
+  renderHorses();
+}
+
+function photoClear(i) {
+  const m = _horses[i]; if (!m) return;
+  delete _photos[m.key];
+  try { localStorage.setItem(PHOTO_KEY, JSON.stringify(_photos)); } catch (e) {}
+  renderHorses();
+}
+
+// The <img> carries its own failure handler: a dead link leaves a labelled gap rather
+// than a browser-broken-image glyph, so it is obvious which horse needs a new URL.
+function photoBlock(m, i) {
+  const url = _photos[m.key];
+  if (url) {
+    return '<div style="margin-bottom:12px">'
+      + '<img src="' + esc(url) + '" alt="' + esc(m.name) + '" '
+      + 'style="max-height:200px;max-width:100%;border-radius:6px;border:1px solid var(--border);display:block" '
+      + 'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'block\'">'
+      + '<div style="display:none;font-size:11px;color:var(--red)">Image did not load — the link may have moved.</div>'
+      + '<button class="tab-btn" style="margin-top:6px" onclick="photoClear(' + i + ')">remove photo</button>'
+      + '</div>';
+  }
+  return '<div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    + '<input id="photo-in" type="text" placeholder="paste an image URL for ' + esc(m.name) + '" '
+    + 'style="flex:1 1 260px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;'
+    + 'color:var(--text);font-family:var(--mono);font-size:11px;padding:8px 10px">'
+    + '<button class="tab-btn" onclick="photoSave(' + i + ')">save photo</button>'
+    + '<span id="photo-note" style="font-size:10px;color:var(--muted)">stored on this device only</span>'
+    + '</div>';
+}
+
+function horsePanel(m, idx) {
   const starts = horseStarts(m.key);
   const last = starts.length ? starts[starts.length - 1] : null;
   const bio = last ? (last.row.bio || {}) : {};
@@ -10797,6 +10858,7 @@ function horsePanel(m) {
     + esc(eqb) + '" onclick="event.stopPropagation()">Equibase '
     + (refno ? '\u2192' : '\u2315') + '</a>'
     + '<button class="tab-btn" onclick="event.stopPropagation();showHorse(-1)">close</button></span></div>'
+    + photoBlock(m, idx)
     + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px">'
     + cell('trainer', bio.trainer) + cell('jockey', bio.jockey)
     + cell('sire', bio.sire) + cell('dam', bio.dam)
@@ -10921,7 +10983,7 @@ function renderHorses() {
           + (m.p || 0) + '</td><td>' + (m.s || 0) + '</td><td>' + m.bets + '</td><td>' + m.won + '</td><td>$'
           + m.staked.toFixed(2) + '</td><td>$' + m.ret.toFixed(2) + '</td><td class="' + (net >= 0 ? 'green' : 'red')
           + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'
-          + (i === _horseOpen ? '<tr><td colspan="10" style="padding:0">' + horsePanel(m) + '</td></tr>' : ''); }).join('')
+          + (i === _horseOpen ? '<tr><td colspan="10" style="padding:0">' + horsePanel(m, i) + '</td></tr>' : ''); }).join('')
     + '</tbody></table>'
     + '<p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are '
     + 'from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture '
