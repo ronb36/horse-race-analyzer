@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.5.0</title>
+<title>HRA Backtester v0.5.1</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -200,6 +200,7 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
     <button class="tab-btn" onclick="runMatched()">Matched subset</button>
     <button class="tab-btn" onclick="runLedgerDiff()">Ledger diff</button>
+    <button class="tab-btn" onclick="runRepeats()">Repeats</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -259,7 +260,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.5.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.5.1'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10220,6 +10221,77 @@ function runLedgerDiff() {
        + '  ·  races only one side bet ' + cO + '   total ' + acc
        + (acc === gap ? '   ✓ accounts for the gap exactly' : '   ✗ DOES NOT ACCOUNT — the buckets are wrong'),
        acc === gap ? 'green' : 'red');
+  showTab('runlog');
+}
+
+// ── v0.5.1 — REPEAT-STARTER CENSUS ──────────────────────────────
+// Two questions, one query. (1) How closed is this population? Benter's edge rested on a
+// pool of ~1,200 horses seen over and over at two tracks; NYRA after the Aqueduct closure
+// is structurally the same shape, and this measures how much. (2) Do the horses Ron bet
+// run more than once at the meet? That decides whether a Horses detail panel shows one
+// start or a career.
+//
+// Full fixture always — a horse's history is not a window. Counts come from
+// hra_race_log (the model ledger); the bet list comes from hra_bets. Read separately,
+// per the two-ledger rule, and joined here for counting only.
+function runRepeats() {
+  if (!_ledger) { logMsg('load first', 'red'); return; }
+  logMsg('── REPEAT-STARTER CENSUS ──────────────────────────');
+
+  // starts per horse, from the log
+  const starts = new Map();
+  let rows = 0;
+  for (const race of _ledger.races) {
+    for (const r of (race.rows || [])) {
+      const k = nameKey(r.horse); if (!k) continue;
+      rows++;
+      if (!starts.has(k)) starts.set(k, { name: r.horse, n: 0, w: 0, days: new Set() });
+      const m = starts.get(k); m.n++; if (r.is_winner) m.w++; m.days.add(String(r.race_date));
+    }
+  }
+  const dist = {};
+  for (const m of starts.values()) { const b = m.n >= 4 ? '4+' : String(m.n); dist[b] = (dist[b] || 0) + 1; }
+  const multi = [...starts.values()].filter((m) => m.n > 1);
+  const pool = starts.size;
+  logMsg('  POPULATION   ' + rows + ' horse-starts · ' + pool + ' distinct horses · '
+       + (rows / (pool || 1)).toFixed(2) + ' starts per horse');
+  logMsg('     1 start ' + (dist['1'] || 0) + '  ·  2 ' + (dist['2'] || 0) + '  ·  3 '
+       + (dist['3'] || 0) + '  ·  4+ ' + (dist['4+'] || 0)
+       + '   —  ' + multi.length + ' horses ran more than once ('
+       + (100 * multi.length / (pool || 1)).toFixed(0) + '% of the pool, '
+       + (100 * multi.reduce((a, m) => a + m.n, 0) / (rows || 1)).toFixed(0) + '% of all starts)');
+
+  // races carrying at least one horse seen elsewhere in the meet
+  let withRepeat = 0;
+  for (const race of _ledger.races) {
+    if ((race.rows || []).some((r) => (starts.get(nameKey(r.horse)) || { n: 0 }).n > 1)) withRepeat++;
+  }
+  logMsg('     races with at least one repeat starter: ' + withRepeat + '/' + _ledger.races.length
+       + '  (' + (100 * withRepeat / (_ledger.races.length || 1)).toFixed(0) + '%)');
+
+  // ── the horses actually bet ───────────────────────────────────────────────
+  const betNames = new Map();
+  for (const b of (_ledger.bets || [])) {
+    const k = nameKey(b.horse); if (!k) continue;
+    if (!betNames.has(k)) betNames.set(k, { name: b.horse, tickets: 0 });
+    betNames.get(k).tickets++;
+  }
+  const mine = [...betNames.entries()].map(([k, v]) => ({ ...v, ...(starts.get(k) || { n: 0, w: 0 }) }))
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  const mineMulti = mine.filter((m) => m.n > 1);
+  const noLog = mine.filter((m) => m.n === 0);
+  logMsg('  HORSES BET   ' + mine.length + ' distinct horses across ' + (_ledger.bets || []).length + ' ticket rows');
+  logMsg('     ran more than once at the meet: ' + mineMulti.length + '/' + mine.length
+       + '  (' + (100 * mineMulti.length / (mine.length || 1)).toFixed(0) + '%)'
+       + '   ·  total starts by bet horses: ' + mine.reduce((a, m) => a + m.n, 0));
+  if (noLog.length) logMsg('     ⚠ ' + noLog.length + ' bet horses have NO log row: '
+       + noLog.map((m) => m.name).join(', '), 'red');
+  logMsg('   ── every horse bet, by starts at the meet ──');
+  mine.forEach((m) => logMsg('     ' + String(m.n) + ' start' + (m.n === 1 ? ' ' : 's')
+       + '  · ' + String(m.w) + ' win' + (m.w === 1 ? ' ' : 's')
+       + '  · ' + m.tickets + ' ticket' + (m.tickets === 1 ? ' ' : 's')
+       + '   ' + m.name, m.n > 1 ? 'yellow' : ''));
+  logMsg('   A panel is a career view if these are mostly >1, and a snapshot if mostly 1.', 'yellow');
   showTab('runlog');
 }
 
