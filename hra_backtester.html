@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.5.2</title>
+<title>HRA Backtester v0.6.0</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.5.2'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9791,6 +9791,16 @@ async function loadLedger() {
         // read r.earlySpeed etc, which were undefined: MOFF scored every edge at 0 (0 fires)
         // and SPDCLS saw every component as 0 so both "top" tests hit element 0 (163 fires).
         ...(rateHorse(h, info, SPEED_SCALE).components || {}),
+        // v0.6.0 — the biography. Parsed by brisnetHorses, used by no rating, dropped
+        // here until now. Additive: nothing below reads bio, so Gate A cannot move.
+        bio: {
+          trainer: h.trainer, jockey: h.jockey, sire: h.sire, dam: h.dam,
+          breeder: h.breeder, bredIn: h.bredIn, runStyle: h.runStyle,
+          quirinPts: h.quirinPts, primePower: h.primePower,
+          daysSinceLastRace: h.daysSinceLastRace, racesThisYear: h.racesThisYear,
+          wins: h.wins, places: h.places, shows: h.shows, earnings: h.earnings,
+          mlCard: h.mlOdds, history: h.history || [],
+        },
       }));
       for (const row of rows) {
         const lg = byName.get(String(row.name || '').trim().toUpperCase());
@@ -10609,6 +10619,150 @@ function showBets(which) {
 
 // Horses we actually bet — hra_bets is the only source for betting claims (two-ledger rule),
 // hra_race_log the only source for model claims. Joined here for display only.
+// ── v0.6.0 — THE HORSE PANEL ────────────────────────────────────
+// Scoped to horses actually bet (Ron's call) — 41 of them, 57 starts, 17 that ran more
+// than once, so this is a career view for nearly half and a single card for the rest.
+//
+// Three bands, and they are kept apart on purpose:
+//   IDENTITY   who the horse is — from the card, nothing computed
+//   THE MACHINE what the engine saw on each start — hra_race_log + fence 1
+//   THE MONEY  from hra_bets only, never blended into the model rows
+//
+// Horses are addressed by INDEX, never by name. Apostrophes are everywhere in this
+// data (Liberty's Secret, She's A Gamer, Don'T Be Salty) and an apostrophe in a name
+// inside an onclick attribute is the same defect that broke the Chat 13 backfill SQL.
+let _horses = [];
+let _horseOpen = -1;
+
+const esc = (x) => String(x === null || x === undefined ? '' : x)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const fmtOdds = (o) => (o === null || o === undefined || o === '' ? '\u2014' : Number(o).toFixed(2));
+const ordinal = (n) => { const v = Number(n); if (!Number.isFinite(v)) return '\u2014';
+  return v + (v === 1 ? 'st' : v === 2 ? 'nd' : v === 3 ? 'rd' : 'th'); };
+
+// Every start a bet horse made, with the card row beside the log row.
+function horseStarts(key) {
+  const out = [];
+  for (const race of _ledger.wired) {
+    const row = (race.results || []).find((r) => nameKey(r.name) === key);
+    if (!row) continue;
+    const log = (race.rows || []).find((r) => nameKey(r.horse) === key);
+    if (!log) continue;                       // scratched: refunded, no log row
+    const live = (race.results || []).filter((r) => !r.scratched);
+    const byR = [...live].sort((a, b) => b.rating - a.rating);
+    out.push({
+      race, log, row,
+      rank: byR.findIndex((r) => r === row) + 1,
+      field: live.length,
+      gap: byR.length > 1 ? byR[0].rating - byR[1].rating : null,
+      topRated: byR[0] === row,
+    });
+  }
+  return out.sort((a, b) => Number(a.log.race_date) - Number(b.log.race_date));
+}
+
+function showHorse(i) {
+  _horseOpen = (_horseOpen === i ? -1 : i);
+  renderHorses();
+  const el = $('horse-panel'); if (el && _horseOpen >= 0) el.scrollIntoView({ block: 'nearest' });
+}
+
+function horsePanel(m) {
+  const starts = horseStarts(m.key);
+  const last = starts.length ? starts[starts.length - 1] : null;
+  const bio = last ? (last.row.bio || {}) : {};
+  const cell = (l, v) => '<div style="min-width:120px"><div class="pl" style="font-size:9px;color:var(--muted);'
+    + 'letter-spacing:1px;text-transform:uppercase">' + l + '</div><div style="font-size:12px">'
+    + (esc(v) || '\u2014') + '</div></div>';
+
+  // ── identity ─────────────────────────────────────────────────────────────
+  let h = '<div id="horse-panel" class="panel" style="margin-top:14px">'
+    + '<div class="panehead"><span class="mono">' + esc(m.name) + '</span>'
+    + '<button class="tab-btn" onclick="showHorse(-1)">close</button></div>'
+    + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px">'
+    + cell('trainer', bio.trainer) + cell('jockey', bio.jockey)
+    + cell('sire', bio.sire) + cell('dam', bio.dam)
+    + cell('bred', bio.bredIn) + cell('run style', bio.runStyle)
+    + cell('quirin pts', bio.quirinPts) + cell('prime power', bio.primePower)
+    + cell('year', (bio.racesThisYear || '0') + ' starts \u00b7 ' + (bio.wins || '0') + '-'
+        + (bio.places || '0') + '-' + (bio.shows || '0'))
+    + cell('earnings', bio.earnings ? '$' + Number(bio.earnings).toLocaleString() : '')
+    + '</div>';
+  h += '<p class="sub">Prime Power and Quirin points are Brisnet\u2019s own numbers. The engine reads '
+     + 'neither \u2014 they are a second opinion on every horse it has ever rated.</p>';
+
+  // ── the machine, per start ───────────────────────────────────────────────
+  h += '<div class="panehead" style="margin-top:16px"><span class="mono">WHAT THE MACHINE SAW</span></div>';
+  if (!starts.length) {
+    h += '<p class="sub">No start in the log \u2014 scratched, and the ticket refunded.</p>';
+  } else {
+    h += '<div class="scrollpane"><table class="roll-table"><thead><tr><th>date</th><th>race</th>'
+       + '<th>conditions</th><th>purse</th><th>post</th><th>rating</th><th>rank</th><th>gap</th>'
+       + '<th>ML</th><th>final</th><th>finish</th></tr></thead><tbody>'
+       + starts.map((st) => {
+           const L = st.log, R = st.row;
+           const cond = esc(L.surface || '') + ' ' + (L.distance_f ? L.distance_f + 'f' : esc(L.distance || ''))
+             + ' \u00b7 ' + esc(L.race_type || '');
+           return '<tr><td class="muted">' + ymdDisp(L.race_date) + '</td><td>' + esc(L.track) + ' R'
+             + esc(L.race_no) + '</td><td>' + cond + '</td><td>'
+             + (L.purse ? '$' + Number(L.purse).toLocaleString() : '\u2014') + '</td><td>'
+             + esc(R.post) + '</td><td>' + Number(R.rating).toFixed(1) + '</td><td class="'
+             + (st.topRated ? 'yellow' : 'muted') + '">' + st.rank + '/' + st.field + '</td><td>'
+             + (st.gap === null ? '\u2014' : st.gap.toFixed(1)) + '</td><td>' + esc(R.bio && R.bio.mlCard)
+             + '</td><td>' + fmtOdds(L.odds) + '</td><td class="'
+             + (Number(L.finish_pos) === 1 ? 'green' : 'muted') + '">' + ordinal(L.finish_pos)
+             + '</td></tr>'; }).join('')
+       + '</tbody></table></div>';
+
+    // the seven components, per start — why the rating was what it was
+    const KEYS = ['earlySpeed', 'recentForm', 'speed', 'class', 'consistency', 'freshness', 'post'];
+    h += '<div class="panehead" style="margin-top:16px"><span class="mono">THE SEVEN COMPONENTS</span></div>'
+       + '<div class="scrollpane"><table class="roll-table"><thead><tr><th>date</th>'
+       + KEYS.map((k) => '<th>' + k + '</th>').join('') + '<th>rating</th></tr></thead><tbody>'
+       + starts.map((st) => '<tr><td class="muted">' + ymdDisp(st.log.race_date) + '</td>'
+           + KEYS.map((k) => '<td>' + (st.row[k] === undefined || st.row[k] === null
+               ? '\u2014' : Number(st.row[k]).toFixed(1)) + '</td>').join('')
+           + '<td>' + Number(st.row.rating).toFixed(1) + '</td></tr>').join('')
+       + '</tbody></table></div>'
+       + '<p class="sub">Quirin\u2019s seven, as the engine computed them. This is the only place in any '
+       + 'HRA surface where the rating is broken into its parts.</p>';
+  }
+
+  // ── form before the meet ─────────────────────────────────────────────────
+  const hist = (bio.history || []).filter((r) => r && r.date);
+  h += '<div class="panehead" style="margin-top:16px"><span class="mono">FORM BEFORE THE MEET</span></div>';
+  if (!hist.length) h += '<p class="sub">No past-performance lines on the card \u2014 likely a first-time starter.</p>';
+  else h += '<div class="scrollpane"><table class="roll-table"><thead><tr><th>date</th><th>track</th>'
+     + '<th>dist</th><th>surf</th><th>finish</th><th>beaten</th><th>speed</th><th>odds</th></tr></thead><tbody>'
+     + hist.map((r) => '<tr><td class="muted">' + esc(r.date) + '</td><td>' + esc(r.track) + '</td><td>'
+         + (r.distF === null || r.distF === undefined ? '\u2014' : r.distF + 'f') + '</td><td>'
+         + esc(r.surface) + '</td><td class="' + (Number(r.fin) === 1 ? 'green' : 'muted') + '">'
+         + ordinal(r.fin) + '</td><td>' + (r.lebFin === null || r.lebFin === undefined ? '\u2014' : r.lebFin)
+         + '</td><td>' + (r.spd === null || r.spd === undefined ? '\u2014' : r.spd) + '</td><td>'
+         + fmtOdds(r.odds) + '</td></tr>').join('')
+     + '</tbody></table></div><p class="sub">Brisnet\u2019s last ten, read off the most recent card this horse '
+     + 'appeared on. These are the races the engine scored it from \u2014 the evidence behind the components above.</p>';
+
+  // ── the money, kept separate ─────────────────────────────────────────────
+  const tickets = (_ledger.bets || []).filter((b) => nameKey(b.horse) === m.key)
+    .sort((a, b) => Number(a.race_date) - Number(b.race_date));
+  h += '<div class="panehead" style="margin-top:16px"><span class="mono">THE MONEY</span></div>'
+     + '<table class="roll-table"><thead><tr><th>date</th><th>race</th><th>odds at bet</th><th>stake</th>'
+     + '<th>payout</th><th>result</th></tr></thead><tbody>'
+     + tickets.map((b) => {
+         const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0;
+         const ref = !b.won && pay > 0 && Math.abs(pay - amt) < 0.005;
+         return '<tr><td class="muted">' + ymdDisp(b.race_date) + '</td><td>' + esc(b.track) + ' R'
+           + esc(b.race_no) + '</td><td>' + fmtOdds(b.odds_at_bet) + '</td><td>$' + amt.toFixed(2)
+           + '</td><td>$' + pay.toFixed(2) + '</td><td class="'
+           + (ref ? 'yellow' : b.won ? 'green' : 'muted') + '">'
+           + (ref ? 'REFUND' : b.won ? 'WON' : 'lost') + '</td></tr>'; }).join('')
+     + '</tbody></table>'
+     + '<p class="sub">From hra_bets alone. The two ledgers are read separately and never blended \u2014 '
+     + 'the rows above come from hra_race_log and the card, these from the betting ledger.</p></div>';
+  return h;
+}
+
 function renderHorses() {
   const el = $('tab-gaps'); if (!el || !_ledger) return;
   const mine = new Map();
@@ -10631,15 +10785,23 @@ function renderHorses() {
       if (f === 3) m.s = (m.s || 0) + 1;
     }
   }
-  const rows = [...mine.values()].sort((a, b) => (b.ret - b.staked) - (a.ret - a.staked));
+  for (const [k, m] of mine) m.key = k;
+  _horses = [...mine.values()].sort((a, b) => (b.ret - b.staked) - (a.ret - a.staked));
+  const rows = _horses;
+  if (_horseOpen >= rows.length) _horseOpen = -1;
   el.innerHTML = '<table class="roll-table"><thead><tr><th>horse</th><th>starts</th><th>W</th><th>P</th><th>S</th>'
     + '<th>my bets</th><th>won</th><th>staked</th><th>returned</th><th>net</th></tr></thead><tbody>'
-    + rows.map((m) => { const net = m.ret - m.staked;
-        return '<tr><td>' + m.name + '</td><td>' + (m.starts || 0) + '</td><td>' + (m.w || 0) + '</td><td>'
+    + rows.map((m, i) => { const net = m.ret - m.staked;
+        // addressed by index, never by name: apostrophes in an onclick attribute are the
+        // same class of defect that broke the Chat 13 backfill SQL
+        return '<tr onclick="showHorse(' + i + ')" style="cursor:pointer" class="'
+          + (i === _horseOpen ? 'yellow' : '') + '"><td>' + (i === _horseOpen ? '\u25be ' : '\u25b8 ')
+          + esc(m.name) + '</td><td>' + (m.starts || 0) + '</td><td>' + (m.w || 0) + '</td><td>'
           + (m.p || 0) + '</td><td>' + (m.s || 0) + '</td><td>' + m.bets + '</td><td>' + m.won + '</td><td>$'
           + m.staked.toFixed(2) + '</td><td>$' + m.ret.toFixed(2) + '</td><td class="' + (net >= 0 ? 'green' : 'red')
           + '">' + (net >= 0 ? '+' : '\u2212') + '$' + Math.abs(net).toFixed(2) + '</td></tr>'; }).join('')
-    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture \u2014 the scope window governs rule scoring, not the ledgers.</p>';
+    + '</tbody></table><p class="sub">Starts/W/P/S are era-2 Saratoga only, from hra_race_log. Bets, stake and payout are from hra_bets \u2014 the two ledgers are read separately and never blended. Always the full fixture \u2014 the scope window governs rule scoring, not the ledgers. <b>Tap any horse for the full detail.</b></p>'
+    + (_horseOpen >= 0 && rows[_horseOpen] ? horsePanel(rows[_horseOpen]) : '');
 }
 
 function renderBets(sets, meta) {
