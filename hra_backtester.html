@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.4.0</title>
+<title>HRA Backtester v0.4.1</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -258,7 +258,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.4.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.4.1'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9903,7 +9903,10 @@ function diagFieldSize() {
 // table the handicapper join produced in Chat 13, and just as plausible-looking.
 //
 // What does NOT honour it, deliberately: Gate A, the field-size diagnostic, the
-// replica-equivalence check, the ML coverage report, Gate B, and the Horses ledger.
+// replica-equivalence check, the ML coverage report, GATES B AND C, and the Horses
+// ledger. v0.4.1: Gate C was left scoped in 0.4.0 and duly failed 46/60 under a window.
+// A registered count is a claim about the whole fixture; scoring it on part of one does
+// not test the claim, it changes the subject.
 // Those are statements about the data and the harness, and they get stronger with
 // more races, not fewer.
 const V2_START = 20260806;      // the day doctrineFilter shipped
@@ -10620,10 +10623,14 @@ async function runAll() {
   const v2 = runDoctrine(8, 6);
   const v3 = eq.diff ? [] : runDoctrineFloor(28, 8, 0.09);
   const mo = runMoff(), sp = runSpdclsFrequency();
-  // GATE B IS A HARNESS CHECK, NOT A RESULT. It always replays the full fixture,
-  // whatever the window says. Re-baselining the golden master to a number computed
-  // under a scope would retire the only independent check this tool has.
+  // THE GATES ARE HARNESS CHECKS, NOT RESULTS. Every one of them replays the full
+  // fixture whatever the window says, because every target they compare against —
+  // golden 25, registered 60, registered 25 — is a full-fixture number. Re-baselining
+  // any of them to a figure computed under a scope would retire the only independent
+  // checks this tool has.
   const v2Full = scopeIsFull() ? v2 : withFullFixture(() => runDoctrine(8, 6));
+  const moFull = scopeIsFull() ? mo : withFullFixture(() => runMoff());
+  const spFull = scopeIsFull() ? sp : withFullFixture(() => runSpdclsFrequency());
   _TAU = 28; _GAP = 8;
 
   // ── GATE B — replay against the golden-master counts (FOUNDATION 7) ───────
@@ -10636,11 +10643,17 @@ async function runAll() {
     return ok;
   };
   const okB = !!chk('v2 tau8 gap6 · FULL FIXTURE', v2Full.length, 25);
+  logMsg('  v2  tau 8 · gap 6 · floor 0.15   bets ' + v2.length + '   won ' + v2.filter((b) => b.won).length
+       + (scopeIsFull() ? '' : '   ← IN SCOPE (Gate B above is the full fixture)'), scopeIsFull() ? '' : 'yellow');
   logMsg('  v3  tau 28 · gap 8 · floor 0.09   bets ' + v3.length + '   won ' + v3.filter((b) => b.won).length
        + '   (no golden comparison — the 2.32.0 replay was cut at floor 0.15 and is superseded)');
-  logMsg('  GATE C  T2-MOFF-v1 fires ' + mo.length + ' vs registered 60  ' + (Math.abs(mo.length - 60) <= 1 ? 'PASS' : 'FAIL'),
-         Math.abs(mo.length - 60) <= 1 ? 'green' : 'red');
-  logMsg('  T2-SPDCLS-v1 fires: ' + sp + ' (frequency only — blind holds, no outcome computed)');
+  logMsg('  GATE C  T2-MOFF-v1 fires ' + moFull.length + ' vs registered 60 · FULL FIXTURE  '
+       + (Math.abs(moFull.length - 60) <= 1 ? 'PASS' : 'FAIL'),
+         Math.abs(moFull.length - 60) <= 1 ? 'green' : 'red');
+  logMsg('  T2-SPDCLS-v1 fires: ' + spFull + ' vs registered 25 · FULL FIXTURE'
+       + ' (frequency only — blind holds, no outcome computed)');
+  if (!scopeIsFull())
+    logMsg('  IN SCOPE  T2-MOFF-v1 ' + mo.length + ' fires · T2-SPDCLS-v1 ' + sp + ' fires', 'yellow');
   renderBets({ v2, v3, mo }, { okB, scope: scopeStamp(), full: scopeIsFull() });
 }
 
