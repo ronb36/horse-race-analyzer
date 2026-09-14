@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.1</title>
+<title>HRA Backtester v0.6.2</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10243,6 +10243,7 @@ function runLedgerDiff() {
 // Full fixture always — a horse's history is not a window. Counts come from
 // hra_race_log (the model ledger); the bet list comes from hra_bets. Read separately,
 // per the two-ledger rule, and joined here for counting only.
+
 function runRepeats() {
   if (!_ledger) { logMsg('load first', 'red'); return; }
   logMsg('── REPEAT-STARTER CENSUS ──────────────────────────');
@@ -10308,8 +10309,108 @@ function runRepeats() {
        + '  · ' + m.tickets + ' ticket' + (m.tickets === 1 ? ' ' : 's')
        + '   ' + m.name, m.n > 1 ? 'yellow' : ''));
   logMsg('   A panel is a career view if these are mostly >1, and a snapshot if mostly 1.', 'yellow');
+  // v0.6.2 — same question from the other side: repetition says how often the circuit sees
+  // a horse again; provenance says whether it was the circuit that saw it in the first place.
+  runProvenance();
   showTab('runlog');
 }
+// ── v0.6.2 — FORM PROVENANCE ───────────────────────────────────────
+// The panel showed CD lines on several horses, which raises a question the census did not
+// ask: the speed component reads figures earned at other tracks. Each is adjusted by its
+// own track variant, which is what a speed figure is for — but the variants are estimated
+// from different populations, and the closed-circuit argument only holds for horses whose
+// form was earned on it.
+//
+// Two things measured here, both on the FULL fixture and from the card's own past-
+// performance lines (bio.history, 10 deep, parsed all season and unused until v0.6.0):
+//   PROVENANCE  where the form was earned — NYRA, elsewhere, or mixed
+//   DEPTH       how many lines the engine had to rate from. Benter's requirement was
+//               complete past data on every runner; a horse with two lines is rated on
+//               thinner evidence than one with ten, and that is measurable here.
+//
+// Small n everywhere. Counts are printed beside every rate so nothing has to be taken
+// on trust, and no claim is made that a difference is real.
+const NY_CIRCUIT = new Set(['SAR', 'BEL', 'AQU', 'BAQ']);
+
+function provenanceOf(row) {
+  const h = ((row.bio || {}).history || []).filter((r) => r && r.date);
+  if (!h.length) return { cls: 'no form', depth: 0, ny: 0, away: 0 };
+  let ny = 0, away = 0;
+  for (const r of h) (NY_CIRCUIT.has(String(r.track || '').trim().toUpperCase()) ? ny++ : away++);
+  const cls = away === 0 ? 'NYRA only' : ny === 0 ? 'shipper' : 'mixed';
+  return { cls, depth: h.length, ny, away };
+}
+
+function runProvenance() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  logMsg('── FORM PROVENANCE ─────────────────────────────────');
+
+  const ORDER = ['NYRA only', 'mixed', 'shipper', 'no form'];
+  const acc = {}, depthAcc = {};
+  for (const c of ORDER) acc[c] = { n: 0, rating: 0, top: 0, topWon: 0, won: 0, odds: 0, oddsN: 0, depth: 0 };
+  const bucket = (d) => (d === 0 ? '0' : d <= 3 ? '1-3' : d <= 6 ? '4-6' : d <= 9 ? '7-9' : '10');
+  for (const b of ['0', '1-3', '4-6', '7-9', '10']) depthAcc[b] = { n: 0, won: 0, rating: 0 };
+
+  let starts = 0, noCard = 0;
+  for (const race of _ledger.wired) {
+    const live = (race.results || []).filter((r) => !r.scratched && r._inLog);
+    if (!live.length) continue;
+    const byR = [...live].sort((a, b) => b.rating - a.rating);
+    for (const r of live) {
+      const p = provenanceOf(r);
+      if (!r.bio) { noCard++; continue; }
+      starts++;
+      const a = acc[p.cls]; if (!a) continue;
+      a.n++; a.rating += Number(r.rating) || 0; a.depth += p.depth;
+      if (r.is_winner) a.won++;
+      if (byR[0] === r) { a.top++; if (r.is_winner) a.topWon++; }
+      if (r.odds !== null && r.odds !== undefined) { a.odds += Number(r.odds); a.oddsN++; }
+      const d = depthAcc[bucket(p.depth)];
+      d.n++; d.rating += Number(r.rating) || 0; if (r.is_winner) d.won++;
+    }
+  }
+  if (noCard) logMsg('   ' + noCard + ' live rows carry no card biography — reload if this is not zero', 'red');
+
+  const pct = (a, b) => (b ? (100 * a / b).toFixed(1) : '—');
+  logMsg('   ' + starts + ' rated starts with past-performance lines, full fixture');
+  logMsg('   ' + 'provenance'.padEnd(11) + 'starts'.padStart(7) + 'share'.padStart(8)
+       + 'mean rtg'.padStart(10) + 'mean PPs'.padStart(10) + 'top-rated'.padStart(11)
+       + 'win%'.padStart(8) + 'win% when top'.padStart(15));
+  for (const c of ORDER) {
+    const a = acc[c]; if (!a.n) continue;
+    logMsg('   ' + c.padEnd(11) + String(a.n).padStart(7) + (pct(a.n, starts) + '%').padStart(8)
+         + (a.rating / a.n).toFixed(1).padStart(10) + (a.depth / a.n).toFixed(1).padStart(10)
+         + String(a.top).padStart(11) + (pct(a.won, a.n) + '%').padStart(8)
+         + (pct(a.topWon, a.top) + '% of ' + a.top).padStart(15));
+  }
+  logMsg('   ── evidence depth: how many past lines the engine had ──');
+  for (const b of ['0', '1-3', '4-6', '7-9', '10']) {
+    const d = depthAcc[b]; if (!d.n) continue;
+    logMsg('     ' + (b + ' lines').padEnd(10) + String(d.n).padStart(6) + ' starts   mean rtg '
+         + (d.rating / d.n).toFixed(1).padStart(5) + '   win ' + (pct(d.won, d.n) + '%').padStart(6));
+  }
+
+  // the horses actually bet, by provenance
+  const betKeys = new Set((_ledger.bets || []).map((b) => nameKey(b.horse)));
+  const mineBy = {};
+  for (const c of ORDER) mineBy[c] = [];
+  for (const race of _ledger.wired) {
+    for (const r of (race.results || [])) {
+      if (!betKeys.has(nameKey(r.name)) || !r._inLog) continue;
+      const p = provenanceOf(r);
+      if (mineBy[p.cls] && !mineBy[p.cls].some((x) => nameKey(x) === nameKey(r.name))) mineBy[p.cls].push(r.name);
+    }
+  }
+  logMsg('   ── the horses you bet ──');
+  for (const c of ORDER) {
+    if (!mineBy[c].length) continue;
+    logMsg('     ' + c.padEnd(11) + String(mineBy[c].length).padStart(3) + '   ' + mineBy[c].sort().join(', '));
+  }
+  logMsg('   Counts are printed beside every rate on purpose. Nothing here is a finding yet — '
+       + 'a 163-race meet cannot separate these.', 'yellow');
+}
+
+
 
 // ── v0.3.7 — the handicapper benchmark ─────────────────────────────────────
 // Benter (1994) built a model from 48 newspaper tipsters' picks: R^2 .1014, statistically
