@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.4</title>
+<title>HRA Backtester v0.6.6</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.4'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.6'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10209,6 +10209,31 @@ function runLedgerDiff() {
          + ')  $' + (Number(d.x.amount) || 0).toFixed(2) + ' → $' + (Number(d.x.payout) || 0).toFixed(2), 'yellow'));
   }
 
+  // ── D2b. what IS odds_at_bet? ───────────────────────────────────
+  // v0.6.6 — a ticket showed odds_at_bet 3.00 against a morning line of exactly 3.00 and a
+  // final of 1.57. One horse proves nothing (a board often sits on the ML early), but if
+  // the field equals the ML on every ticket then it is the morning line under another name
+  // and every drift number computed from it is meaningless. Counted, not assumed.
+  let mlSame = 0, mlCmp = 0, finSame = 0, finCmp = 0, drifts = [];
+  for (const a of [...agreed, ...diffHorse]) {
+    const at = Number(a.x.odds_at_bet);
+    if (!Number.isFinite(at) || at <= 0) continue;
+    const ml = Number(a.t.ml), fin = Number(a.t.odds);
+    if (Number.isFinite(ml)) { mlCmp++; if (Math.abs(ml - at) < 0.005) mlSame++; }
+    if (Number.isFinite(fin)) { finCmp++; if (Math.abs(fin - at) < 0.005) finSame++; drifts.push(100 * (fin - at) / at); }
+  }
+  if (mlCmp || finCmp) {
+    drifts.sort((p, q) => p - q);
+    const med = drifts.length ? drifts[Math.floor(drifts.length / 2)] : null;
+    logMsg('  D2b odds_at_bet    equals the morning line on ' + mlSame + '/' + mlCmp
+         + '   equals the final on ' + finSame + '/' + finCmp
+         + (med === null ? '' : '   median drift bet→final ' + (med >= 0 ? '+' : '') + med.toFixed(1) + '%'),
+           (mlCmp && mlSame === mlCmp) ? 'red' : '');
+    if (mlCmp && mlSame === mlCmp)
+      logMsg('     EVERY ticket matches the morning line exactly — odds_at_bet is the ML, not a board '
+           + 'price, and any drift computed from it is meaningless.', 'red');
+  }
+
   // ── D3. the two ledgers on outcome, where they bet the same horse ────────
   // hra_race_log.is_winner is the model ledger; hra_bets.won is the money ledger.
   // They are read separately and never blended; this is the one place they are
@@ -10345,15 +10370,31 @@ function runReturning() {
   }
   const raced = new Set(_ledger.races.map((r) => String(r.track) + '|' + Number(r.race_date)));
 
-  const cards = [];
+  // v0.6.5 — an entries row with no results is not automatically a card still to come.
+  // SAR 07/29 read as UPCOMING for a whole session: entries exist, the chart was never
+  // ingested, and no k-file was ever bought, so the races cannot enter the fixture at all.
+  // As Belmont piles up entries rows, every failed chart ingest would quietly present
+  // itself as a preview. Past date + no results is a DATA GAP and says so.
+  const today = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+  const cards = [], orphans = [];
   for (const e of (_ledger.ents || [])) {
     const key = String(e.track) + '|' + Number(e.race_date);
     if (raced.has(key)) continue;                 // already run: that is history, not a lookahead
-    cards.push(e);
+    (Number(e.race_date) < today ? orphans : cards).push(e);
+  }
+  if (orphans.length) {
+    logMsg('   ORPHANED \u2014 entries on file, no races in the log, date already past:', 'red');
+    for (const e of orphans.sort((a, b) => Number(a.race_date) - Number(b.race_date))) {
+      const n = (e.entries || []).length;
+      const hasCard = (_ledger.races || []).some((r) => String(r.track) === String(e.track)
+        && Number(r.race_date) === Number(e.race_date));
+      logMsg('     ' + esc(e.track) + ' ' + ymdDisp(e.race_date) + '  ' + n + ' races  \u2014 '
+           + (hasCard ? 'card present, chart missing' : 'no k-file and no chart: these races cannot be rated'), 'red');
+    }
   }
   if (!cards.length) {
-    logMsg('   No entries card without results — nothing upcoming is loaded.', 'yellow');
-    logMsg('   ' + (_ledger.ents || []).length + ' entries rows present, all of them for races already in the log.');
+    logMsg('   Nothing upcoming is loaded \u2014 ' + (_ledger.ents || []).length + ' entries rows on file, '
+         + (orphans.length ? orphans.length + ' orphaned, ' : '') + 'the rest already run.', 'yellow');
     return;
   }
 
@@ -10469,17 +10510,31 @@ function runProvenance() {
   }
 
   // the horses actually bet, by provenance
+  // v0.6.5 — classify each horse ONCE, from its history pooled across every start.
+  // A horse with two starts carries a different card each time, so it could land in two
+  // classes at once: Silent Tactic appeared as both mixed and shipper and the rows summed
+  // to 40 against 39 horses. Deduplicating within a class did not catch it; the fix is to
+  // decide per horse rather than per start.
   const betKeys = new Set((_ledger.bets || []).map((b) => nameKey(b.horse)));
-  const mineBy = {};
-  for (const c of ORDER) mineBy[c] = [];
+  const pooled = new Map();
   for (const race of _ledger.wired) {
     for (const r of (race.results || [])) {
-      if (!betKeys.has(nameKey(r.name)) || !r._inLog) continue;
-      const p = provenanceOf(r);
-      if (mineBy[p.cls] && !mineBy[p.cls].some((x) => nameKey(x) === nameKey(r.name))) mineBy[p.cls].push(r.name);
+      const k = nameKey(r.name);
+      if (!betKeys.has(k) || !r._inLog) continue;
+      if (!pooled.has(k)) pooled.set(k, { name: r.name, ny: 0, away: 0 });
+      const agg = pooled.get(k), p = provenanceOf(r);
+      agg.ny += p.ny; agg.away += p.away;
     }
   }
-  logMsg('   ── the horses you bet ──');
+  const mineBy = {};
+  for (const c of ORDER) mineBy[c] = [];
+  for (const agg of pooled.values()) {
+    const cls = (agg.ny + agg.away) === 0 ? 'no form'
+              : agg.away === 0 ? 'NYRA only' : agg.ny === 0 ? 'shipper' : 'mixed';
+    mineBy[cls].push(agg.name);
+  }
+  const mineTotal = ORDER.reduce((a, c) => a + mineBy[c].length, 0);
+  logMsg('   \u2500\u2500 the horses you bet \u2014 ' + mineTotal + ' distinct, each counted once \u2500\u2500');
   for (const c of ORDER) {
     if (!mineBy[c].length) continue;
     logMsg('     ' + c.padEnd(11) + String(mineBy[c].length).padStart(3) + '   ' + mineBy[c].sort().join(', '));
@@ -11004,20 +11059,37 @@ function horsePanel(m, idx) {
   // ── the money, kept separate ─────────────────────────────────────────────
   const tickets = (_ledger.bets || []).filter((b) => nameKey(b.horse) === m.key)
     .sort((a, b) => Number(a.race_date) - Number(b.race_date));
+  // v0.6.6 \u2014 three prices, not one. A pari-mutuel ticket settles at the FINAL price
+  // whatever the board showed when it was punched, so the payout can only be read against
+  // the final; and the drift between the price taken and the price paid is the whole
+  // subject of Gate D. Showing only "odds at bet" hid both.
+  const startBy = new Map(horseStarts(m.key).map((st) =>
+    [dRaceKey(st.log.track, st.log.race_date, st.log.race_no), st]));
   h += '<div class="panehead" style="margin-top:16px"><span class="mono">THE MONEY</span></div>'
-     + '<table class="roll-table"><thead><tr><th>date</th><th>race</th><th>odds at bet</th><th>stake</th>'
-     + '<th>payout</th><th>result</th></tr></thead><tbody>'
+     + '<table class="roll-table"><thead><tr><th>date</th><th>race</th><th>ML</th><th>at bet</th>'
+     + '<th>final</th><th>drift</th><th>stake</th><th>payout</th><th>result</th></tr></thead><tbody>'
      + tickets.map((b) => {
          const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0;
          const ref = !b.won && pay > 0 && Math.abs(pay - amt) < 0.005;
+         const st = startBy.get(dRaceKey(b.track, b.race_date, b.race_no));
+         const ml = st ? st.row.ml : null;
+         const fin = st && st.log.odds !== null && st.log.odds !== undefined ? Number(st.log.odds) : null;
+         const at = (b.odds_at_bet === null || b.odds_at_bet === undefined) ? null : Number(b.odds_at_bet);
+         const drift = (at && fin !== null) ? 100 * (fin - at) / at : null;
          return '<tr><td class="muted">' + ymdDisp(b.race_date) + '</td><td>' + esc(b.track) + ' R'
-           + esc(b.race_no) + '</td><td>' + fmtOdds(b.odds_at_bet) + '</td><td>$' + amt.toFixed(2)
+           + esc(b.race_no) + '</td><td class="muted">' + fmtOdds(ml) + '</td><td>' + fmtOdds(at)
+           + '</td><td>' + fmtOdds(fin) + '</td><td class="'
+           + (drift === null ? 'muted' : drift < 0 ? 'red' : 'green') + '">'
+           + (drift === null ? '\u2014' : (drift >= 0 ? '+' : '') + drift.toFixed(0) + '%')
+           + '</td><td>$' + amt.toFixed(2)
            + '</td><td>$' + pay.toFixed(2) + '</td><td class="'
            + (ref ? 'yellow' : b.won ? 'green' : 'muted') + '">'
            + (ref ? 'REFUND' : b.won ? 'WON' : 'lost') + '</td></tr>'; }).join('')
      + '</tbody></table>'
-     + '<p class="sub">From hra_bets alone. The two ledgers are read separately and never blended \u2014 '
-     + 'the rows above come from hra_race_log and the card, these from the betting ledger.</p></div>';
+     + '<p class="sub">Stake, price at bet, payout and result are from hra_bets. ML and final are from '
+     + 'the entries and the chart \u2014 shown here for comparison only, never blended into the money. '
+     + 'A win ticket pays the <b>final</b> price, not the one on the board when you punched it: drift is '
+     + 'what that cost or earned. Negative drift means the horse was bet down after you took the price.</p></div>';
   return h;
 }
 
