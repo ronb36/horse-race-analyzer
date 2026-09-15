@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v3.1.1</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v3.1.2</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -122,7 +122,10 @@ function parseBrisnetFile(text) {
     return {
       raceNumber: no,
       distanceFurlongs: yards !== null ? Math.round((Math.abs(yards) / 220) * 100) / 100 : null,
-      surface: /T/i.test(f(r0, 7)) ? "turf" : "dirt",
+      // 3.1.2: Brisnet carries no all-weather value in the surface field (field 7 is
+      // D/T/d/t/s/h only); a synthetic race is coded "D" there and flagged in field 25.
+      // Verified on BEL0918: 21 all-weather prior starts, every one D + flag, no exception.
+      surface: f(r0, 25).toUpperCase() === "A" ? "tapeta" : (/T/i.test(f(r0, 7)) ? "turf" : "dirt"),
       purse: fn(r0, 12),
       type: f(r0, 11) || type,
       isMaiden: type === "S" || type === "M" || type === "MO",
@@ -655,7 +658,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "3.1.1";
+const APP_VERSION = "3.1.2";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
@@ -678,7 +681,13 @@ const READY_MSG = "READY FOR " + ERA_MEET;
 // The 2.22.1 test already handles both — it matches "claim" OR word-start "clm",
 // then excludes oclm/starter/optional/alw. Do not narrow it to one vocabulary.
 function entryDoctrine(raceInfo) {
-  if (/turf/i.test(String(raceInfo.surface || ""))) return { reason: "TURF", label: "Turf" };
+  // 3.1.2: fail closed on any surface that is neither dirt nor turf. Tapeta arrives from
+  // the k-file parser as "tapeta"; an unrecognised code from any other path is filtered
+  // rather than silently treated as dirt. The turf test below is unchanged, so every
+  // surface string the season has actually produced returns exactly what it did before.
+  const sf = String(raceInfo.surface || "");
+  if (sf && !/^\s*(dirt|turf)/i.test(sf)) return { reason: "SURFACE", label: "Tapeta" };
+  if (/turf/i.test(sf)) return { reason: "TURF", label: "Turf" };
   const df = num(raceInfo.distanceFurlongs);
   if (!(df >= 6 && df <= 9)) return { reason: "DISTANCE " + df + "F", label: "Distance " + df + "f" };
   const typ = String(raceInfo.type || "").toLowerCase();
@@ -1238,8 +1247,8 @@ function HorseRaceAnalyzer() {
       fileBlocksRef.current = await filesToBlocks(fileList);
       const parsed = await askClaude(
         `List every race on this past-performance card. Respond with ONLY valid compact JSON, no markdown fences, no commentary:
-{"title":"Track MM/DD/YYYY","races":[[raceNumber,distanceFurlongs,"dirt"|"turf",purse,"short race type",isMaiden(0 or 1),is2yoOnly(0 or 1),horseCount],...]}
-Notes: distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5). isMaiden=1 for any maiden race. is2yoOnly=1 if restricted to two-year-olds. Be terse; JSON only.`
+{"title":"Track MM/DD/YYYY","races":[[raceNumber,distanceFurlongs,"dirt"|"turf"|"tapeta",purse,"short race type",isMaiden(0 or 1),is2yoOnly(0 or 1),horseCount],...]}
+Notes: surface is "tapeta" if the header says Tapeta, all-weather or synthetic. distanceFurlongs as a number (1 mile = 8, 1 1/16 mi = 8.5, 5 1/2f = 5.5). isMaiden=1 for any maiden race. is2yoOnly=1 if restricted to two-year-olds. Be terse; JSON only.`
       );
       setCardTitle(parsed.title || "");
       const m = /^(.*?)\s+(\d{2})\/(\d{2})\/(\d{4})/.exec(parsed.title || "");
@@ -1634,7 +1643,10 @@ Rules: lenBehind = lengths behind the leader at that call (0 if leading), read f
         raceNumber: no,
         type: typeName,
         distanceFurlongs: Number.isFinite(yards) ? Math.round((yards / 220) * 100) / 100 : null,
-        surface: String(r[5]).toUpperCase() === "T" ? "turf" : "dirt",
+        // 3.1.2: the .etd surface field is one T/D character with no all-weather value.
+        // Field offsets here are unverified against a real .etd, so the sniff goes against
+        // the conditions text, which this parser already reads reliably.
+        surface: /tapeta|all[- ]?weather|synthetic/i.test(cond) ? "tapeta" : (String(r[5]).toUpperCase() === "T" ? "turf" : "dirt"),
         purse: Number.isFinite(parseFloat(r[6])) ? parseFloat(r[6]) : null,
         postTime: null,
         fieldSize: rs.length,

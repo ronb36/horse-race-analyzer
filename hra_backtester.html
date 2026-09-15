@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.9'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.10'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9658,7 +9658,10 @@ function simVerdict(rows) {
 
 // ── doctrine, verbatim but for the gap PARAM ───────────────────────────────
 function entryDoctrine(raceInfo) {
-  if (/turf/i.test(String(raceInfo.surface || ""))) return { reason: "TURF", label: "Turf" };
+  // 3.1.2 mirror — must stay byte-identical to index.html entryDoctrine or Gate D diverges.
+  const sf = String(raceInfo.surface || "");
+  if (sf && !/^\s*(dirt|turf)/i.test(sf)) return { reason: "SURFACE", label: "Tapeta" };
+  if (/turf/i.test(sf)) return { reason: "TURF", label: "Turf" };
   const df = num(raceInfo.distanceFurlongs);
   if (!(df >= 6 && df <= 9)) return { reason: "DISTANCE " + df + "F", label: "Distance " + df + "f" };
   const typ = String(raceInfo.type || "").toLowerCase();
