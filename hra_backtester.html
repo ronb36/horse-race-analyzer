@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.6</title>
+<title>HRA Backtester v0.6.7</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.6'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.7'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10214,24 +10214,38 @@ function runLedgerDiff() {
   // final of 1.57. One horse proves nothing (a board often sits on the ML early), but if
   // the field equals the ML on every ticket then it is the morning line under another name
   // and every drift number computed from it is meaningless. Counted, not assumed.
-  let mlSame = 0, mlCmp = 0, finSame = 0, finCmp = 0, drifts = [];
-  for (const a of [...agreed, ...diffHorse]) {
+  // How many tickets even HAVE a price is the first question; how many match the ML is
+  // the second. v0.6.6 asked only the second and read the ML off the wrong object.
+  const pool = [...agreed, ...diffHorse];
+  let priced = 0, mlSame = 0, mlCmp = 0, finSame = 0, finCmp = 0;
+  const drifts = [];
+  for (const a of pool) {
     const at = Number(a.x.odds_at_bet);
     if (!Number.isFinite(at) || at <= 0) continue;
+    priced++;
     const ml = Number(a.t.ml), fin = Number(a.t.odds);
     if (Number.isFinite(ml)) { mlCmp++; if (Math.abs(ml - at) < 0.005) mlSame++; }
     if (Number.isFinite(fin)) { finCmp++; if (Math.abs(fin - at) < 0.005) finSame++; drifts.push(100 * (fin - at) / at); }
   }
-  if (mlCmp || finCmp) {
-    drifts.sort((p, q) => p - q);
-    const med = drifts.length ? drifts[Math.floor(drifts.length / 2)] : null;
-    logMsg('  D2b odds_at_bet    equals the morning line on ' + mlSame + '/' + mlCmp
-         + '   equals the final on ' + finSame + '/' + finCmp
-         + (med === null ? '' : '   median drift bet→final ' + (med >= 0 ? '+' : '') + med.toFixed(1) + '%'),
+  drifts.sort((p, q) => p - q);
+  const med = drifts.length ? drifts[Math.floor(drifts.length / 2)] : null;
+  logMsg('  D2b odds_at_bet    present on ' + priced + '/' + pool.length + ' matched tickets',
+         priced === pool.length ? '' : 'yellow');
+  if (priced < pool.length)
+    logMsg('     ' + (pool.length - priced) + ' tickets carry no price at all. Nothing that reads '
+         + 'odds_at_bet \u2014 drift, the price gate, any claim about what the board showed \u2014 covers them.', 'yellow');
+  if (!priced) {
+    logMsg('     No priced ticket: cannot tell what odds_at_bet contains.', 'yellow');
+  } else {
+    logMsg('     vs morning line: equal on ' + mlSame + '/' + mlCmp
+         + '   \u00b7  vs final: equal on ' + finSame + '/' + finCmp
+         + (med === null ? '' : '   \u00b7  median drift bet\u2192final ' + (med >= 0 ? '+' : '') + med.toFixed(1) + '%'),
            (mlCmp && mlSame === mlCmp) ? 'red' : '');
-    if (mlCmp && mlSame === mlCmp)
-      logMsg('     EVERY ticket matches the morning line exactly — odds_at_bet is the ML, not a board '
-           + 'price, and any drift computed from it is meaningless.', 'red');
+    if (!mlCmp)
+      logMsg('     No morning line on the matched races, so the ML comparison could not run.', 'yellow');
+    else if (mlSame === mlCmp)
+      logMsg('     EVERY priced ticket equals the morning line exactly \u2014 odds_at_bet is the ML under '
+           + 'another name, and any drift computed from it is meaningless.', 'red');
   }
 
   // ── D3. the two ledgers on outcome, where they bet the same horse ────────
@@ -10566,8 +10580,10 @@ const favourite = (race) => {
   const live = race.results.filter((r) => !r.scratched && r.odds !== null && r.odds !== undefined);
   return live.length ? live.reduce((a, b) => (Number(b.odds) < Number(a.odds) ? b : a)) : null;
 };
+// v0.6.7 — ml carried through. D2b compared it off this object and it was never here,
+// so the morning-line arm silently read 0/0 instead of failing.
 const asBet = (race, h) => h && ({ race: rkey(race.track, race.race_date, race.race_no), horse: h.name,
-                                   odds: h.odds, won: !!h.is_winner, finish: h.finish_pos });
+                                   odds: h.odds, ml: h.ml, won: !!h.is_winner, finish: h.finish_pos });
 
 function runHandicapper() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
@@ -11066,30 +11082,26 @@ function horsePanel(m, idx) {
   const startBy = new Map(horseStarts(m.key).map((st) =>
     [dRaceKey(st.log.track, st.log.race_date, st.log.race_no), st]));
   h += '<div class="panehead" style="margin-top:16px"><span class="mono">THE MONEY</span></div>'
-     + '<table class="roll-table"><thead><tr><th>date</th><th>race</th><th>ML</th><th>at bet</th>'
-     + '<th>final</th><th>drift</th><th>stake</th><th>payout</th><th>result</th></tr></thead><tbody>'
+     + '<table class="roll-table"><thead><tr><th>date</th><th>race</th><th>ML</th>'
+     + '<th>final</th><th>stake</th><th>payout</th><th>result</th></tr></thead><tbody>'
      + tickets.map((b) => {
          const amt = Number(b.amount) || 0, pay = Number(b.payout) || 0;
          const ref = !b.won && pay > 0 && Math.abs(pay - amt) < 0.005;
          const st = startBy.get(dRaceKey(b.track, b.race_date, b.race_no));
          const ml = st ? st.row.ml : null;
          const fin = st && st.log.odds !== null && st.log.odds !== undefined ? Number(st.log.odds) : null;
-         const at = (b.odds_at_bet === null || b.odds_at_bet === undefined) ? null : Number(b.odds_at_bet);
-         const drift = (at && fin !== null) ? 100 * (fin - at) / at : null;
          return '<tr><td class="muted">' + ymdDisp(b.race_date) + '</td><td>' + esc(b.track) + ' R'
-           + esc(b.race_no) + '</td><td class="muted">' + fmtOdds(ml) + '</td><td>' + fmtOdds(at)
-           + '</td><td>' + fmtOdds(fin) + '</td><td class="'
-           + (drift === null ? 'muted' : drift < 0 ? 'red' : 'green') + '">'
-           + (drift === null ? '\u2014' : (drift >= 0 ? '+' : '') + drift.toFixed(0) + '%')
+           + esc(b.race_no) + '</td><td class="muted">' + fmtOdds(ml)
+           + '</td><td>' + fmtOdds(fin)
            + '</td><td>$' + amt.toFixed(2)
            + '</td><td>$' + pay.toFixed(2) + '</td><td class="'
            + (ref ? 'yellow' : b.won ? 'green' : 'muted') + '">'
            + (ref ? 'REFUND' : b.won ? 'WON' : 'lost') + '</td></tr>'; }).join('')
      + '</tbody></table>'
-     + '<p class="sub">Stake, price at bet, payout and result are from hra_bets. ML and final are from '
-     + 'the entries and the chart \u2014 shown here for comparison only, never blended into the money. '
-     + 'A win ticket pays the <b>final</b> price, not the one on the board when you punched it: drift is '
-     + 'what that cost or earned. Negative drift means the horse was bet down after you took the price.</p></div>';
+     + '<p class="sub">Stake, payout and result are from hra_bets. ML is from the entries and final from '
+     + 'the chart \u2014 shown for comparison, never blended into the money. A win ticket pays the '
+     + '<b>final</b> price whatever the board showed when it was punched, so the payout reads against '
+     + 'the final column and not the morning line.</p></div>';
   return h;
 }
 
