@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.8</title>
+<title>HRA Backtester v0.6.9</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.8'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.9'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9979,8 +9979,11 @@ function runDoctrine(tau, gap) {
     const d = doctrineFilter(overlay, race.raceInfo || {});
     if (!d || !d.bet) continue;
     const h = d.bet;
+    // v0.6.9 — ml carried. v0.6.7 added it to asBet(), which these two scorers do not
+    // call: the edit applied cleanly to a function outside this path and changed nothing,
+    // so D2b kept reading 0/14. Overlay rows are {...r}, so h.ml is the entries ML.
     out.push({ race: rkey(race.track, race.race_date, race.race_no), horse: h.name,
-               odds: h.odds, won: !!h.is_winner, finish: h.finish_pos });
+               odds: h.odds, ml: h.ml, won: !!h.is_winner, finish: h.finish_pos });
   }
   return out;
 }
@@ -10002,8 +10005,11 @@ function runDoctrineFloor(tau, gap, floor) {
     const d = doctrineFilter(overlay, race.raceInfo || {});
     if (!d || !d.bet) continue;
     const h = d.bet;
+    // v0.6.9 — ml carried. v0.6.7 added it to asBet(), which these two scorers do not
+    // call: the edit applied cleanly to a function outside this path and changed nothing,
+    // so D2b kept reading 0/14. Overlay rows are {...r}, so h.ml is the entries ML.
     out.push({ race: rkey(race.track, race.race_date, race.race_no), horse: h.name,
-               odds: h.odds, won: !!h.is_winner, finish: h.finish_pos });
+               odds: h.odds, ml: h.ml, won: !!h.is_winner, finish: h.finish_pos });
   }
   return out;
 }
