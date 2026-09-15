@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HRA Backtester v0.6.7</title>
+<title>HRA Backtester v0.6.8</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <style>
@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.7'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.6.8'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10229,8 +10229,24 @@ function runLedgerDiff() {
   }
   drifts.sort((p, q) => p - q);
   const med = drifts.length ? drifts[Math.floor(drifts.length / 2)] : null;
-  logMsg('  D2b odds_at_bet    present on ' + priced + '/' + pool.length + ' matched tickets',
+  const mlOnRace = pool.filter((a) => Number.isFinite(Number(a.t.ml))).length;
+  logMsg('  D2b odds_at_bet    present on ' + priced + '/' + pool.length + ' matched tickets'
+       + '   \u00b7  morning line present on ' + mlOnRace + '/' + pool.length,
          priced === pool.length ? '' : 'yellow');
+  // v0.6.8 \u2014 six rows is small enough to print. Two sessions were spent inferring what
+  // odds_at_bet contains from aggregate counts; the rows themselves settle it.
+  const pr = pool.filter((a) => Number.isFinite(Number(a.x.odds_at_bet)) && Number(a.x.odds_at_bet) > 0);
+  if (pr.length) {
+    logMsg('     \u2500\u2500 every ticket that carries a price \u2500\u2500');
+    pr.sort((u, v) => Number(u.x.race_date) - Number(v.x.race_date)).forEach((a) => {
+      const at = Number(a.x.odds_at_bet), fin = Number(a.t.odds), ml = Number(a.t.ml);
+      logMsg('       ' + rc(a.k) + '  ' + String(a.x.horse).padEnd(22)
+           + ' at bet ' + at.toFixed(2)
+           + '   ML ' + (Number.isFinite(ml) ? ml.toFixed(2) : '\u2014')
+           + '   final ' + (Number.isFinite(fin) ? fin.toFixed(2) : '\u2014')
+           + (Number.isFinite(fin) ? '   drift ' + (fin >= at ? '+' : '') + (100 * (fin - at) / at).toFixed(0) + '%' : ''));
+    });
+  }
   if (priced < pool.length)
     logMsg('     ' + (pool.length - priced) + ' tickets carry no price at all. Nothing that reads '
          + 'odds_at_bet \u2014 drift, the price gate, any claim about what the board showed \u2014 covers them.', 'yellow');
