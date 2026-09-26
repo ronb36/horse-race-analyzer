@@ -189,7 +189,9 @@ select.display-box { cursor:pointer; outline:none; }
       <select id="scope-sel" onchange="setScope(this.value)"
               style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;height:30px;padding:0 8px;cursor:pointer;">
         <option value="full">FULL FIXTURE</option>
-        <option value="v2">V2 AS RUN &middot; 08/06 &rarr;</option>
+        <option value="sar">SARATOGA &middot; &rarr; 09/07</option>
+        <option value="bel">BELMONT &middot; 09/18 &rarr;</option>
+        <option value="v2">V2 AS RUN &middot; 08/06 &rarr; 09/07</option>
         <option value="v1">V1 ONLY &middot; &rarr; 08/05</option>
       </select>
     </span>
@@ -200,6 +202,7 @@ select.display-box { cursor:pointer; outline:none; }
     <button class="tab-btn" onclick="runHandicapper()">Handicapper</button>
     <button class="tab-btn" onclick="runLedgerDiff()">Ledger diff</button>
     <button class="tab-btn" onclick="runRepeats()">Repeats</button>
+    <button class="tab-btn" onclick="exportFitRows()">Fit data</button>
   </div>
 
   <!-- parameter cards — names and values only, nothing wired (v0.2.3) -->
@@ -259,7 +262,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.8.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.9.1'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9845,6 +9848,10 @@ function zeroBlankHorse(h) {
         if (d < 5e-9) exact++;
         else if (Math.abs(stored - rateHorse(cached.horses[row.i], info, SPEED_SCALE).rating) < 5e-9) legacy++;
         else worst.push({ race: k, horse: row.name, stored, recomputed: row.rating, d });
+        // 0.9.1 — record WHERE the price came from. Without this the fallback below is
+        // invisible: a row with no chart price keeps the card's morning line and reads
+        // downstream exactly like a real final price. Additive flag; nothing selects on it.
+        row.oddsFinal = !(lg.odds === null || lg.odds === undefined);
         row.odds = (lg.odds === null || lg.odds === undefined) ? row.odds : Number(lg.odds);  // chart odds win
         row.finish_pos = lg.finish_pos; row.is_winner = !!lg.is_winner; row.pay_win = lg.pay_win;
         if (lg.post !== null && lg.post !== undefined) row.post = Number(lg.post);   // v0.3.8 [fix]
@@ -9967,9 +9974,16 @@ function diagFieldSize() {
 // more races, not fewer.
 const V2_START = 20260806;      // the day doctrineFilter shipped
 const V1_END   = 20260805;      // written out, not V2_START-1: these are packed dates
+// 0.9.0 — SAR_END closes every Saratoga window. v2's hi was 99999999, which was right until
+// 09/18 and wrong the moment Belmont opened: "V2 AS RUN" was quietly reporting v2 races pooled
+// with v3 races, the exact blend the era discipline exists to prevent.
+const SAR_END  = 20260907;      // Labor Day — Saratoga's last card
+const BEL_FROM = 20260918;      // Belmont opening day
 const SCOPES = {
   full: { label: 'FULL FIXTURE', lo: 0,        hi: 99999999 },
-  v2:   { label: 'V2 AS RUN',    lo: V2_START, hi: 99999999 },
+  sar:  { label: 'SARATOGA',     lo: 0,        hi: SAR_END  },
+  bel:  { label: 'BELMONT',      lo: BEL_FROM, hi: 99999999 },
+  v2:   { label: 'V2 AS RUN',    lo: V2_START, hi: SAR_END  },
   v1:   { label: 'V1 ONLY',      lo: 0,        hi: V1_END   },
 };
 let _SCOPE = 'full';
@@ -10774,6 +10788,79 @@ const stat = (bets) => {
 
 
 
+
+// ── 0.9.0 — baselines ──────────────────────────────────────────────────────────────────
+// Two rules that involve no model at all, over the same scope and the same flat $2 at final
+// odds. They are the only thing that turns a sweep ROI into a judgement instead of a number.
+function baselineRows() {
+  const fav = [], top = [];
+  for (const race of scopedRaces()) {
+    const priced = (h) => h && Number.isFinite(Number(h.odds)) && Number(h.odds) > 0;
+    const f = favourite(race);
+    if (priced(f)) fav.push({ won: !!f.is_winner, odds: Number(f.odds) });
+    const t = topRated(race);
+    if (priced(t)) top.push({ won: !!t.is_winner, odds: Number(t.odds) });
+  }
+  const wrap = (arr) => { const s = stat(arr); const m = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+    return { bets: s.n, won: s.w, roi: arr.length ? s.roi : null, unpriced: 0,
+             meanOdds: m(arr.map((b) => b.odds)), meanWinOdds: m(arr.filter((b) => b.won).map((b) => b.odds)) }; };
+  return { fav: wrap(fav), top: wrap(top) };
+}
+
+// ── 0.9.0 — fit-data export ────────────────────────────────────────────────────────────
+// One row per live horse, grouped by race, for a Plackett-Luce refit of T2-MOFF. The betas
+// were FITTED on the corrupted ratings, so re-registration is a new fit and not a recount.
+// A race is dropped whole if any live runner lacks a price — a partial field cannot be
+// de-vigged, and silently dropping one horse would change every other horse's q.
+function exportFitRows() {
+  if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
+  const K = ['earlySpeed', 'recentForm', 'speed', 'class', 'consistency', 'freshness', 'post'];
+  const out = ['race,horse,' + K.join(',') + ',odds,is_winner'];
+  let races = 0, rows = 0, winners = 0, dropThin = 0, dropNoPrice = 0, dropStale = 0;
+  for (const race of scopedRaces()) {
+    const live = race.results.filter((r) => !r.scratched);
+    if (live.length < 2) { dropThin++; continue; }
+    // 0.9.1 — a FINAL price for every live runner, or the race goes. q must be a de-vigged
+    // closing board: one morning line in the field biases every other horse's q, because the
+    // vig is removed across the whole field. Partial is worse than absent here.
+    if (live.some((r) => !Number.isFinite(Number(r.odds)) || Number(r.odds) <= 0)) { dropNoPrice++; continue; }
+    if (live.some((r) => !r.oddsFinal)) { dropStale++; continue; }
+    const k = rkey(race.track, race.race_date, race.race_no);
+    races++;
+    for (const r of live) {
+      out.push([k, '"' + String(r.name || '').replace(/"/g, '""') + '"']
+        .concat(K.map((c) => (Number(r[c]) || 0).toFixed(6)))
+        .concat([Number(r.odds), r.is_winner ? 1 : 0]).join(','));
+      rows++; if (r.is_winner) winners++;
+    }
+  }
+  logMsg('── FIT DATA EXPORT ────────────────────────────────────');
+  logMsg('   scope: ' + scopeStamp());
+  const dropped = dropThin + dropNoPrice + dropStale;
+  logMsg('   races exported: ' + races + '  ·  horse rows: ' + rows + '  ·  winners: ' + winners);
+  logMsg('   races dropped: ' + dropped + '   (<2 live ' + dropThin
+       + ' · no price ' + dropNoPrice + ' · morning-line only ' + dropStale + ')',
+       dropped ? 'yellow' : '');
+  if (dropStale) logMsg('   the ' + dropStale + ' morning-line-only race(s) are EXCLUDED on purpose: q must be'
+       + ' a de-vigged CLOSING board, and one ML in a field biases every horse\'s q.', 'yellow');
+  if (races < 40) logMsg('   WARNING: ' + races + ' races is thin for a 7-parameter fit. Expect wide'
+       + ' standard errors; judge the refit on held-out log-likelihood, not in-sample fit.', 'yellow');
+  if (winners !== races) logMsg('   WARNING: winners (' + winners + ') != races (' + races
+       + '). A Plackett-Luce fit needs exactly one winner per race.', 'red');
+  const ts = new Date();
+  const pad2 = (x) => String(x).padStart(2, '0');
+  const name = 'HRA_fit_' + activeScope().label.replace(/[^A-Za-z0-9]/g, '') + '_'
+    + ts.getFullYear() + pad2(ts.getMonth() + 1) + pad2(ts.getDate()) + '_'
+    + pad2(ts.getHours()) + pad2(ts.getMinutes()) + '.csv';
+  const blob = new Blob([out.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+  logMsg('   written: ' + name);
+  showTab('runlog');
+}
+
 // ── v0.2.6 sweeps — diagnostic. Neither picks a value. ─────────────────────
 // simVerdict's 0.15 pModel floor is INSIDE fence 1, which has stayed byte-identical.
 // Rather than parameterize it there, this is a replica, proven equivalent to the real
@@ -10857,6 +10944,15 @@ function runSweeps() {
   logMsg('   replica vs fence simVerdict @0.15: ' + (eq.checked - eq.diff) + '/' + eq.checked
        + (eq.diff ? '  MISMATCH — sweep suppressed' : '  EQUIVALENT'), eq.diff ? 'red' : 'green');
   if (eq.diff) { _TAU = 28; _GAP = 8; return; }
+
+  // ── 0.9.0 — BASELINES. Every sweep row below is meaningless without these. A doctrine
+  // returning +11.9% is a triumph against a favourite baseline of -17% and a catastrophe
+  // against an unfiltered-top-pick baseline of +15%. FOUNDATION fall-refit agenda, item 7.
+  const bl = baselineRows();
+  logMsg('   BASELINES over this scope — the reference every row below is measured against:');
+  logMsg(sweepRow('bet the favourite ', bl.fav));
+  logMsg(sweepRow('top-rated, no doctrine', bl.top));
+  logMsg('   (both flat $2 at final odds, same scope, no filtering of any kind)');
 
   logMsg('   TAU sweep at gap 8, floor 0.15 (MLE 28.0, 95% CI 18.9-51.5):');
   const taus = [8, 10, 12, 14, 16, 18.9, 20, 22, 24, 28, 32, 36, 40, 51.5];
