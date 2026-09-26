@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.7.0'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.8.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -10793,6 +10793,7 @@ function verdictAtFloor(rows, floor) {
 function doctrineCount(tau, gap, floor) {
   _TAU = tau; _GAP = gap;
   let bets = 0, won = 0, passes = 0, blockedP = 0, blockedE = 0, sumP = 0, n = 0;
+  const taken = [];   // 0.8.0 — the bets themselves, so a sweep row can report ROI, not just a count
   for (const race of scopedRaces()) {
     const { overlay } = scoreRaceRows(race.results);
     const v = verdictAtFloor(overlay, floor);
@@ -10806,8 +10807,33 @@ function doctrineCount(tau, gap, floor) {
     const d = doctrineFilter(overlay, race.raceInfo || {});
     if (!d || !d.bet) continue;
     bets++; if (d.bet.is_winner) won++;
+    taken.push({ won: !!d.bet.is_winner, odds: Number(d.bet.odds) });
   }
-  return { tau, gap, floor, bets, won, passes, blockedP, blockedE, meanP: sumP / (n || 1) };
+  // 0.8.0 — flat $2 at FINAL odds, the same convention stat() uses for every other ledger in
+  // this file. A bet with no price is excluded from ROI and counted separately: silently
+  // treating an unpriced winner as a 0.00 payout would understate every row that contains one.
+  const priced = taken.filter((b) => Number.isFinite(b.odds) && b.odds > 0);
+  const s = stat(priced);
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return { tau, gap, floor, bets, won, passes, blockedP, blockedE, meanP: sumP / (n || 1),
+           roi: priced.length ? s.roi : null, priced: priced.length, unpriced: taken.length - priced.length,
+           meanOdds: mean(priced.map((b) => b.odds)),
+           meanWinOdds: mean(priced.filter((b) => b.won).map((b) => b.odds)) };
+}
+
+// 0.8.0 — one formatter so every sweep row reads the same way.
+function sweepRow(label, r) {
+  const pad = (v, w, d) => (v === null || v === undefined ? '—' : Number(v).toFixed(d)).padStart(w);
+  // a row with no bets carries no rate: print a dash rather than "—%", which reads as a value
+  const pct = (v, w, d) => (v === null || v === undefined ? '—'.padStart(w + 1) : Number(v).toFixed(d).padStart(w) + '%');
+  return '     ' + label
+    + '   bets ' + String(r.bets).padStart(3)
+    + '   won ' + String(r.won).padStart(2)
+    + '   hit ' + pct(r.bets ? 100 * r.won / r.bets : null, 5, 1)
+    + '   ROI ' + pct(r.roi, 7, 1)
+    + '   mean odds ' + pad(r.meanOdds, 5, 1)
+    + '   win odds ' + pad(r.meanWinOdds, 5, 1)
+    + (r.unpriced ? '   [' + r.unpriced + ' unpriced]' : '');
 }
 
 function replicaEquivalent() {
@@ -10835,9 +10861,8 @@ function runSweeps() {
   logMsg('   TAU sweep at gap 8, floor 0.15 (MLE 28.0, 95% CI 18.9-51.5):');
   const taus = [8, 10, 12, 14, 16, 18.9, 20, 22, 24, 28, 32, 36, 40, 51.5];
   const tRows = taus.map((t) => doctrineCount(t, 8, 0.15));
-  tRows.forEach((r) => logMsg('     tau ' + String(r.tau).padStart(4) + '   bets ' + String(r.bets).padStart(3)
-       + '   won ' + String(r.won).padStart(2) + '   PASS ' + String(r.passes).padStart(3)
-       + '   blocked-p ' + String(r.blockedP).padStart(3) + '   mean top p ' + r.meanP.toFixed(3)
+  tRows.forEach((r) => logMsg(sweepRow('tau ' + String(r.tau).padStart(4), r)
+       + '   top p ' + r.meanP.toFixed(3)
        + (Math.abs(r.tau - 18.9) < 0.01 ? '   <- CI low' : Math.abs(r.tau - 51.5) < 0.01 ? '   <- CI high'
          : r.tau === 28 ? '   <- MLE' : '')));
 
@@ -10845,8 +10870,24 @@ function runSweeps() {
   const floors = [];
   for (let f = 0.04; f <= 0.2001; f += 0.01) floors.push(Math.round(f * 100) / 100);
   const fRows = floors.map((f) => doctrineCount(28, 8, f));
-  fRows.forEach((r) => logMsg('     floor ' + r.floor.toFixed(2) + '   bets ' + String(r.bets).padStart(3)
-       + '   won ' + String(r.won).padStart(2) + '   blocked-p ' + String(r.blockedP).padStart(3)));
+  fRows.forEach((r) => logMsg(sweepRow('floor ' + r.floor.toFixed(2), r)
+       + (Math.abs(r.floor - 0.09) < 0.005 ? '   <- v3' : '')));
+
+  // ── 0.8.0 — GAP SWEEP. The gate was never swept. It is the parameter most exposed to the
+  // blank-means-zero correction: TAU depends on the SPREAD of ratings (which moved ~10%), the
+  // gap gate depends on WHICH HORSE IS ON TOP (which changed in 54% of races). Run at the live
+  // v3 configuration — TAU 28, floor 0.09 — so the gap-8 row must reproduce the known 17/5.
+  logMsg('   GAP-GATE sweep at TAU 28, floor 0.09 (v3 runs gap 8 — that row is the incumbent):');
+  const gaps = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20];
+  const gRows = gaps.map((g) => doctrineCount(28, g, 0.09));
+  gRows.forEach((r) => logMsg(sweepRow('gap ' + String(r.gap).padStart(4), r)
+       + (r.gap === 8 ? '   <- v3 incumbent' : '')));
+  const inc = gRows.find((r) => r.gap === 8);
+  if (inc) logMsg('   incumbent check: gap 8 gives ' + inc.bets + ' bets / ' + inc.won
+       + ' won  ' + (inc.bets === 17 && inc.won === 5 ? 'MATCHES the scored v3 line' : 'DOES NOT match the scored v3 line (17/5)'),
+       (inc.bets === 17 && inc.won === 5) ? 'green' : 'red');
+  logMsg('   ROI is flat $2 at FINAL odds. Judge on ROI, never on hit rate — T2-QFIT-v1 raised');
+  logMsg('   win% 4.9 points by learning to bet favourites and was worth nothing.', 'yellow');
 
   showTab('runlog');
   _TAU = 28; _GAP = 8;
