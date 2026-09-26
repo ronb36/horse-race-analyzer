@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v3.1.4</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v3.2.0</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -147,13 +147,31 @@ function brisnetHorses(rws) {
   const fn = (row, n) => { const x = parseFloat(f(row, n)); return Number.isFinite(x) ? x : null; };
   const t = (v) => (v === null || v === undefined ? "" : String(v));
   return rws.map((row) => {
+    // 3.2.0 — BRISNET ENCODES ZERO LENGTHS BEHIND AS AN EMPTY FIELD.
+    // Measured over 2,821 past-race slots on five Belmont cards: all 437 past-race winners are
+    // blank in the lengths-behind-at-FINISH field, an explicit "0" is never written anywhere in
+    // these three columns, and every slot carrying a race date also carries a finish position
+    // (0 exceptions) — so the date guard below is sufficient and a blank past it is a true zero.
+    //
+    // What it cost: t(fn(...)) turned blank into "", num() turned "" into null, and rateHorse
+    // SKIPS a null component. A horse that led at both calls therefore scored 0.0 on early speed
+    // — Quirin's strongest positive factor — instead of the maximum. The horses with the most
+    // early speed scored the least. Found 09/26 when Nitrogen (led at every call in her last two,
+    // E/P 6 Quirin points) was rated 4th of 5 in the Beldame at 0.05 and won; the machine had bet
+    // Donor Advised at 8-1 into her. The app's own PDF prompt already states the intended
+    // semantics — "lengths behind the leader at that call (0 if leading)" — so the two input
+    // paths disagreed, and the k-file path is the one that has run all season.
+    //
+    // Residual risk, stated: 5 of 2,821 slots (0.18%) have all three lengths blank on a horse
+    // that did not win. Those are genuinely ambiguous and will now read as "led". Accepted.
+    const zeroBlank = (v) => (v === "" ? "0" : v);
     const past = (slot) => {
       if (!f(row, 256 + slot)) return { finishPosition: "", lengthsBehindFirstCall: "", lengthsBehindSecondCall: "", lengthsBehindFinish: "", speedRating: "" };
       return {
         finishPosition: t(fn(row, 616 + slot)),
-        lengthsBehindFirstCall: t(fn(row, 666 + slot)),
-        lengthsBehindSecondCall: t(fn(row, 686 + slot)),
-        lengthsBehindFinish: t(fn(row, 746 + slot)),
+        lengthsBehindFirstCall: zeroBlank(t(fn(row, 666 + slot))),
+        lengthsBehindSecondCall: zeroBlank(t(fn(row, 686 + slot))),
+        lengthsBehindFinish: zeroBlank(t(fn(row, 746 + slot))),
         speedRating: t(fn(row, 846 + slot)),
       };
     };
@@ -586,7 +604,16 @@ function parseResultsChart(raw) {
   while ((m2 = headRe.exec(text))) marks.push({ n: ORD.indexOf(m2[1]) + 1, at: m2.index });
   const stripFlags = (s) => {
     let n = s.replace(/[”"']/g, "").trim();
-    while (/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/.test(n) && n.split(" ").length > 1) n = n.replace(/\s(?:L|b|f|v|a|bf|fb|Lb|blk)$/, "");
+    // 3.1.5: the old whitelist (L b f v a bf fb Lb blk) missed h, n and w, and the loop gives
+    // up on the FIRST unknown token — so "War Profiteer L w" kept both flags. Three races were
+    // silently held across the first five Belmont cards (09/18 R1, 09/24 R8, 09/25 R6): the
+    // name failed to match the card, chartGateFail held it, and the run stepped past.
+    // A whitelist of letters only waits for the next letter. Chart horse names are Title Case,
+    // so a trailing ALL-LOWERCASE token of 1-3 letters cannot be part of a name; L and Lb stay
+    // because they are uppercase medication codes. Verified on 417 charted finishers across
+    // five cards: 3 newly matched, 0 broken. Do NOT add bare uppercase letters here — an
+    // earlier attempt included [LBACM] and truncated the real horse "Freddie B".
+    while (/\s(?:L|Lb|[a-z]{1,3})$/.test(n) && n.split(" ").length > 1) n = n.replace(/\s(?:L|Lb|[a-z]{1,3})$/, "");
     return n.trim();
   };
   const races = [];
@@ -667,11 +694,14 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "3.1.4";
+const APP_VERSION = "3.2.0";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.
-const ERA_START = 20260918;
+// 3.2.0: reset on the blank-means-zero correction. An era is a period under ONE configuration,
+// and every rating moved, so 09/18-09/25 cannot be pooled with what follows. The old era closes
+// at 2 bets, 0 won. Bumping this is part of the ceremony on any change that moves the ratings.
+const ERA_START = 20260926;
 // 3.0.1: THE MACHINE LOOKS FORWARD. Pre-era race days are closed history — their results
 // are in the tables and were what refit the model. The backtester is where the past is
 // read; the machine shows the current era only, with no route back to earlier meets.
