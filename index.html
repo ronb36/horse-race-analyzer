@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Horse Race Analyzer — est. 1979, rebuilt · v3.2.0</title>
+<title>Horse Race Analyzer — est. 1979, rebuilt · v3.2.1</title>
 <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
@@ -164,11 +164,22 @@ function brisnetHorses(rws) {
     //
     // Residual risk, stated: 5 of 2,821 slots (0.18%) have all three lengths blank on a horse
     // that did not win. Those are genuinely ambiguous and will now read as "led". Accepted.
-    const zeroBlank = (v) => (v === "" ? "0" : v);
+    //
+    // 3.2.1 [fix] — THE RACE DATE IS NOT A STRONG ENOUGH GUARD. 13 of 3,466 slots (0.38%) carry a
+    // non-numeric finish position — "?", "Q", "K", "F", "D", "G" — alongside a blank lengths
+    // field. fn() cannot parse those, so finishPosition arrives empty while the date is present,
+    // and 3.2.0 substituted "0": the horse was scored as finishing LEVEL WITH THE WINNER, the
+    // maximum recentForm credit, for a race that produced no finish at all. Kid Billy (09/19 R4,
+    // last race pos "?") gained a false 10 points that way — 8 for lengthsBehindFinish plus the
+    // 2-point closing bonus. Substitute only when the finish position PARSES; an irregular record
+    // is left alone rather than invented. Caught by the backtester 0.7.0 equivalence gate, which
+    // guarded on finishPosition and disagreed with the app on exactly 1 of 256 horses.
     const past = (slot) => {
       if (!f(row, 256 + slot)) return { finishPosition: "", lengthsBehindFirstCall: "", lengthsBehindSecondCall: "", lengthsBehindFinish: "", speedRating: "" };
+      const finPos = t(fn(row, 616 + slot));
+      const zeroBlank = (v) => (finPos !== "" && v === "" ? "0" : v);
       return {
-        finishPosition: t(fn(row, 616 + slot)),
+        finishPosition: finPos,
         lengthsBehindFirstCall: zeroBlank(t(fn(row, 666 + slot))),
         lengthsBehindSecondCall: zeroBlank(t(fn(row, 686 + slot))),
         lengthsBehindFinish: zeroBlank(t(fn(row, 746 + slot))),
@@ -694,7 +705,7 @@ function parseResultsChart(raw) {
 }
 
 // ---------- Styles ----------
-const APP_VERSION = "3.2.0";
+const APP_VERSION = "3.2.1";
 // Doctrine eras: the scoreline and the era banner scope to the current one.
 // 20260806 — first deliberate zero-bet day under the filter doctrine (selection moved
 // from verdict-following to the profile filter; in-app from 2.21.0). Bump on era changes.

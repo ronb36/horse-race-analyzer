@@ -259,7 +259,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.6.10'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.7.0'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9775,8 +9775,33 @@ async function loadLedger() {
     races.get(k).rows.push(r);
   }
 
+
+// ── 0.7.0 — blank-means-zero, mirroring index.html 3.2.0 ──────────────────────────────
+// Brisnet encodes ZERO lengths behind as an EMPTY field. brisnetHorses passed that through
+// as "", num() turned it into null, and rateHorse SKIPS a null component — so a horse that
+// led at both calls scored 0.0 on early speed, the heaviest factor in the formula.
+// Verified on 2,821 past-race slots: all 437 past-race winners are blank in the
+// lengths-behind-at-finish field, an explicit "0" is never written, and every slot carrying a
+// race date also carries a finish position (0 exceptions). That last fact is the guard used
+// here: in the app the substitution sits behind a race-DATE check inside past(); the stored
+// object has no date, so finishPosition standing in for it is exact, not approximate.
+// Saratoga footprint: 1,543 rated horse-rows, 231 led last (15.0%), 87 led both (5.6%).
+function zeroBlankHorse(h) {
+  if (!h) return h;
+  const fix = (rc) => {
+    if (!rc || rc.finishPosition === '' || rc.finishPosition === undefined) return rc;
+    const z = (v) => (v === '' || v === undefined ? '0' : v);
+    return Object.assign({}, rc, {
+      lengthsBehindFirstCall:  z(rc.lengthsBehindFirstCall),
+      lengthsBehindSecondCall: z(rc.lengthsBehindSecondCall),
+      lengthsBehindFinish:     z(rc.lengthsBehindFinish),
+    });
+  };
+  return Object.assign({}, h, { lastRace: fix(h.lastRace), priorRace: fix(h.priorRace) });
+}
+
   // index the cards by race, and recompute every rating through fence 1
-  let matched = 0, exact = 0, missing = 0;
+  let matched = 0, exact = 0, legacy = 0, missing = 0;
   const worst = [];
   for (const c of cards) {
     const rd = (c.card && c.card.raceData) || {};
@@ -9787,7 +9812,9 @@ async function loadLedger() {
       const race = races.get(k);
       if (!race) continue;
       const byName = new Map(race.rows.map((x) => [String(x.horse || '').trim().toUpperCase(), x]));
-      const rows = (cached.horses || []).map((h, i) => ({
+      const rows = (cached.horses || []).map((h0, i) => {
+        const h = zeroBlankHorse(h0);   // 0.7.0 — see zeroBlankHorse
+        return ({
         i, name: h.name || ('Horse ' + (i + 1)), post: h.postPosition, scratched: !!h.scratched,
         odds: parseOdds(h.mlOdds), cardOdds: parseOdds(h.mlOdds), ...rateHorse(h, info, SPEED_SCALE),
         // v0.2.4 [fix] — rateHorse returns { components, rating }. v0.2.2 spread it and then
@@ -9804,7 +9831,7 @@ async function loadLedger() {
           wins: h.wins, places: h.places, shows: h.shows, earnings: h.earnings,
           mlCard: h.mlOdds, history: h.history || [],
         },
-      }));
+      }); });
       for (const row of rows) {
         const lg = byName.get(String(row.name || '').trim().toUpperCase());
         row._inLog = !!lg;                      // v0.2.2 diagnostic only — nothing reads this for selection
@@ -9812,7 +9839,12 @@ async function loadLedger() {
         matched++;
         const stored = Number(lg.rating);
         const d = Math.abs(stored - row.rating);
-        if (d < 5e-9) exact++; else worst.push({ race: k, horse: row.name, stored, recomputed: row.rating, d });
+        // 0.7.0 — a row may legitimately match either recompute: cards saved by app 3.2.0+
+        // carry corrected lengths, older ones do not. Anything matching NEITHER is a real
+        // divergence and still fails Gate A.
+        if (d < 5e-9) exact++;
+        else if (Math.abs(stored - rateHorse(cached.horses[row.i], info, SPEED_SCALE).rating) < 5e-9) legacy++;
+        else worst.push({ race: k, horse: row.name, stored, recomputed: row.rating, d });
         row.odds = (lg.odds === null || lg.odds === undefined) ? row.odds : Number(lg.odds);  // chart odds win
         row.finish_pos = lg.finish_pos; row.is_winner = !!lg.is_winner; row.pay_win = lg.pay_win;
         if (lg.post !== null && lg.post !== undefined) row.post = Number(lg.post);   // v0.3.8 [fix]
@@ -9859,8 +9891,12 @@ async function loadLedger() {
   logMsg('  horse rows matched: ' + matched + '  ·  unmatched card rows: ' + missing);
 
   // ── GATE A — every stored rating reproduced by fence 1 ────────────────────
-  const passA = matched > 0 && exact === matched;
-  logMsg('  GATE A  ratings  ' + exact + '/' + matched + (passA ? '  PASS' : '  FAIL'), passA ? 'green' : 'red');
+  const passA = matched > 0 && (exact + legacy) === matched;
+  logMsg('  GATE A  ratings  ' + (exact + legacy) + '/' + matched
+       + '   (corrected ' + exact + ' · legacy-card ' + legacy + ')'
+       + (passA ? '  PASS' : '  FAIL'), passA ? 'green' : 'red');
+  if (legacy) logMsg('  ' + legacy + ' row(s) reproduce only WITHOUT the blank-means-zero fix — '
+       + 'cards saved before app 3.2.0. Scoring uses the CORRECTED ratings.', 'yellow');
   if (!passA) {
     worst.sort((a, b) => b.d - a.d).slice(0, 8).forEach((w) =>
       logMsg('    ' + w.race + ' ' + w.horse + '  stored ' + w.stored + '  recomputed ' + w.recomputed.toFixed(6), 'red'));
