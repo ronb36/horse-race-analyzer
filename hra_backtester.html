@@ -262,7 +262,7 @@ select.display-box { cursor:pointer; outline:none; }
 </div>
 <script>
 "use strict";
-const APP_VERSION = 'hra-backtester-v0.9.1'; // forked from SPY backtester v7.2.13
+const APP_VERSION = 'hra-backtester-v0.9.2'; // forked from SPY backtester v7.2.13
 document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('app-ver');if(e)e.textContent=APP_VERSION;});
 
 // ═══ HRA FORK — Supabase repointed ════════════════════════════════════════
@@ -9824,6 +9824,11 @@ function zeroBlankHorse(h) {
         // read r.earlySpeed etc, which were undefined: MOFF scored every edge at 0 (0 fires)
         // and SPDCLS saw every component as 0 so both "top" tests hit element 0 (163 fires).
         ...(rateHorse(h, info, SPEED_SCALE).components || {}),
+        // 0.9.2 — the components again, under a key NOTHING else writes. The spread above is
+        // clobbered for `post`: the merge loop below restores the raw program post over it, so
+        // row.post is the post NUMBER and the bucketed component is gone. Anything that needs
+        // the components as components must read row.comp, not row.
+        comp: rateHorse(h, info, SPEED_SCALE).components || {},
         // v0.6.0 — the biography. Parsed by brisnetHorses, used by no rating, dropped
         // here until now. Additive: nothing below reads bio, so Gate A cannot move.
         bio: {
@@ -10815,7 +10820,7 @@ function baselineRows() {
 function exportFitRows() {
   if (!_ledger || !_ledger.gateA) { logMsg('load first (and Gate A must pass)', 'red'); return; }
   const K = ['earlySpeed', 'recentForm', 'speed', 'class', 'consistency', 'freshness', 'post'];
-  const out = ['race,horse,' + K.join(',') + ',odds,is_winner'];
+  const out = ['race,horse,' + K.join(',') + ',post_raw,field_size,surface,distance_f,odds,is_winner'];
   let races = 0, rows = 0, winners = 0, dropThin = 0, dropNoPrice = 0, dropStale = 0;
   for (const race of scopedRaces()) {
     const live = race.results.filter((r) => !r.scratched);
@@ -10828,8 +10833,20 @@ function exportFitRows() {
     const k = rkey(race.track, race.race_date, race.race_no);
     races++;
     for (const r of live) {
-      out.push([k, '"' + String(r.name || '').replace(/"/g, '""') + '"']
-        .concat(K.map((c) => (Number(r[c]) || 0).toFixed(6)))
+      // 0.9.2 — read the components from r.comp, and ABORT on a missing key rather than
+      // defaulting it. `|| 0` is how the 0.9.1 post defect stayed invisible: a key that was
+      // not there produced a clean 0.000000 that looked like a real measurement.
+      if (!r.comp) { logMsg('ABORT: ' + r.name + ' has no comp object — reload (0.9.2+ required)', 'red'); return; }
+      const cells = [];
+      for (const c of K) {
+        const v = Number(r.comp[c]);
+        if (!Number.isFinite(v)) { logMsg('ABORT: ' + k + ' ' + r.name + ' component "' + c
+            + '" is ' + JSON.stringify(r.comp[c]) + ' — refusing to export a defaulted value.', 'red'); return; }
+        cells.push(v.toFixed(6));
+      }
+      const q = (s) => '"' + String(s === null || s === undefined ? '' : s).replace(/"/g, '""') + '"';
+      out.push([k, q(r.name)].concat(cells)
+        .concat([Number(r.post), live.length, q(race.surface), Number(race.distance_f) || ''])
         .concat([Number(r.odds), r.is_winner ? 1 : 0]).join(','));
       rows++; if (r.is_winner) winners++;
     }
